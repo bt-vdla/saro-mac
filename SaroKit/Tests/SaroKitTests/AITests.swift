@@ -153,7 +153,7 @@ func walk(permissive: @escaping @Sendable (Int) async throws -> String,
 
 let liveModelAvailable = SystemLanguageModel.default.availability == .available
 
-let neutralEntry = "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. Feeling tired but good."
+private let neutralEntry = "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. Feeling tired but good."
 
 func candidates(_ entryId: String, _ text: String, from start: Int = 0) -> [Candidate] {
     text.split(separator: ". ").enumerated().map { i, s in

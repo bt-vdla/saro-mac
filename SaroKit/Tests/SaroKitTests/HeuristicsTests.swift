@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SaroKit
 
-let neutralEntry = "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. Feeling tired but good."
+private let neutralEntry = "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. Feeling tired but good."
 let hinglishEntry = "Aaj bahut thak gayi hoon. Office mein sab kuch galat ho raha hai, mann nahi lag raha kisi cheez mein."
 
 // MARK: - ai.test.ts ports

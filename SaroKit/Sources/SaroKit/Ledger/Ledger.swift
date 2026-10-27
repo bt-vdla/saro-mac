@@ -126,6 +126,20 @@ public actor Ledger {
         return batch
     }
 
+    /// Removes a never-written page (no text, no media, nothing derived). Anything with content goes to Trash instead.
+    public func discardIfEmpty(_ id: String) throws {
+        try db.transaction {
+            let empty = try db.run("""
+                SELECT 1 FROM entry WHERE id=? AND trim(COALESCE(body,''), ' '||char(9)||char(10)||char(13))='' AND media_id IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM safety_verdict WHERE entry_id=entry.id)
+                  AND NOT EXISTS (SELECT 1 FROM entry_annotation WHERE entry_id=entry.id)
+                """, [.text(id)])
+            guard !empty.isEmpty else { return }
+            try db.run("DELETE FROM card_layout WHERE entry_id=?", [.text(id)])
+            try db.run("DELETE FROM entry WHERE id=?", [.text(id)])
+        }
+    }
+
     public func restore(batch: String) throws {
         try db.run("UPDATE entry SET trashed_at=NULL, trash_batch_id=NULL, updated_at=? WHERE trash_batch_id=?",
                    [.text(Date.now.iso), .text(batch)])

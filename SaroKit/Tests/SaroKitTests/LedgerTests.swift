@@ -98,3 +98,14 @@ func tempLedger() throws -> Ledger {
     let obj = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
     #expect((obj?["entry"] as? [Any])?.count == 1)
 }
+
+@Test func onlyEmptyPagesAreDiscarded() async throws {
+    let l = try tempLedger()
+    let empty = Entry(kind: .reflection, body: " \n"), full = Entry(kind: .reflection, body: "words")
+    try await l.insertEntry(empty)
+    try await l.insertEntry(full)
+    try await l.setLayouts([CardLayout(entryId: empty.id, x: 0, y: 0)])
+    try await l.discardIfEmpty(empty.id)
+    try await l.discardIfEmpty(full.id)
+    #expect(try await l.allEntries(includeTrashed: true).map(\.id) == [full.id])
+}

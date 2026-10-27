@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import ImageIO
 import Observation
 import SaroKit
@@ -22,6 +23,7 @@ enum Pane: Hashable {
 final class AppModel {
     let ledger: Ledger
     let ai = SaroAI()
+    let pipeline: Pipeline
     var pane: Pane = .day
     var day: String = LocalDay.today()
     var days: [(day: String, count: Int)] = []
@@ -41,8 +43,15 @@ final class AppModel {
     /// Non-nil while the in-window recorder is up.
     var recorderKind: EntryKind?
 
+    var dayStatus: DayStatus = .empty
+    var dayReading: (payload: DayPayload, generator: String, runId: String?)?
+    var showLetter = false
+    private var queue: [String] = []
+    private var working = false
+
     init(ledger: Ledger) {
         self.ledger = ledger
+        pipeline = Pipeline(ledger: ledger, ai: ai)
     }
 
     static func boot() -> Result<AppModel, Error> {
@@ -106,6 +115,8 @@ final class AppModel {
             for e in entries { if let id = e.mediaId, let a = try await ledger.media(id) { m[id] = a } }
             media = m
             selection = selection.filter { id in entries.contains { $0.id == id } }
+            dayStatus = await pipeline.dayStatus(day)
+            dayReading = dayStatus == .ready ? await pipeline.latestDayReading(day) : nil
         } catch {
             show(Toast("Couldn't read the journal: \(error.localizedDescription)", style: .error))
         }
@@ -177,8 +188,54 @@ final class AppModel {
         }
     }
 
-    /// Placeholder until the pipeline lands: transcription → safety gate → reading.
-    func process(_ entryId: String) {}
+    /// Queues an entry for transcription → SafetyGate → reading, one job at a time (§11.7), then re-reads the
+    /// days those entries belong to.
+    func process(_ entryId: String) {
+        if !queue.contains(entryId) { queue.append(entryId) }
+        guard !working else { return }
+        working = true
+        Task {
+            var days = Set<String>()
+            while !queue.isEmpty {
+                let id = queue.removeFirst()
+                if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
+                await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
+            }
+            for d in days { await pipeline.readDay(d) }
+            working = false
+            await reload()
+        }
+    }
+
+    /// Reads the day when the inspector opens and nothing is stored yet (or the inputs changed).
+    func refreshDayReading() {
+        guard !working, dayStatus == .ready else { return }
+        working = true
+        Task {
+            await pipeline.readDay(day)
+            working = false
+            await reload()
+        }
+    }
+
+    /// Launch sweep (DR-12): a turn that was recording when Saro quit is a finished file if it exists on disk
+    /// (movie fragments survive a crash) and missing otherwise; unfinished entries go back on the queue.
+    func sweep() async {
+        for m in (try? await ledger.allMedia()) ?? [] where m.state == "recording" {
+            let url = ledger.url(for: m)
+            if FileManager.default.fileExists(atPath: url.path) {
+                let seconds = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+                try? await ledger.updateMedia(id: m.id, state: "ready", durationMs: Int(seconds * 1000), bytes: nil)
+            } else {
+                try? await ledger.updateMedia(id: m.id, state: "missing", durationMs: nil, bytes: nil)
+            }
+        }
+        for e in (try? await ledger.unfinishedEntries()) ?? [] {
+            if e.processingStatus == ProcessingStatus.recording { try? await ledger.setProcessingStatus(id: e.id, ProcessingStatus.pending) }
+            process(e.id)
+        }
+        await reload()
+    }
 
     // MARK: Canvas
 
