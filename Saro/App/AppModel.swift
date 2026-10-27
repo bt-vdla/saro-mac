@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import Observation
 import SaroKit
 import SwiftUI
@@ -30,6 +31,8 @@ final class AppModel {
     var verdicts: [String: SafetyVerdictRow] = [:]
     var selection: Set<String> = []
     var openEntryID: String?
+    /// The stack fanned out in place, if any.
+    var openStackID: String?
     var toast: Toast?
     var showNoticed = false
     var devNotesVisible = false
@@ -43,7 +46,40 @@ final class AppModel {
 
     static func boot() -> Result<AppModel, Error> {
         Typo.registerFonts()
-        do { return .success(AppModel(ledger: try Ledger())) } catch { return .failure(error) }
+        do {
+            // `-SaroDemo YES` opens a throwaway ledger with synthetic entries, so testing never touches the real journal.
+            guard UserDefaults.standard.bool(forKey: "SaroDemo") else { return .success(AppModel(ledger: try Ledger())) }
+            let root = URL.temporaryDirectory.appending(path: "SaroDemo-\(UUID().uuidString)")
+            let model = AppModel(ledger: try Ledger(rootURL: root))
+            Task { await model.seedDemo() }
+            return .success(model)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    var isDemo: Bool { ledger.rootURL.lastPathComponent.hasPrefix("SaroDemo") }
+
+    /// Synthetic entries only (SR-28: real user text never enters fixtures).
+    private func seedDemo() async {
+        let texts = [
+            "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. Feeling tired but good.",
+            "It's been a year since Dad died. I keep picking up the phone to call him on Sundays. Today I cried in the car outside the grocery store and couldn't go in.",
+            "This deadline is killing me. If I have to sit through one more status meeting I'll die.\nAnyway, walked home the long way and the sky was pink over the park.",
+        ]
+        for (i, t) in texts.enumerated() {
+            try? await ledger.insertEntry(Entry(kind: .reflection, body: t, capturedAt: .now.addingTimeInterval(Double(i - 3) * 3600)))
+        }
+        let ctx = CGContext(data: nil, width: 640, height: 420, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let colors = [CGColor(srgbRed: 0.95, green: 0.63, blue: 0.47, alpha: 1), CGColor(srgbRed: 0.12, green: 0.29, blue: 0.22, alpha: 1)]
+        let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors as CFArray, locations: [0, 1])!
+        ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 640, y: 420), options: [])
+        if let img = ctx.makeImage(), let data = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
+            await importStill(data, origin: "demo", at: nil)
+        }
+        await reload()
+        for e in entries { process(e.id) }
     }
 
     var isToday: Bool { day == LocalDay.today() }
@@ -62,6 +98,7 @@ final class AppModel {
             days = try await ledger.days()
             entries = try await ledger.entries(day: day)
             layouts = try await ledger.layouts(day: day)
+            try await placeNewCards()
             annotations = try await ledger.annotations(day: day)
             verdicts = try await ledger.verdicts(day: day)
             var m: [String: MediaAsset] = [:]
@@ -78,6 +115,7 @@ final class AppModel {
         self.day = day
         pane = .day
         openEntryID = nil
+        openStackID = nil
         selection = []
         Task { await reload() }
     }
@@ -141,6 +179,185 @@ final class AppModel {
     /// Placeholder until the pipeline lands: transcription → safety gate → reading.
     func process(_ entryId: String) {}
 
+    // MARK: Canvas
+
+    /// Cards on the canvas: single entries, and stacks of 2+ entries sharing a `stackId` (a recording session's turns
+    /// or a user-made stack). Lower z first.
+    var items: [CanvasItem] {
+        var groups: [String: [Entry]] = [:]
+        var order: [String] = []
+        for e in entries {
+            let key = layouts[e.id]?.stackId.map { "stack:\($0)" } ?? e.id
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(e)
+        }
+        return order.map { key in
+            let members = groups[key] ?? []
+            return members.count > 1 ? CanvasItem(id: key, entries: members) : CanvasItem(id: members[0].id, entries: members)
+        }
+        .sorted { z(of: $0) < z(of: $1) }
+    }
+
+    func position(of id: String) -> CGPoint {
+        layouts[id].map { CGPoint(x: $0.x, y: $0.y) } ?? .zero
+    }
+
+    private func z(of item: CanvasItem) -> Int { item.entries.compactMap { layouts[$0.id]?.z }.max() ?? 0 }
+
+    /// Gives every entry without a layout row a free spot; turns of one recording session join one stack.
+    private func placeNewCards() async throws {
+        let missing = entries.filter { layouts[$0.id] == nil }
+        guard !missing.isEmpty else { return }
+        let kinds = Dictionary(entries.map { ($0.id, $0.kind) }, uniquingKeysWith: { a, _ in a })
+        var occupied = layouts.values.map { CGRect(center: CGPoint(x: $0.x, y: $0.y), size: CanvasMath.size(kinds[$0.entryId] ?? .moment)) }
+        var top = layouts.values.map(\.z).max() ?? 0
+        var added: [CardLayout] = []
+        for e in missing {
+            top += 1
+            if let sid = e.sessionId, let mate = (Array(layouts.values) + added).first(where: { $0.stackId == sid }) {
+                added.append(CardLayout(entryId: e.id, x: mate.x, y: mate.y, z: top, stackId: sid))
+                continue
+            }
+            let c = CanvasMath.place(e.kind, id: e.id, avoiding: occupied)
+            occupied.append(CGRect(center: c, size: CanvasMath.size(e.kind)))
+            added.append(CardLayout(entryId: e.id, x: c.x, y: c.y, z: top, stackId: e.sessionId))
+        }
+        try await ledger.setLayouts(added)
+        for l in added { layouts[l.entryId] = l }
+    }
+
+    /// Moves cards by a world-space delta and brings them to the front.
+    func move(_ ids: Set<String>, by delta: CGSize) {
+        var top = layouts.values.map(\.z).max() ?? 0
+        var changed: [CardLayout] = []
+        for id in ids {
+            guard var l = layouts[id] else { continue }
+            top += 1
+            l.x += delta.width
+            l.y += delta.height
+            l.z = top
+            l.userPlaced = true
+            layouts[id] = l
+            changed.append(l)
+        }
+        persist(changed)
+    }
+
+    /// Selected cards fly to the first one and settle as a pile (FR-CAN-03).
+    func stack(_ ids: Set<String>) {
+        let members = entries.filter { ids.contains($0.id) }
+        guard members.count > 1, let anchor = members.first.flatMap({ layouts[$0.id] }) else { return }
+        let sid = UUID().uuidString
+        var top = layouts.values.map(\.z).max() ?? 0
+        var changed: [CardLayout] = []
+        for e in members {
+            top += 1
+            let l = CardLayout(entryId: e.id, x: anchor.x, y: anchor.y, z: top, stackId: sid, userPlaced: true)
+            layouts[e.id] = l
+            changed.append(l)
+        }
+        persist(changed)
+        selection = Set(members.map(\.id))
+        show(Toast("Created a Stack"))
+    }
+
+    func unstack(_ stackID: String) {
+        let members = entries.filter { layouts[$0.id]?.stackId == stackID }
+        let points = CanvasMath.fan(count: members.count, size: CanvasMath.size(.moment),
+                                    around: members.first.map { position(of: $0.id) } ?? .zero)
+        var changed: [CardLayout] = []
+        for (e, p) in zip(members, points) {
+            guard var l = layouts[e.id] else { continue }
+            l.stackId = nil
+            l.x = p.x
+            l.y = p.y
+            l.userPlaced = true
+            layouts[e.id] = l
+            changed.append(l)
+        }
+        openStackID = nil
+        persist(changed)
+    }
+
+    /// A packed, bottom-aligned row (Grid, ⌘G). Stacked cards leave their stack.
+    func grid(_ ids: Set<String>) {
+        let members = entries.filter { ids.contains($0.id) }
+        let placed = CanvasMath.grid(members.map { (id: $0.id, center: position(of: $0.id), size: CanvasMath.size($0.kind)) })
+        var changed: [CardLayout] = []
+        for (id, p) in placed {
+            guard var l = layouts[id] else { continue }
+            l.x = p.x
+            l.y = p.y
+            l.stackId = nil
+            l.userPlaced = true
+            layouts[id] = l
+            changed.append(l)
+        }
+        persist(changed)
+    }
+
+    private func persist(_ layouts: [CardLayout]) {
+        guard !layouts.isEmpty else { return }
+        Task {
+            do { try await ledger.setLayouts(layouts) } catch { show(Toast("Couldn't save the layout: \(error.localizedDescription)", style: .error)) }
+        }
+    }
+
+    // MARK: Trash
+
+    func trash(_ ids: Set<String>, undoManager: UndoManager? = nil) async {
+        guard !ids.isEmpty else { return }
+        do {
+            let batch = try await ledger.trash(Array(ids))
+            selection = []
+            if ids.contains(openEntryID ?? "") { openEntryID = nil }
+            await reload()
+            let restore: @MainActor () -> Void = { [weak self] in Task { await self?.restore(batch: batch) } }
+            undoManager?.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { restore() } }
+            undoManager?.setActionName("Move to Trash")
+            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: restore))
+        } catch {
+            show(Toast("Couldn't move to Trash: \(error.localizedDescription)", style: .error))
+        }
+    }
+
+    func restore(batch: String) async {
+        try? await ledger.restore(batch: batch)
+        await reload()
+        show(Toast("Restored"))
+    }
+
+    // MARK: Stills
+
+    /// Saves a dropped or pasted image as HEIC with no metadata but its orientation (DR-11: stills lose GPS).
+    func importStill(_ data: Data, origin: String, at world: CGPoint?) async {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+            show(Toast("That file isn't an image Saro can read", style: .error))
+            return
+        }
+        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
+        let orientation = props?[kCGImagePropertyOrientation] ?? 1
+        var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.done)
+        let asset = MediaAsset(fileName: "\(entry.localDay)/stills/\(entry.id).heic", kind: .image, origin: origin, state: "ready")
+        entry.mediaId = asset.id
+        let url = ledger.url(for: asset)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.heic" as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
+            CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85, kCGImagePropertyOrientation: orientation] as CFDictionary)
+            guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
+            try await ledger.insertMedia(asset)
+            try await ledger.insertEntry(entry)
+            if let world {
+                try await ledger.setLayouts([CardLayout(entryId: entry.id, x: world.x, y: world.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, userPlaced: true)])
+            }
+            await reload()
+            show(Toast("Still saved to \(DayFormat.sidebar(day))"))
+        } catch {
+            show(Toast("Couldn't save the still: \(error.localizedDescription)", style: .error))
+        }
+    }
+
     // MARK: Toasts
 
     func show(_ toast: Toast) {
@@ -151,6 +368,14 @@ final class AppModel {
             if self.toast?.id == id { self.toast = nil }
         }
     }
+}
+
+struct CanvasItem: Identifiable {
+    let id: String
+    let entries: [Entry]
+    var isStack: Bool { entries.count > 1 }
+    var stackID: String? { isStack ? String(id.dropFirst("stack:".count)) : nil }
+    var top: Entry { entries[entries.count - 1] }
 }
 
 struct Toast: Identifiable, Equatable {

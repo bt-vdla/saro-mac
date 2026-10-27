@@ -18,6 +18,7 @@ struct RootView: View {
             }
         }
         .background(Tok.bg)
+        .tint(Tok.sage)
     }
 }
 
@@ -48,7 +49,11 @@ struct Sidebar: View {
     private func row(_ title: String, systemImage: String, selected: Bool, trailing: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Label(title, systemImage: systemImage).font(Typo.ui(13, selected ? .medium : .regular))
+                Label {
+                    Text(title).font(Typo.ui(13, selected ? .medium : .regular)).foregroundStyle(Tok.ink)
+                } icon: {
+                    Image(systemName: systemImage).foregroundStyle(selected ? Tok.sageTeal : Tok.ink3)
+                }
                 Spacer()
                 if let trailing { Text(trailing).font(Typo.mono(10)).foregroundStyle(Tok.ink3) }
             }
@@ -68,15 +73,5 @@ enum DayFormat {
 
     static func title(_ day: String) -> String {
         LocalDay.date(day)?.formatted(.dateTime.weekday(.wide).day().month(.wide)) ?? day
-    }
-}
-
-struct DayView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        Text("Canvas for \(model.day)")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Tok.bg)
     }
 }
