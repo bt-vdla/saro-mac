@@ -1,0 +1,71 @@
+name: Saro
+options:
+  bundleIdPrefix: com.saro
+  deploymentTarget:
+    macOS: "27.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
+packages:
+  SaroKit:
+    path: SaroKit
+targets:
+  Saro:
+    type: application
+    platform: macOS
+    sources:
+      - path: Saro
+        excludes:
+          - Resources/Fonts
+      - path: Saro/Resources/Fonts
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: SaroKit
+    info:
+      path: Saro/Info.plist
+      properties:
+        CFBundleDisplayName: Saro
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.lifestyle
+        LSMinimumSystemVersion: "27.0"
+        NSHumanReadableCopyright: "© 2026 I Inc."
+        NSCameraUsageDescription: Saro records your video moments. The video stays on this Mac.
+        NSMicrophoneUsageDescription: Saro records your voice for moments and voice notes. The audio stays on this Mac.
+        NSSpeechRecognitionUsageDescription: Saro transcribes your recordings on this Mac so you can read and search them. Nothing is sent anywhere.
+        SaroGitCommit: unknown
+    entitlements:
+      path: Saro/Saro.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.device.camera: true
+        com.apple.security.device.audio-input: true
+        com.apple.security.files.user-selected.read-write: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.saro.dogfood
+        PRODUCT_NAME: Saro
+        DEVELOPMENT_TEAM: P6SP5RHNLV
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DOGFOOD
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        DEAD_CODE_STRIPPING: YES
+    postBuildScripts:
+      - name: Stamp git commit
+        basedOnDependencyAnalysis: false
+        script: |
+          PLIST="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          HASH=$(git -C "$SRCROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+          if [ -n "$(git -C "$SRCROOT" status --porcelain 2>/dev/null)" ]; then HASH="$HASH-dirty"; fi
+          /usr/libexec/PlistBuddy -c "Set :SaroGitCommit $HASH" "$PLIST"
+    scheme:
+      environmentVariables: {}
