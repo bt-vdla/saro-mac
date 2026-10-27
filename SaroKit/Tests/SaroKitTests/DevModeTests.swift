@@ -7,7 +7,7 @@ import Testing
     #expect(d.map(\.id) == (1...22).map { String(format: "D-%02d", $0) })
     #expect(Set(d.filter { $0.status == .decided }.map(\.id)) == ["D-02", "D-03", "D-05", "D-14"])
     #expect(d.allSatisfy { $0.status == .open || ($0.option($0.decidedChoice) != nil && $0.decidedOn == "2026-10-27") })
-    #expect(Decision.all.filter { $0.id.hasPrefix("B-") }.count == 14)
+    #expect(Decision.all.filter { $0.id.hasPrefix("B-") }.count == 17)
     #expect(Set(Decision.all.map(\.id)).count == Decision.all.count)
 }
 

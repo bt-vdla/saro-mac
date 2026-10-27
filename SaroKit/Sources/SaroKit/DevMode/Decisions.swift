@@ -210,5 +210,17 @@ public struct Decision: Sendable, Hashable, Codable, Identifiable {
                  "Why: the web app's 12 labels keep moods continuous with Bharat's existing journal.",
                  options: ["The web app's 12-label catalogue", "The probe's 6 (heavy … bright)"],
                  due: "Wed 28 Oct 2026", screens: [.noticed], brd: ["FR-REF-01"]),
+        Decision("B-15", "Where the repo lives",
+                 "Why: the repo sits on the iCloud-synced Desktop, whose Finder xattrs make codesign fail for anything built inside it. Tonight every build goes to ~/Library (make build, make test).",
+                 options: ["Keep it on the Desktop; build products stay in ~/Library", "Move the repo off iCloud (e.g. ~/Developer/saro-mac)"],
+                 due: "Wed 28 Oct 2026", screens: [.settings], brd: []),
+        Decision("B-16", "Empty pages",
+                 "Why: pressing Write and closing without typing shouldn't leave an empty card or fill the Trash.",
+                 options: ["Discard a page that was never written (no text, no media, nothing derived)", "Keep it as an empty card", "Send it to Trash"],
+                 due: "Wed 28 Oct 2026", screens: [.writingDetail], brd: ["DR-15"]),
+        Decision("B-17", "Day reading inputs",
+                 "Why: the probe's one structured call over a raw day failed in 215 ms; the day call sees only per-entry annotations plus up to 6 numbered verbatim candidates per entry.",
+                 options: ["Map-reduce over stored annotations, 6 candidates per entry", "Map-reduce with all 24 candidates per entry", "One call over raw day text"],
+                 due: "Wed 28 Oct 2026", screens: [.noticed], brd: ["FR-REF-01", "SR-13"]),
     ]
 }
