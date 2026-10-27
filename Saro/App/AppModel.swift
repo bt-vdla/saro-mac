@@ -90,8 +90,9 @@ final class AppModel {
 
     /// Creates the media and entry rows (state `recording`) and returns where the turn's file goes:
     /// `Media/<local_day>/<session>/part-<n>.mov` for moments, `Media/<local_day>/voice/<entry>.mov` for voice notes.
-    func beginTurn(kind: EntryKind, sessionId: String, turn: Int) async throws -> TurnTicket {
-        let entry = Entry(kind: kind, sessionId: sessionId, turnNumber: turn, localDay: day, processingStatus: ProcessingStatus.recording)
+    /// `day` defaults to the day on screen (a past day backdates); the floating panel passes today.
+    func beginTurn(kind: EntryKind, sessionId: String, turn: Int, day: String? = nil) async throws -> TurnTicket {
+        let entry = Entry(kind: kind, sessionId: sessionId, turnNumber: turn, localDay: day ?? self.day, processingStatus: ProcessingStatus.recording)
         let rel = kind == .moment ? "\(entry.localDay)/\(sessionId)/part-\(turn).mov" : "\(entry.localDay)/voice/\(entry.id).mov"
         let asset = MediaAsset(fileName: rel, kind: kind == .moment ? .video : .audio, origin: "recorded")
         var e = entry
@@ -115,8 +116,8 @@ final class AppModel {
     }
 
     /// A new, empty piece of writing on the current day.
-    func newWriting(body: String = "") async -> Entry? {
-        let e = Entry(kind: .reflection, body: body, localDay: day)
+    func newWriting(body: String = "", day: String? = nil) async -> Entry? {
+        let e = Entry(kind: .reflection, body: body, localDay: day ?? self.day)
         do {
             try await ledger.insertEntry(e)
             await reload()
