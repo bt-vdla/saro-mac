@@ -1,0 +1,14 @@
+# Live probe results on this Mac (M5, macOS 27.0.1, Xcode 27.1), 25 Oct 2026
+Run by the coordinator with synthetic journal entries; sources in scratchpad/fmprobe*/main.swift, outputs run1.txt–run3.txt.
+
+- SystemLanguageModel.default: availability = available; variant = "AFM 3 Core Advanced" (coreAdvanced3); contextSize = 8192; capabilities: vision = true, guidedGeneration = true, toolCalling = true, reasoning = false.
+- supportsLocale: en_IN = true, hi_IN = false.
+- tokenCount: 10,260 chars of journal text = 2,494 tokens (~4.1 chars/token). Saro-style instructions = 92 tokens; a 4-field @Generable schema = 166 tokens.
+- Per-entry @Generable (title/summary/quote/mood) with DEFAULT guardrails, 10 synthetic entries: 8 OK (grief, low mood, passive ideation, abuse, intimacy, drinking, Hinglish all fine, quotes grounded), 2 GUARDRAIL (explicit self-harm; "so angry I wanted to punch the screen"). ~1.2–1.7 s each; guardrail throws in ~85 ms.
+- Same entries as String with .permissiveContentTransformations: 10/10 OK, ~0.5–0.8 s, but the model drifts into markdown (**TITLE:**), so line-format parsing must strip markdown; JSON is more robust (below).
+- Naive permissive classifier "RISK or NONE": flagged 9/10 as RISK, including grief, anger, intimacy, drinking. Useless as a gate.
+- Graded classifier (NONE / PASSIVE / ACTIVE with definitions, greedy): 11/13 correct, ~170 ms each. Caught all 4 true risks (passive ideation, explicit self-harm, a pills plan, a Hinglish "main mar jaun" line). False positives: "wanted to punch the screen" and "this deadline is killing me… I'll die" → ACTIVE. Needs few-shot idiom examples; high recall, imperfect precision.
+- Day-level @Generable insight over a 5-entry day containing anger/idiom/drinking/grief: GUARDRAIL in 215 ms ("May contain unsafe content"). One heavy entry poisons the whole structured day call.
+- Fallback ladder rung 2 (permissive String asked to emit JSON, decoded with GeneratedContent(json:) into the same @Generable DayInsight): OK in 2.8 s, both quotes grounded verbatim. Narrative quality is decent but with small drift ("the end of a long shift" for "long day at work"; "pushed through chai with Ravi"), so narrative-level checks are needed, not only quote checks.
+- Streamed evening letter (permissive String): first token 349 ms, 2.2 s total, 592 chars — but quality is poor: mostly a pronoun-swapped echo of the entries. On-device is fine for extraction, titles, mood, classification, questions; letters/weekly synthesis need PCC or much better prompting.
+- PrivateCloudComputeLanguageModel: availability = available, quota = belowLimit, contextSize = 32768 (verified). A single neutral request FAILED with ModelManagerError 1046, consistent with the managed entitlement (com.apple.developer.private-cloud-compute) being required. PCC is unusable until Apple grants the entitlement.

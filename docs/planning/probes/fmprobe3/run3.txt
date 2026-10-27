@@ -1,0 +1,18 @@
+== rung 1: @Generable, default guardrails ==
+FAIL 215ms: The model's safety guardrails were triggered.
+== rung 2: permissive String emitting JSON, decoded into the same @Generable type ==
+OK 2848ms mood=heavy grounded=[true, true]
+narrative: You carried a heavy weight today—the end of a long shift, the memory of your dad, and the pressure of endless meetings. You pushed through chai with Ravi, but also let yourself break down in the car.
+quotes: ["It\'s been a year since Dad died. I keep picking up the phone to call him on Sundays.", "This deadline is killing me. If I have to sit through one more status meeting I\'ll die."]
+question: What part of today felt the hardest to carry?
+== rung 2b: same, streamed as String (time to first token) ==
+first token 349ms, total 2185ms, 592 chars
+You shipped the onboarding flow today after a long day. You had chai with Ravi and talked about his move to Pune. You felt tired but good.  
+
+It’s been a year since Dad died. You keep picking up the phone to call him on Sundays. Today you cried in the car outside the grocery store and couldn’t go in.  
+
+You were so angry at your manager you wanted to punch the screen. You wrote an email you didn’t send.  
+
+This deadline is killing you. If you have to sit through one more status meeting you’ll die.  
+
+You had four drinks again tonight just to fall asleep. You know it’s becoming a habit.

@@ -1,0 +1,428 @@
+executor init: claude-opus-5-5
+--- request 69B524BD-0EC8-4C3A-8D73-35AE8AF801A4
+instructions: 1 segments
+prompt text: Long day at work. Shipped the onboarding flow.
+prompt.responseFormat: EntryExtraction
+options: GenerationOptions(sampling: Optional(FoundationModels.GenerationOptions.SamplingMode(kind: FoundationModels.GenerationOptions.SamplingMode.Kind.greedy)), temperature: nil, maximumResponseTokens: Optional(600), toolCallingMode: nil)
+contextOptions: ContextOptions(includeSchemaInPrompt: Optional(true), reasoningLevel: nil)
+schema JSON:
+{
+  "$defs" : {
+    "Obs" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "candidateIndex" : {
+          "maximum" : 23,
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "kind" : {
+          "description" : "kind of observation",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "kind",
+        "candidateIndex"
+      ],
+      "title" : "Obs",
+      "type" : "object",
+      "x-order" : [
+        "kind",
+        "candidateIndex"
+      ]
+    }
+  },
+  "additionalProperties" : false,
+  "properties" : {
+    "mood" : {
+      "enum" : [
+        "calm",
+        "tired",
+        "low"
+      ],
+      "type" : "string"
+    },
+    "observations" : {
+      "items" : {
+        "$ref" : "#\/$defs\/Obs"
+      },
+      "maxItems" : 12,
+      "type" : "array"
+    },
+    "quoteIndex" : {
+      "maximum" : 23,
+      "minimum" : 0,
+      "type" : "integer"
+    },
+    "summary" : {
+      "type" : "string"
+    },
+    "title" : {
+      "description" : "A 3 to 6 word title in the writer's words",
+      "type" : "string"
+    }
+  },
+  "required" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ],
+  "title" : "EntryExtraction",
+  "type" : "object",
+  "x-order" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ]
+}
+DECODED: Long day, tired but good | tired | 2 | 1
+session.usage: Usage(input: FoundationModels.LanguageModelSession.Usage.Input(totalTokenCount: 1200, cachedTokenCount: 900), output: FoundationModels.LanguageModelSession.Usage.Output(totalTokenCount: 80, reasoningTokenCount: 30), metadata: [:])
+=== streaming
+executor init: claude-opus-5-5
+--- request 8F569970-4EA0-40B8-8FE5-8408ED985510
+prompt text: x
+prompt.responseFormat: EntryExtraction
+options: GenerationOptions(sampling: nil, temperature: nil, maximumResponseTokens: nil, toolCallingMode: nil)
+contextOptions: ContextOptions(includeSchemaInPrompt: Optional(true), reasoningLevel: nil)
+schema JSON:
+{
+  "$defs" : {
+    "Obs" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "candidateIndex" : {
+          "maximum" : 23,
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "kind" : {
+          "description" : "kind of observation",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "kind",
+        "candidateIndex"
+      ],
+      "title" : "Obs",
+      "type" : "object",
+      "x-order" : [
+        "kind",
+        "candidateIndex"
+      ]
+    }
+  },
+  "additionalProperties" : false,
+  "properties" : {
+    "mood" : {
+      "enum" : [
+        "calm",
+        "tired",
+        "low"
+      ],
+      "type" : "string"
+    },
+    "observations" : {
+      "items" : {
+        "$ref" : "#\/$defs\/Obs"
+      },
+      "maxItems" : 12,
+      "type" : "array"
+    },
+    "quoteIndex" : {
+      "maximum" : 23,
+      "minimum" : 0,
+      "type" : "integer"
+    },
+    "summary" : {
+      "type" : "string"
+    },
+    "title" : {
+      "description" : "A 3 to 6 word title in the writer's words",
+      "type" : "string"
+    }
+  },
+  "required" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ],
+  "title" : "EntryExtraction",
+  "type" : "object",
+  "x-order" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ]
+}
+stream snapshots: 6
+=== bad JSON (missing fields)
+executor init: claude-opus-5-5
+--- request 72E32FAD-61E3-4C6A-9614-BC3D78F3B405
+prompt text: x
+prompt.responseFormat: EntryExtraction
+options: GenerationOptions(sampling: nil, temperature: nil, maximumResponseTokens: nil, toolCallingMode: nil)
+contextOptions: ContextOptions(includeSchemaInPrompt: Optional(true), reasoningLevel: nil)
+schema JSON:
+{
+  "$defs" : {
+    "Obs" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "candidateIndex" : {
+          "maximum" : 23,
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "kind" : {
+          "description" : "kind of observation",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "kind",
+        "candidateIndex"
+      ],
+      "title" : "Obs",
+      "type" : "object",
+      "x-order" : [
+        "kind",
+        "candidateIndex"
+      ]
+    }
+  },
+  "additionalProperties" : false,
+  "properties" : {
+    "mood" : {
+      "enum" : [
+        "calm",
+        "tired",
+        "low"
+      ],
+      "type" : "string"
+    },
+    "observations" : {
+      "items" : {
+        "$ref" : "#\/$defs\/Obs"
+      },
+      "maxItems" : 12,
+      "type" : "array"
+    },
+    "quoteIndex" : {
+      "maximum" : 23,
+      "minimum" : 0,
+      "type" : "integer"
+    },
+    "summary" : {
+      "type" : "string"
+    },
+    "title" : {
+      "description" : "A 3 to 6 word title in the writer's words",
+      "type" : "string"
+    }
+  },
+  "required" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ],
+  "title" : "EntryExtraction",
+  "type" : "object",
+  "x-order" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ]
+}
+bad error: GeneratedContent does not contain a property 'summary'.
+Content: {"title": "Long day"}
+=== refusal thrown by executor
+executor init: claude-opus-5-5
+--- request 62E1772B-9594-4434-995A-E312A6BFF2C4
+prompt text: x
+prompt.responseFormat: EntryExtraction
+options: GenerationOptions(sampling: nil, temperature: nil, maximumResponseTokens: nil, toolCallingMode: nil)
+contextOptions: ContextOptions(includeSchemaInPrompt: Optional(true), reasoningLevel: nil)
+schema JSON:
+{
+  "$defs" : {
+    "Obs" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "candidateIndex" : {
+          "maximum" : 23,
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "kind" : {
+          "description" : "kind of observation",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "kind",
+        "candidateIndex"
+      ],
+      "title" : "Obs",
+      "type" : "object",
+      "x-order" : [
+        "kind",
+        "candidateIndex"
+      ]
+    }
+  },
+  "additionalProperties" : false,
+  "properties" : {
+    "mood" : {
+      "enum" : [
+        "calm",
+        "tired",
+        "low"
+      ],
+      "type" : "string"
+    },
+    "observations" : {
+      "items" : {
+        "$ref" : "#\/$defs\/Obs"
+      },
+      "maxItems" : 12,
+      "type" : "array"
+    },
+    "quoteIndex" : {
+      "maximum" : 23,
+      "minimum" : 0,
+      "type" : "integer"
+    },
+    "summary" : {
+      "type" : "string"
+    },
+    "title" : {
+      "description" : "A 3 to 6 word title in the writer's words",
+      "type" : "string"
+    }
+  },
+  "required" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ],
+  "title" : "EntryExtraction",
+  "type" : "object",
+  "x-order" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ]
+}
+refusal surfaced as LanguageModelError.refusal
+=== model without guidedGeneration
+no-cap error: The selected model does not support guided generation. Consider trying again with a different model.
+=== out-of-range enum and index
+executor init: claude-opus-5-5
+--- request A056E153-F358-4D4B-9049-949481486FA3
+prompt text: x
+prompt.responseFormat: EntryExtraction
+options: GenerationOptions(sampling: nil, temperature: nil, maximumResponseTokens: nil, toolCallingMode: nil)
+contextOptions: ContextOptions(includeSchemaInPrompt: Optional(true), reasoningLevel: nil)
+schema JSON:
+{
+  "$defs" : {
+    "Obs" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "candidateIndex" : {
+          "maximum" : 23,
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "kind" : {
+          "description" : "kind of observation",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "kind",
+        "candidateIndex"
+      ],
+      "title" : "Obs",
+      "type" : "object",
+      "x-order" : [
+        "kind",
+        "candidateIndex"
+      ]
+    }
+  },
+  "additionalProperties" : false,
+  "properties" : {
+    "mood" : {
+      "enum" : [
+        "calm",
+        "tired",
+        "low"
+      ],
+      "type" : "string"
+    },
+    "observations" : {
+      "items" : {
+        "$ref" : "#\/$defs\/Obs"
+      },
+      "maxItems" : 12,
+      "type" : "array"
+    },
+    "quoteIndex" : {
+      "maximum" : 23,
+      "minimum" : 0,
+      "type" : "integer"
+    },
+    "summary" : {
+      "type" : "string"
+    },
+    "title" : {
+      "description" : "A 3 to 6 word title in the writer's words",
+      "type" : "string"
+    }
+  },
+  "required" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ],
+  "title" : "EntryExtraction",
+  "type" : "object",
+  "x-order" : [
+    "title",
+    "summary",
+    "mood",
+    "quoteIndex",
+    "observations"
+  ]
+}
+oob decoded: furious 99
+=== plain String
+executor init: claude-opus-5-5
+--- request 43EC8286-82F3-43AF-A8DC-3D670F8B73A7
+prompt text: hello
+prompt.responseFormat: nil
+options: GenerationOptions(sampling: nil, temperature: nil, maximumResponseTokens: nil, toolCallingMode: nil)
+contextOptions: ContextOptions(includeSchemaInPrompt: nil, reasoningLevel: nil)
+schema: nil
+string: {"title":"Long day, tired but good","sum
