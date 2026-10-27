@@ -43,20 +43,8 @@ struct SaroCommands: Commands {
             Button("Previous Day") { model.goPrevious() }.keyboardShortcut("[", modifiers: .command)
             Button("Next Day") { model.goNext() }.keyboardShortcut("]", modifiers: .command)
         }
-    }
-}
-
-struct SettingsView: View {
-    @AppStorage("videoQuality") private var videoQuality = "720p"
-
-    var body: some View {
-        Form {
-            Picker("Video quality", selection: $videoQuality) {
-                Text("720p HEVC (default)").tag("720p")
-                Text("1080p HEVC").tag("1080p")
-            }
+        CommandGroup(after: .importExport) {
+            Button("Export Everything…") { Task { await model.exportEverything() } }
         }
-        .padding(20)
-        .frame(width: 420)
     }
 }

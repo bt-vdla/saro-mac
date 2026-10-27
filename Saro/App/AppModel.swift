@@ -21,6 +21,7 @@ enum Pane: Hashable {
 @Observable @MainActor
 final class AppModel {
     let ledger: Ledger
+    let ai = SaroAI()
     var pane: Pane = .day
     var day: String = LocalDay.today()
     var days: [(day: String, count: Int)] = []

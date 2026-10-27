@@ -13,7 +13,7 @@ struct RootView: View {
         } detail: {
             switch model.pane {
             case .day: DayView()
-            case .trash: Text("Trash")
+            case .trash: TrashView()
             case .decisions:
                 #if DOGFOOD
                 DecisionsView()
