@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @State private var showSafety = false
 
     var body: some View {
         @Bindable var model = model
@@ -24,6 +25,8 @@ struct RootView: View {
         }
         .background(Tok.bg)
         .tint(Tok.sage)
+        .sheet(isPresented: $showSafety) { SafetyCardView() }
+        .onReceive(NotificationCenter.default.publisher(for: .showSafetyCard)) { _ in showSafety = true }
         #if DOGFOOD
         .devMode()
         #endif

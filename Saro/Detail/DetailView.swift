@@ -266,8 +266,8 @@ private struct WritingEditor: View {
         if changed { try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser) }
         if process {
             if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await model.trash([entry.id])
-                model.toast = nil
+                try? await model.ledger.discardIfEmpty(entry.id)
+                await model.reload()
                 return
             }
             await model.reload()
@@ -445,11 +445,11 @@ extension Notification.Name {
     static let showSafetyCard = Notification.Name("saro.showSafetyCard")
 }
 
-/// Stand-in until the SafetyCard lands with the safety module.
+/// A safety hold never shows nothing (§13.2): the entry stays saved and playable, and the resources take the reading's place.
 struct SafetyNotice: View {
     var body: some View {
-        Text("Saro saved this and won't write about it.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
-        Button("If you're struggling…") { NotificationCenter.default.post(name: .showSafetyCard, object: nil) }
-            .buttonStyle(.link).font(Typo.ui(12))
+        Text("Saro saved this and won't write about it. If any of it is weighing on you, these people will listen.")
+            .font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
+        SafetyCardView(compact: true)
     }
 }

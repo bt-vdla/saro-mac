@@ -26,6 +26,7 @@ struct DayView: View {
     static let holdBeforeDrag = 0.12
 
     var body: some View {
+        @Bindable var model = model
         GeometryReader { geo in
             ZStack {
                 background
@@ -35,7 +36,7 @@ struct DayView: View {
                     Rectangle().fill(Tok.ink.opacity(0.06)).overlay(Rectangle().strokeBorder(Tok.ink3.opacity(0.5), lineWidth: 1))
                         .frame(width: m.width, height: m.height).position(x: m.midX, y: m.midY).allowsHitTesting(false)
                 }
-                chrome
+                if shownID == nil { chrome }
                 if let id = shownID, let entry = model.entry(id) { detail(entry) }
                 if let kind = model.recorderKind {
                     Tok.bg.opacity(0.7).ignoresSafeArea().onTapGesture {}
@@ -71,6 +72,10 @@ struct DayView: View {
         }
         .onChange(of: screenID) { _, s in model.screen = s }
         .onAppear { focused = true }
+        .inspector(isPresented: $model.showNoticed) {
+            NoticedView().inspectorColumnWidth(min: 300, ideal: 340, max: 440)
+        }
+        .sheet(isPresented: $model.showLetter) { LetterView() }
     }
 
     private var screenID: ScreenID {

@@ -11,7 +11,7 @@ struct SaroApp: App {
             case .success(let model):
                 RootView()
                     .environment(model)
-                    .task { await model.reload() }
+                    .task { await model.sweep() }
             case .failure(let error):
                 ContentUnavailableView("Saro couldn't open its journal", systemImage: "externaldrive.badge.exclamationmark",
                                        description: Text(error.localizedDescription))
@@ -42,6 +42,9 @@ struct SaroCommands: Commands {
             Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
             Button("Previous Day") { model.goPrevious() }.keyboardShortcut("[", modifiers: .command)
             Button("Next Day") { model.goNext() }.keyboardShortcut("]", modifiers: .command)
+        }
+        CommandGroup(before: .help) {
+            Button("If You're Struggling…") { NotificationCenter.default.post(name: .showSafetyCard, object: nil) }
         }
         CommandGroup(after: .importExport) {
             Button("Export Everything…") { Task { await model.exportEverything() } }
