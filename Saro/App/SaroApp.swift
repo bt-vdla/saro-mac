@@ -20,7 +20,12 @@ struct SaroApp: App {
         .defaultSize(width: 1320, height: 860)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
-            if case .success(let model) = boot { SaroCommands(model: model) }
+            if case .success(let model) = boot {
+                SaroCommands(model: model)
+                #if DOGFOOD
+                DevCommands(model: model)
+                #endif
+            }
         }
 
         Settings {

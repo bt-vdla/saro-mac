@@ -14,11 +14,19 @@ struct RootView: View {
             switch model.pane {
             case .day: DayView()
             case .trash: Text("Trash")
-            case .decisions: Text("Decisions")
+            case .decisions:
+                #if DOGFOOD
+                DecisionsView()
+                #else
+                EmptyView()
+                #endif
             }
         }
         .background(Tok.bg)
         .tint(Tok.sage)
+        #if DOGFOOD
+        .devMode()
+        #endif
     }
 }
 

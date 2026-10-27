@@ -93,23 +93,13 @@ struct TimedSentence: Identifiable, Hashable {
     let endMs: Int
 }
 
-/// Sentences from timed words: a break after . ? ! or a pause longer than 1.2 s.
+/// Transcript sentences with an end time, so the playing one can be highlighted.
 func timedSentences(_ words: [TranscriptWord]) -> [TimedSentence] {
-    var out: [TimedSentence] = []
-    var cur: [TranscriptWord] = []
-    func flush() {
-        guard let first = cur.first, let last = cur.last else { return }
-        let text = cur.map(\.text).joined().trimmingCharacters(in: .whitespaces)
-        if !text.isEmpty { out.append(TimedSentence(id: out.count, text: text, startMs: first.startMs, endMs: last.startMs + last.durMs)) }
-        cur = []
+    let s = Transcriber.sentences(from: words)
+    let end = words.last.map { $0.startMs + $0.durMs } ?? 0
+    return s.enumerated().map { i, x in
+        TimedSentence(id: i, text: x.text, startMs: x.startMs, endMs: i + 1 < s.count ? s[i + 1].startMs : end)
     }
-    for w in words {
-        if let last = cur.last, w.startMs - (last.startMs + last.durMs) > 1200 { flush() }
-        cur.append(w)
-        if let c = w.text.trimmingCharacters(in: .whitespaces).last, ".?!".contains(c) { flush() }
-    }
-    flush()
-    return out
 }
 
 private struct MediaDetail: View {

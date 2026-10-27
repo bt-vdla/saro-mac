@@ -343,8 +343,8 @@ struct DayView: View {
             .padding(.bottom, 22)
             ZoomControls(zoom: zoom, onZoom: { zoom(by: $0, at: CGPoint(x: size.width / 2, y: size.height / 2)) },
                          onReset: { withAnimation(Motion.pick(Motion.arrange, reduce: reduceMotion)) { zoom = 1; pan = .zero } })
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(.trailing, 22).padding(.bottom, 26)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.leading, 22).padding(.bottom, 26)
         }
     }
 
