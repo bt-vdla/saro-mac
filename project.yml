@@ -59,6 +59,7 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         GENERATE_INFOPLIST_FILE: NO
         DEAD_CODE_STRIPPING: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     postBuildScripts:
       - name: Stamp git commit
         basedOnDependencyAnalysis: false
