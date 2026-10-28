@@ -104,9 +104,11 @@ struct DevNotes {
                 name: "Still detail",
                 does: "A dropped or pasted image, saved as HEIC with every metadata field removed except orientation (so no GPS).",
                 built: ["Drop or paste a still", "HEIC with location removed", "Colour palette and mono-caps metadata (FR-CAN-07)",
-                        "A note on the still, gated before Saro reads it"],
-                stubbed: ["On-device caption, default guardrails only (FR-CAP-08)", "The note pinned over the image on the canvas (FR-CAN-04)",
-                          "Downscaling very large images"],
+                        "Saro sees: an on-device caption and tags, guided on default guardrails only, gated by layers 3 and 2 (FR-CAP-08, SR-11)",
+                        "The Vision twin without Apple Intelligence: labels and words in the photo, else its colours",
+                        "Edit the caption in place: it becomes yours, is gated, and outranks Saro's; Describe again ⌘R",
+                        "A cleared still feeds the day's digest; only your own words are ever quoted"],
+                stubbed: ["The note pinned over the image on the canvas (FR-CAN-04)", "Downscaling very large images"],
                 issues: [],
                 brd: ["FR-CAP-07", "FR-CAP-08", "FR-CAN-07", "SR-11"])
         case .stack:

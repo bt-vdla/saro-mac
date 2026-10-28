@@ -10,10 +10,6 @@ enum Snapshots {
     private static var panel: NSPanel?
     /// Holds the day's first card a little off its place, so the drag grid can be seen.
     static let hold = Notification.Name("SaroSnapshotHold")
-    /// Holds a trash flight this far along, so both its ends can be seen.
-    static var trashFreeze: Double?
-    /// Opens ⌘K with its actions menu up on the first row.
-    static var paletteActions = false
 
     static func runIfRequested(_ model: AppModel) {
         guard let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
@@ -33,24 +29,6 @@ enum Snapshots {
                 ("still", { model.openEntryID = model.entries.first(where: { $0.kind == .still })?.id }),
                 ("letter", { model.openEntryID = nil; model.showLetter = true }),
                 ("voice", { model.insight = .spine; model.openVoiceID = model.entries.first(where: { $0.kind == .voice })?.id }),
-                // A writing and the still part way into the Undo toast, then part way back out of it (as a click on Undo
-                // flies them), then home.
-                ("trash", {
-                    model.openVoiceID = nil
-                    trashFreeze = 0.3
-                    let ids = [EntryKind.reflection, .still].compactMap { k in model.entries.first { $0.kind == k }?.id }
-                    Task { await model.trash(Set(ids), flies: true) }
-                }),
-                ("untrash", {
-                    guard let t = model.toast else { return }
-                    model.trashFlight = TrashFlight(cards: t.trashed, back: (t, CGRect(x: 24, y: 860 - 92 - 56, width: 360, height: 56)))
-                    t.undo?()
-                    model.toast = nil
-                }),
-                ("untrashed", {
-                    trashFreeze = nil
-                    model.trashFlight = nil
-                }),
                 ("replay", {
                     model.startReplay(animated: false)
                     let items = model.replay.items
@@ -74,18 +52,28 @@ enum Snapshots {
                         model.open(DeepLink.entry("gone").url)
                     }
                 }),
-                ("actions", {
-                    paletteActions = true
-                    model.searchOpen = true
+                // Stills (demo journal only): the user's caption over Saro's description, then that still held.
+                ("still-yours", {
+                    guard model.isDemo else { return }
+                    model.goToday()
+                    Task {
+                        try? await Task.sleep(for: .seconds(0.8))
+                        guard let s = model.entries.first(where: { $0.kind == .still }) else { return }
+                        try? await model.ledger.updateEntryText(id: s.id, body: nil, titleUser: nil,
+                                                               captionUser: "Dusk over the park, the colours I walked home through.")
+                        await model.reload()
+                        model.openEntryID = s.id
+                        model.process(s.id)
+                    }
                 }),
-                // A day not yet loaded as it loads, then as it couldn't be read, on its own ground: the canvas's own load
-                // is too quick to catch.
-                ("loading", {
-                    model.day = LocalDay.adding(-2, to: LocalDay.today())
-                    p.contentView = NSHostingView(rootView: DayState(day: model.day, empty: true, width: 1320)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Tok.bg).environment(model))
+                ("still-held", {
+                    guard model.isDemo, let id = model.openEntryID else { return }
+                    Task {
+                        try? await model.ledger.insertVerdict(SafetyVerdictRow(entryId: id, textSha256: "snapshot", safetyVersion: SafetyGate.version,
+                                                                              layer: 2, verdict: "safety_hold", reasonCode: "snapshot"))
+                        await model.reload()
+                    }
                 }),
-                ("loaderror", { model.loadFailed = true }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
             ]
