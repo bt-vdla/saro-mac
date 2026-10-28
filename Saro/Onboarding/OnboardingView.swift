@@ -256,11 +256,14 @@ final class OnboardingFlow {
     /// Completes onboarding and hands the first reflection to the day canvas: nil is 'Later'. The camera check is off
     /// before the recorder asks for the camera.
     /// A failed write says so (the toast) and leaves them where they were, the camera still on and this pass's place kept.
+    /// The question is held from before onboarding closes, so the first tour waits for the recorder or page.
     func finish(_ mode: AppModel.FirstMode?, model: AppModel) async {
         guard !leaving else { return }
         leaving = true
+        if mode != nil { model.handoffPrompt = model.firstQuestion }
         await model.completeOnboarding()
         guard model.profile?.onboardingDoneAt != nil else {
+            model.handoffPrompt = nil
             leaving = false
             return
         }
