@@ -473,10 +473,5 @@ enum ThumbCache {
         ] as CFDictionary)
     }
 
-    static func poster(_ url: URL) async -> CGImage? {
-        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-        gen.appliesPreferredTrackTransform = true
-        gen.maximumSize = CGSize(width: 640, height: 640)
-        return try? await gen.image(at: CMTime(seconds: 0.4, preferredTimescale: 600)).image
-    }
+    static func poster(_ url: URL) async -> CGImage? { await Posters.frame(url, longSide: 640) }
 }
