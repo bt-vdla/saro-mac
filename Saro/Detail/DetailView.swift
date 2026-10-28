@@ -37,12 +37,13 @@ struct DetailView: View {
 struct Eyebrow: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
+    var noun = true
 
     var body: some View {
         let day = entry.localDay == LocalDay.today() ? "Today" : DayFormat.sidebar(entry.localDay)
         let parts = [day, entry.capturedAt.formatted(date: .omitted, time: .shortened),
                      model.media[entry.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) },
-                     entry.sessionId != nil ? entry.turnNumber.map { "Turn \($0)" } : nil, entry.kind.noun]
+                     entry.sessionId != nil ? entry.turnNumber.map { "Turn \($0)" } : nil, noun ? entry.kind.noun : nil]
         Text(parts.compactMap { $0 }.joined(separator: " · ")).monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
     }
 }
@@ -53,17 +54,40 @@ struct Eyebrow: View {
 final class PlayerModel {
     let player: AVPlayer
     var timeMs = 0
+    var playing = false
+    /// The file's own length, for a recording whose row has none.
+    var durationMs: Int?
     @ObservationIgnored private var token: Any?
 
     init(url: URL) {
         player = AVPlayer(url: url)
+        #if DOGFOOD
+        // Snapshots run unattended, often at night.
+        player.isMuted = UserDefaults.standard.string(forKey: "SaroSnapshot") != nil
+        #endif
+        // The observer also fires whenever playback starts or stops.
         token = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 5), queue: .main) { [weak self] t in
-            MainActor.assumeIsolated { self?.timeMs = Int(t.seconds * 1000) }
+            MainActor.assumeIsolated {
+                guard let m = self else { return }
+                m.timeMs = Int(t.seconds * 1000)
+                m.playing = m.player.rate != 0
+                if let d = m.player.currentItem?.duration, d.isNumeric { m.durationMs = Int(d.seconds * 1000) }
+            }
         }
     }
 
-    func seek(ms: Int) {
+    func seek(ms: Int, play: Bool = true) {
         player.seek(to: CMTime(value: Int64(ms), timescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
+        if play { player.play() }
+    }
+
+    /// A note that played to its end starts again from the top.
+    func toggle() {
+        if player.rate != 0 {
+            player.pause()
+            return
+        }
+        if let item = player.currentItem, item.currentTime() >= item.duration { player.seek(to: .zero) }
         player.play()
     }
 
@@ -192,8 +216,23 @@ private struct MediaDetail: View {
                     .padding(.horizontal, 12).frame(height: 28).background(Tok.ink.opacity(0.06), in: .capsule)
                 }
             }
+            TranscriptLines(entry: entry, sentences: sentences, player: player)
+        }
+    }
+}
+
+/// The timed transcript: tap a sentence to play from it; the playing one is lit. Or the honest state in its place.
+struct TranscriptLines: View {
+    @Environment(AppModel.self) private var model
+    let entry: Entry
+    let sentences: [TimedSentence]
+    let player: PlayerModel?
+    var size: CGFloat = 15
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
             if sentences.isEmpty {
-                Text(transcriptState).font(Typo.ui(13)).foregroundStyle(Tok.ink3)
+                Text(state).font(Typo.ui(13)).foregroundStyle(Tok.ink3)
                 if entry.processingStatus == ProcessingStatus.transcriptUnavailable {
                     Button("Try again") { model.retranscribe(entry) }.font(Typo.ui(12, .medium))
                 }
@@ -204,7 +243,7 @@ private struct MediaDetail: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(Duration.milliseconds(s.startMs).formatted(.time(pattern: .minuteSecond)))
                                 .font(Typo.mono(10)).foregroundStyle(Tok.ink4).frame(width: 34, alignment: .leading)
-                            Text(s.text).font(Typo.ui(15)).lineSpacing(6).foregroundStyle(current ? Tok.ink : Tok.ink2)
+                            Text(s.text).font(Typo.ui(size)).lineSpacing(size * 0.4).foregroundStyle(current ? Tok.ink : Tok.ink2)
                                 .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.vertical, 4).padding(.horizontal, 6)
@@ -218,7 +257,7 @@ private struct MediaDetail: View {
         }
     }
 
-    private var transcriptState: String {
+    private var state: String {
         switch entry.processingStatus {
         case ProcessingStatus.recording: "Still recording."
         case ProcessingStatus.pending, ProcessingStatus.transcribing: "Transcribing on this Mac…"
