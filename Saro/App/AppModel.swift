@@ -35,7 +35,8 @@ final class AppModel {
     var annotations: [String: EntryAnnotation] = [:]
     var verdicts: [String: SafetyVerdictRow] = [:]
     var selection: Set<String> = []
-    var openEntryID: String? { didSet { if openEntryID == nil { rollOver() } } }
+    /// Opening a detail folds the voice note open in place, which would otherwise draw and play over it.
+    var openEntryID: String? { didSet { if openEntryID == nil { rollOver() } else { openVoiceID = nil } } }
     /// The stack fanned out in place, if any.
     var openStackID: String?
     /// The voice note open in place on its card (VoiceEchoCard.tsx), if any.
@@ -63,7 +64,7 @@ final class AppModel {
     var devNotesVisible = false
     var screen: ScreenID = .canvas
     /// Non-nil while the in-window recorder is up.
-    var recorderKind: EntryKind?
+    var recorderKind: EntryKind? { didSet { if recorderKind != nil { openVoiceID = nil } } }
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false
@@ -543,6 +544,7 @@ final class AppModel {
     func stack(_ ids: Set<String>) {
         let members = entries.filter { ids.contains($0.id) }
         guard members.count > 1, let anchor = members.first.flatMap({ layouts[$0.id] }) else { return }
+        if ids.contains(openVoiceID ?? "") { openVoiceID = nil }
         let sid = UUID().uuidString
         var top = layouts.values.map(\.z).max() ?? 0
         var changed: [CardLayout] = []

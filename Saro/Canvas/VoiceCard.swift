@@ -189,10 +189,7 @@ private struct VoicePanel: View {
         HStack(spacing: 8) {
             if let s = model.status(for: entry) { Text(s).monoCaps(9.5, tracking: 0.06).foregroundStyle(Tok.ink3).lineLimit(1) }
             Spacer(minLength: 0)
-            Button {
-                model.openVoiceID = nil
-                model.openEntryID = entry.id
-            } label: {
+            Button { model.openEntryID = entry.id } label: {
                 HStack(spacing: 4) {
                     Text("What Saro heard")
                     Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold))
