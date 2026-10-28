@@ -21,11 +21,15 @@ final class MemoryModel {
     private(set) var clearedEntries = 0
     private(set) var called: String?
     var query = ""
-    /// Keys showing "Deleted · Undo"; their retraction and tombstone wait for the window to close (FR-MEM-03).
+    /// Keys showing "Deleted · Undo"; forgetting them waits for the window to close (FR-MEM-03).
     private(set) var pending: Set<String> = []
-    /// The last thing VoiceOver was told.
-    private(set) var note = ""
+    /// A line the ⌘K palette asked for: the list scrolls to it and focuses it.
+    var reveal: String?
+    /// A write that failed, for AppModel's error toast.
+    @ObservationIgnored var showError: (String) -> Void = { _ in }
     @ObservationIgnored private var timers: [String: Task<Void, Never>] = [:]
+    /// Each pending delete's ⌘Z, so Undo or the window closing takes just that one off the Edit menu.
+    @ObservationIgnored private var undoTokens: [String: UndoToken] = [:]
     /// A sighting opened from Why or the graph: the recording plays from here once its detail opens.
     @ObservationIgnored private var playFrom: (entryId: String, ms: Int)?
     @ObservationIgnored private var loads = 0
@@ -89,6 +93,7 @@ final class MemoryModel {
 
     /// Delete: the line becomes "Deleted · Undo" for six seconds; ⌘Z or Undo brings it back with nothing written.
     func delete(_ m: Memory, undoManager: UndoManager?) {
+        guard !pending.contains(m.key) else { return }
         pending.insert(m.key)
         announce("Deleted: \(Self.sentence(m.text)) Undo is there for a few seconds.")
         timers[m.key] = Task { [weak self] in
@@ -96,15 +101,35 @@ final class MemoryModel {
             guard !Task.isCancelled else { return }
             await self?.commit([m.key])
         }
-        undoManager?.registerUndo(withTarget: self) { model in MainActor.assumeIsolated { model.undo(m.key) } }
-        undoManager?.setActionName("Delete Memory")
+        guard let undoManager else { return }
+        let token = UndoToken(undoManager)
+        undoTokens[m.key] = token
+        undoManager.registerUndo(withTarget: token) { [weak self] _ in MainActor.assumeIsolated { self?.undo(m) } }
+        undoManager.setActionName("Delete Memory")
     }
 
-    func undo(_ key: String) {
-        guard pending.contains(key) else { return }
-        timers.removeValue(forKey: key)?.cancel()
-        pending.remove(key)
+    /// Undo, from the row or ⌘Z; ⇧⌘Z then deletes it again.
+    func undo(_ m: Memory) {
+        guard pending.contains(m.key) else { return }
+        timers.removeValue(forKey: m.key)?.cancel()
+        pending.remove(m.key)
+        if let token = undoTokens.removeValue(forKey: m.key), let um = token.manager {
+            if um.isUndoing {
+                um.registerUndo(withTarget: token) { [weak self] t in
+                    MainActor.assumeIsolated { if let um = t.manager { self?.delete(m, undoManager: um) } }
+                }
+                um.setActionName("Delete Memory")
+            } else {
+                um.removeAllActions(withTarget: token)
+            }
+        }
         announce("Restored.")
+    }
+
+    private func dropUndo(_ keys: some Sequence<String>) {
+        for k in keys {
+            if let t = undoTokens.removeValue(forKey: k) { t.manager?.removeAllActions(withTarget: t) }
+        }
     }
 
     /// The pane closing writes what's pending at once.
@@ -117,13 +142,14 @@ final class MemoryModel {
 
     private func commit(_ keys: [String]) async {
         for k in keys { timers[k] = nil }
+        dropUndo(keys)
         do {
             try await ledger.forget(keys: keys)
             pending.subtract(keys)
             await load(animation: Motion.easeOut(0.12))
         } catch {
             pending.subtract(keys)
-            announce("Couldn’t delete that. Try again.")
+            fail("Couldn’t delete that. Try again.")
         }
     }
 
@@ -177,7 +203,7 @@ final class MemoryModel {
             announce(done)
             return .saved
         } catch {
-            announce(failed)
+            fail(failed)
             return .failed
         }
     }
@@ -189,7 +215,7 @@ final class MemoryModel {
             await load(animation: Motion.small)
             announce("Forgot \(label).")
         } catch {
-            announce("Couldn’t forget right now. Try again.")
+            fail("Couldn’t forget right now. Try again.")
         }
     }
 
@@ -200,13 +226,14 @@ final class MemoryModel {
             try await ledger.forgetAll(extra: memories.map(\.key))
             timers.values.forEach { $0.cancel() }
             timers = [:]
+            dropUndo(Array(undoTokens.keys))
             pending = []
             query = ""
             await load()
             announce("Forgot \(n) \(n == 1 ? "memory" : "memories").")
             return n
         } catch {
-            announce("Couldn’t forget right now. Try again.")
+            fail("Couldn’t forget right now. Try again.")
             return nil
         }
     }
@@ -233,12 +260,23 @@ final class MemoryModel {
     // MARK: Helpers
 
     func announce(_ text: String) {
-        note = text
         AccessibilityNotification.Announcement(text).post()
+    }
+
+    /// Heard and seen: local writes rarely fail, so when one does it says so in a toast (no pending counter).
+    private func fail(_ text: String) {
+        announce(text)
+        showError(text)
     }
 
     /// The line as a sentence, without doubling its full stop.
     static func sentence(_ text: String) -> String {
         text.last.map { ".!?…”’\"".contains($0) } == true ? text : text + "."
     }
+}
+
+/// The target of one pending delete's ⌘Z.
+private final class UndoToken {
+    weak var manager: UndoManager?
+    init(_ manager: UndoManager) { self.manager = manager }
 }

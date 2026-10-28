@@ -126,7 +126,12 @@ struct SearchField: View {
             TextField("Search", text: $text)
                 .textFieldStyle(.plain).font(Typo.ui(14)).foregroundStyle(Tok.ink)
                 .focused(focus, equals: .search)
-                .onExitCommand { if !text.isEmpty { text = "" } }
+                // Esc clears a query; with none it passes on, so Settings can close.
+                .onKeyPress(.escape) {
+                    guard !text.isEmpty else { return .ignored }
+                    text = ""
+                    return .handled
+                }
                 .accessibilityLabel("Search memories")
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Tok.ink4) }
@@ -192,8 +197,8 @@ struct MemoryListView: View {
         }
         #endif
         .onChange(of: memory.pending) { old, new in
-            // A line whose window closed fades out; focus on it moves to search.
-            for key in old.subtracting(new) where focus.wrappedValue == .row(key) && !memory.memories.contains(where: { $0.key == key }) {
+            // A line whose window closed fades out; focus on its Undo moves to search.
+            for key in old.subtracting(new) where focus.wrappedValue == .undo(key) && !memory.memories.contains(where: { $0.key == key }) {
                 focus.wrappedValue = .search
             }
         }
@@ -232,22 +237,27 @@ struct MemoryListView: View {
             onWhy: { withAnimation(animation) { why = why == m.key ? nil : m.key } },
             onEdit: { editing = m.key },
             onSave: { text in
-                editing = nil
-                focus.wrappedValue = .row(m.key)
-                Task { held = await memory.edit(m, to: text) == .held }
+                Task {
+                    let saved = await memory.edit(m, to: text)
+                    // A failed write keeps the editor and what was typed; the toast says what happened.
+                    guard saved != .failed else { return }
+                    held = saved == .held
+                    editing = nil
+                    move(to: .pencil(m.key))
+                }
             },
             onCancel: {
                 editing = nil
-                focus.wrappedValue = .row(m.key)
+                move(to: .pencil(m.key))
             },
             onDelete: {
                 if why == m.key { why = nil }
                 memory.delete(m, undoManager: undoManager)
-                focus.wrappedValue = .row(m.key)
+                move(to: .undo(m.key))
             },
             onUndo: {
-                memory.undo(m.key)
-                focus.wrappedValue = .row(m.key)
+                memory.undo(m)
+                move(to: .pencil(m.key))
             },
             onOpen: { s in Task { await memory.open(s, in: model) } },
             onMove: { by in
@@ -257,16 +267,25 @@ struct MemoryListView: View {
             })
     }
 
+    /// Focus lands once the view it names is on screen: a row turning into "Deleted · Undo" draws its Undo first.
+    private func move(to target: KnowsFocus) {
+        Task { focus.wrappedValue = target }
+    }
+
     @ViewBuilder private var footer: some View {
         let n = memory.live.count
-        Rectangle().fill(Tok.line).frame(height: 1).padding(.top, 16)
+        Rectangle().fill(Tok.line).frame(height: 1).padding(.top, 16).padding(.horizontal, 10)
         VStack(alignment: .leading, spacing: 8) {
             if editing == "new" {
                 MemoryEditor(initial: "", label: "Something Saro should know", saveLabel: "Add",
                              onSave: { text in
-                                 editing = nil
-                                 focus.wrappedValue = .add
-                                 Task { held = await memory.add(text) == .held }
+                                 Task {
+                                     let saved = await memory.add(text)
+                                     guard saved != .failed else { return }
+                                     held = saved == .held
+                                     editing = nil
+                                     move(to: .add)
+                                 }
                              },
                              onCancel: {
                                  editing = nil
@@ -281,7 +300,7 @@ struct MemoryListView: View {
             }
             if held { HeldNote() }
         }
-        .padding(.top, 8)
+        .padding(.top, 8).padding(.horizontal, 10)
         if n > 0 {
             Group {
                 if confirming {
@@ -308,6 +327,7 @@ struct MemoryListView: View {
                             .frame(minHeight: 44)
                     }
                     .transition(.opacity.animation(Motion.easeOut(0.12)))
+                    .padding(.horizontal, 10)
                 }
             }
             .padding(.top, 4)

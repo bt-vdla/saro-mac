@@ -4,11 +4,12 @@ import SwiftUI
 
 /// Where keyboard focus sits in What Saro knows.
 enum KnowsFocus: Hashable {
-    case search, row(String), add, forget, forgetConfirm, keep, graph
+    case search, row(String), pencil(String), trash(String), undo(String), add, forget, forgetConfirm, keep, graph
 }
 
-/// One line of What Saro knows (MemorySection.tsx MemoryRow), keyboard-first: the row takes focus; Return edits (or
-/// undoes a delete), Space opens Why, Delete deletes, ↑↓ move. Pencil and trash show on hover or focus.
+/// One line of What Saro knows (MemorySection.tsx MemoryRow), keyboard-first: the row takes focus; Return edits, Space
+/// opens Why, Delete deletes, ↑↓ move, and Tab reaches its pencil and trash, which show on hover or focus. A deleted
+/// row is just its Undo.
 struct MemoryRow: View {
     let memory: Memory
     let deleted: Bool
@@ -29,6 +30,8 @@ struct MemoryRow: View {
     @State private var showAll = false
 
     private var focused: Bool { focus.wrappedValue == .row(memory.key) }
+    /// Focus anywhere on the row: the row itself, or its pencil or trash.
+    private var within: Bool { focused || [.pencil(memory.key), .trash(memory.key)].contains(focus.wrappedValue) }
     private var fill: Color { focused ? Tok.sage.opacity(0.08) : hover ? Tok.ink.opacity(0.025) : .clear }
 
     var body: some View {
@@ -38,39 +41,40 @@ struct MemoryRow: View {
             .background(fill, in: .rect(cornerRadius: Radius.field))
             .contentShape(.rect)
             .onHover { hover = $0 }
-            .focusable(!editing)
+            .focusable(!editing && !deleted)
             .focused(focus, equals: .row(memory.key))
             .focusEffectDisabled()
+            // The editor's keys are its own: none of these reach past it while it is open.
             .onKeyPress(.return) {
-                deleted ? onUndo() : onEdit()
+                guard !deleted, !editing else { return .ignored }
+                onEdit()
                 return .handled
             }
             .onKeyPress(.space) {
-                guard !deleted, memory.evidence != nil else { return .ignored }
+                guard !deleted, !editing, memory.evidence != nil else { return .ignored }
                 onWhy()
                 return .handled
             }
             .onKeyPress(keys: [.delete, .deleteForward]) { _ in
-                guard !deleted else { return .ignored }
+                guard !deleted, !editing else { return .ignored }
                 onDelete()
                 return .handled
             }
-            .onKeyPress(.upArrow) { onMove(-1); return .handled }
-            .onKeyPress(.downArrow) { onMove(1); return .handled }
+            .onKeyPress(.upArrow) { guard !editing else { return .ignored }; onMove(-1); return .handled }
+            .onKeyPress(.downArrow) { guard !editing else { return .ignored }; onMove(1); return .handled }
     }
 
     @ViewBuilder private var content: some View {
         Group {
             if deleted {
                 HStack(spacing: 4) {
-                    Text("Deleted ·").font(Typo.ui(14)).foregroundStyle(Tok.ink3)
-                    Button("Undo", action: onUndo)
-                        .buttonStyle(.plain).font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink).underline(color: Tok.borderStrong)
+                    Text("Deleted ·").font(Typo.ui(14)).foregroundStyle(Tok.ink3).accessibilityHidden(true)
+                    KeyButton(focus: focus, id: .undo(memory.key), action: onUndo) { hover in
+                        Text("Undo").font(Typo.ui(14, .medium)).foregroundStyle(hover ? Tok.sageDark : Tok.ink)
+                            .underline(color: Tok.borderStrong)
+                    }
+                    .accessibilityLabel("Undo delete: \(memory.text)")
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Deleted")
-                .accessibilityAction(named: "Undo", onUndo)
-                .accessibilityAction(.default, onUndo)
             } else if editing {
                 MemoryEditor(initial: memory.text, label: "Edit this memory", saveLabel: "Save", onSave: onSave, onCancel: onCancel)
             } else {
@@ -105,11 +109,13 @@ struct MemoryRow: View {
             .accessibilityAction(named: whyOpen ? "Hide why" : "Why") { if memory.evidence != nil { onWhy() } }
             Spacer(minLength: 0)
             HStack(spacing: 4) {
-                IconButton(symbol: "pencil", label: "Edit: \(memory.text)", action: onEdit)
-                IconButton(symbol: "trash", label: "Delete: \(memory.text)", hoverTint: Tok.danger, action: onDelete)
+                KeyButton(focus: focus, id: .pencil(memory.key), action: onEdit) { IconLabel(symbol: "pencil", hover: $0) }
+                    .help("Edit").accessibilityLabel("Edit: \(memory.text)")
+                KeyButton(focus: focus, id: .trash(memory.key), action: onDelete) { IconLabel(symbol: "trash", hover: $0, hoverTint: Tok.danger) }
+                    .help("Delete").accessibilityLabel("Delete: \(memory.text)")
             }
-            .opacity(hover || focused ? 1 : 0)
-            .animation(Motion.easeOut(0.16), value: hover || focused)
+            .opacity(hover || within ? 1 : 0)
+            .animation(Motion.easeOut(0.16), value: hover || within)
         }
     }
 
@@ -152,7 +158,22 @@ struct Quote: View {
     }
 }
 
-/// A 32 pt icon button (ink-3, ink/5 and ink on hover; danger red for delete).
+/// A 32 pt icon (ink-3, ink/5 and ink on hover; danger red for delete).
+struct IconLabel: View {
+    let symbol: String
+    let hover: Bool
+    var hoverTint: Color = Tok.ink
+
+    var body: some View {
+        Image(systemName: symbol).font(.system(size: 13, weight: .regular))
+            .foregroundStyle(hover ? hoverTint : Tok.ink3)
+            .frame(width: 32, height: 32)
+            .background(Tok.ink.opacity(hover ? 0.05 : 0), in: .rect(cornerRadius: Radius.control))
+            .contentShape(.rect)
+    }
+}
+
+/// A plain icon button, for panels that aren't keyboard-first lists.
 struct IconButton: View {
     let symbol: String
     let label: String
@@ -161,17 +182,11 @@ struct IconButton: View {
     @State private var hover = false
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .regular))
-                .foregroundStyle(hover ? hoverTint : Tok.ink3)
-                .frame(width: 32, height: 32)
-                .background(Tok.ink.opacity(hover ? 0.05 : 0), in: .rect(cornerRadius: Radius.control))
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
-        .help(label)
-        .accessibilityLabel(label)
+        Button(action: action) { IconLabel(symbol: symbol, hover: hover, hoverTint: hoverTint) }
+            .buttonStyle(.plain)
+            .onHover { hover = $0 }
+            .help(label)
+            .accessibilityLabel(label)
     }
 }
 

@@ -118,6 +118,7 @@ final class AppModel {
         self.ledger = ledger
         pipeline = Pipeline(ledger: ledger, ai: ai)
         memory = MemoryModel(ledger: ledger, pipeline: pipeline)
+        memory.showError = { [weak self] in self?.show(Toast($0, style: .error)) }
         let center = NotificationCenter.default
         // The menu bar and ⌘K post this, sometimes before the window they open has a RootView to receive it.
         center.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
@@ -483,6 +484,8 @@ final class AppModel {
                 if queue.isEmpty, unreadDays.isEmpty, jobs.isEmpty { await reload() }
             } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty
             working = false
+            // A hold on a day hides its lines at once (SR-16), wherever What Saro knows is showing.
+            await memory.load()
         }
     }
 
