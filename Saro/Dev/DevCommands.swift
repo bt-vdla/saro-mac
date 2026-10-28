@@ -121,7 +121,7 @@ struct DevCommands: Commands {
         }
         CommandGroup(after: .sidebar) {
             Toggle("Dev Notes", isOn: $model.devNotesVisible)
-                .keyboardShortcut("d", modifiers: [.option, .command])
+                .keyboardShortcut("d", modifiers: [.shift, .command])
         }
         CommandGroup(after: .help) {
             Button("Take the Tour") { DevMode.shared.startTour(model) }
@@ -148,7 +148,7 @@ private struct DevModeLayer: ViewModifier {
             .overlay(alignment: .bottomTrailing) {
                 if !model.devNotesVisible {
                     Button { model.devNotesVisible = true } label: {
-                        Text("DEV NOTES ⌥⌘D")
+                        Text("DEV NOTES ⇧⌘D")
                             .font(Typo.mono(9.5))
                             .tracking(0.6)
                             .foregroundStyle(Tok.ink2)

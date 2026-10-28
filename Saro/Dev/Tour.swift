@@ -27,7 +27,7 @@ enum Tour {
         Step(targets: [.noticedButton, .inspector], title: "What Saro noticed",
              body: "Saro's reading of the day, made on this Mac once each entry passes the safety gate. In the evening it becomes a typeset letter."),
         Step(targets: [.devNotes], title: "Dev notes",
-             body: "⌥⌘D opens notes for whatever screen you're on: what's built, what's stubbed and its open decisions. Leave a note for Claude there; File → Export Decisions for Claude (⇧⌘E) hands everything back.",
+             body: "⇧⌘D opens notes for whatever screen you're on: what's built, what's stubbed and its open decisions. Leave a note for Claude there; File → Export Decisions for Claude (⇧⌘E) hands everything back.",
              floats: true),
         Step(targets: [.helpMenu], title: "Help",
              body: "Help → Take the Tour runs this again. Help → If you're struggling is one click from every screen.",

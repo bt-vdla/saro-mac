@@ -137,7 +137,7 @@ struct SearchPalette: View {
         #if DOGFOOD
         all += [
             PaletteCommand(id: "tour", title: "Take the tour", symbol: "map", keywords: "help guide onboarding") { DevMode.shared.startTour($0) },
-            PaletteCommand(id: "devnotes", title: "Dev notes", symbol: "doc.text.magnifyingglass", keywords: "dev debug notes", shortcut: "⌥⌘D") {
+            PaletteCommand(id: "devnotes", title: "Dev notes", symbol: "doc.text.magnifyingglass", keywords: "dev debug notes", shortcut: "⇧⌘D") {
                 $0.devNotesVisible.toggle()
             },
         ]

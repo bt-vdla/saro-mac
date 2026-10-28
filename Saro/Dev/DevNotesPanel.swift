@@ -2,7 +2,7 @@
 import SaroKit
 import SwiftUI
 
-/// ⌥⌘D: the current screen's dev notes on the trailing edge, with its open decisions and a note box for Claude.
+/// ⇧⌘D: the current screen's dev notes on the trailing edge, with its open decisions and a note box for Claude.
 struct DevNotesPanel: View {
     @Environment(AppModel.self) private var model
     @State private var picked: ScreenID?
@@ -24,7 +24,7 @@ struct DevNotesPanel: View {
                 .fixedSize()
                 Button { model.devNotesVisible = false } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless)
-                    .help("Hide dev notes (⌥⌘D)")
+                    .help("Hide dev notes (⇧⌘D)")
             }
             .padding(14)
             Divider().overlay(Tok.border)
