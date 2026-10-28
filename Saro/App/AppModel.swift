@@ -86,6 +86,8 @@ final class AppModel {
     private var working = false
     private var current: String?
     private var navigation = 0
+    /// Bumped by every drag, stack and grid, so a load that read the layouts before one doesn't put the cards back.
+    private var layoutEdits = 0
     /// The calendar day as of the last midnight, wake or activation.
     private var today = LocalDay.today()
     private static var swept = false
@@ -250,11 +252,14 @@ final class AppModel {
 
     func reload() async {
         let target = day
+        let edits = layoutEdits
         do {
             days = try await ledger.days()
-            let data = try await load(target)
+            var data = try await load(target)
             // The day changed while this load was in flight: its data belongs to the old day.
             guard target == day else { return }
+            // A card moved while it read the layouts, and the move may not be saved yet: what's on screen is newer.
+            if edits != layoutEdits { data.layouts.merge(layouts) { _, onScreen in onScreen } }
             apply(data)
             try await placeNewCards()
             week = await loadWeek()
@@ -605,6 +610,7 @@ final class AppModel {
 
     private func persist(_ layouts: [CardLayout]) {
         guard !layouts.isEmpty else { return }
+        layoutEdits += 1
         Task {
             do { try await ledger.setLayouts(layouts) } catch { show(Toast("Couldn't save the layout: \(error.localizedDescription)", style: .error)) }
         }
