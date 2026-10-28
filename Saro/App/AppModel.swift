@@ -476,8 +476,11 @@ final class AppModel {
         for m in (try? await ledger.allMedia()) ?? [] where m.state == "recording" {
             let url = ledger.url(for: m)
             if FileManager.default.fileExists(atPath: url.path) {
-                let seconds = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
-                try? await ledger.updateMedia(id: m.id, state: "ready", durationMs: Int(seconds * 1000), bytes: nil)
+                // Numeric only, as turnFinished checks: an indefinite or invalid duration's NaN seconds would trap Int(_:)
+                // here on every launch, since the row stays `recording` until this sweep updates it.
+                let duration = try? await AVURLAsset(url: url).load(.duration)
+                let ms = duration.flatMap { $0.isNumeric ? Int($0.seconds * 1000) : nil } ?? 0
+                try? await ledger.updateMedia(id: m.id, state: "ready", durationMs: ms, bytes: nil)
             } else {
                 try? await ledger.updateMedia(id: m.id, state: "missing", durationMs: nil, bytes: nil)
             }
