@@ -56,7 +56,8 @@ struct RecorderView: View {
         }
         .onAppear {
             appeared = true
-            guard from != nil else { return }
+            // Without a flight it is already there, so turning Reduce Motion off later can't fold it into the button.
+            guard from != nil else { grown = 1; landed = true; return }
             withAnimation(flightSpring) { grown = 1 } completion: { if !leaving { landed = true } }
         }
         // A moment's 3-2-1 must not go on to start whatever kind replaced it.
