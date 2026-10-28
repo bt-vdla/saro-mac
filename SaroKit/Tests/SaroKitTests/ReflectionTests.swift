@@ -203,7 +203,7 @@ private func count(_ l: Ledger, _ sql: String) async throws -> Int? { try await 
     let other = Entry(kind: .reflection, body: "Walked home through the park.", localDay: today)
     try await l.insertEntry(other)
     await p.process(entryId: other.id) {}
-    try await l.updateEntryText(id: held.id, body: "Some nights are long.", titleUser: nil)
+    try await l.updateEntryText(id: held.id, body: "Some nights are long.", titleUser: nil, captionUser: nil)
     #expect(await p.dayStatus(today) == .held)
     await p.process(entryId: held.id) {}
     #expect(await p.dayStatus(today) == .ready)

@@ -133,7 +133,7 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     try await l.insertEntry(e)
     try await annotate(l, e, title: "Grief", summary: "A hard anniversary.", verdicts: ["clear"])
     #expect(try await l.search("grief").map(\.entryId) == [e.id])
-    try await l.updateEntryText(id: e.id, body: "New words, not yet checked.", titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: "New words, not yet checked.", titleUser: nil, captionUser: nil)
     #expect(try await l.search("grief").isEmpty)
     #expect(try await l.search("").first?.title == nil)
 }
