@@ -22,9 +22,18 @@ final class Daylight {
     /// the day. Nil goes back to the real clock.
     @ObservationIgnored var replayHour: Double? { didSet { if replayHour != oldValue { apply(fade: 0.45) } } }
 
-    /// The Light Lab's clock (or `-SaroHour 19.5`), standing in for the real one everywhere the ground and palette read it.
-    var pinnedHour: Double? = UserDefaults.standard.string(forKey: "SaroHour").flatMap(Double.init) {
+    /// The Light Lab's clock (or `-SaroHour 19.5` in dogfood builds), standing in for the real one everywhere the ground
+    /// and palette read it.
+    var pinnedHour: Double? = Daylight.launchHour {
         didSet { if pinnedHour != oldValue { apply(fade: 0.45) } }
+    }
+
+    private static var launchHour: Double? {
+        #if DOGFOOD
+        UserDefaults.standard.string(forKey: "SaroHour").flatMap(Double.init)
+        #else
+        nil
+        #endif
     }
 
     /// The hour the ground is lit for when nothing pins its own.

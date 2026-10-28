@@ -49,7 +49,14 @@ enum DemoJournal {
         let progress = LaunchProgress.shared
         progress.demo = 0
         defer { progress.demo = nil }
-        if !UserDefaults.standard.bool(forKey: "SaroOnboarding") { await model.completeOnboarding() }
+        // Alex's journal, named as the web's demo account is (seed.ts), so the avatar and the account menu say whose it is.
+        if !UserDefaults.standard.bool(forKey: "SaroOnboarding") {
+            await model.saveProfile {
+                $0.name = "Alex Demo"
+                $0.called = "Alex"
+                $0.onboardingDoneAt = .now
+            }
+        }
         let total = Double(today.count + 2 + history.count)
         var done = 0.0
         func tick() { done += 1; progress.demo = done / total }

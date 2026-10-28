@@ -130,9 +130,9 @@ struct DevCommands: Commands {
             @Bindable var flags = DevFlags.shared
             Toggle("Simulate Apple Intelligence Unavailable", isOn: $flags.simulateAIUnavailable)
             Toggle("Simulate Write Failures", isOn: $flags.simulateWriteFailures)
-            Toggle("Simulated Live Captions", isOn: $flags.simulatedCaptions)
             Divider()
-            Toggle("Light Lab", isOn: $flags.lightLab).keyboardShortcut("l", modifiers: .option)
+            // ⌃⌥L: ⌥L alone types ¬ (or @) in a text field.
+            Toggle("Light Lab", isOn: $flags.lightLab).keyboardShortcut("l", modifiers: [.control, .option])
             Divider()
             Button("Replay Onboarding") { Task { await model.replayOnboarding() } }.disabled(model.showsOnboarding)
             Divider()
@@ -154,8 +154,6 @@ final class DevFlags {
     /// Every tracked write fails, so the save status and the failure toasts can be seen.
     var simulateWriteFailures = false
     var simulateAIUnavailable = false { didSet { SaroAI.simulatedUnavailable.withLock { $0 = simulateAIUnavailable } } }
-    /// For capture's live captions, which show made-up words instead of listening.
-    var simulatedCaptions = false
     var lightLab = UserDefaults.standard.string(forKey: "SaroHour") != nil
 
     static var simulateWriteFailures: Bool { shared.simulateWriteFailures }
@@ -186,7 +184,7 @@ final class DevFlags {
 struct DeveloperItems: View {
     @Environment(AppModel.self) private var model
     var focus: FocusState<Int?>.Binding
-    static let rows = [10, 11, 12, 13, 14, 15]
+    static let rows = [10, 11, 13, 14, 15]
 
     var body: some View {
         let flags = DevFlags.shared
@@ -196,9 +194,7 @@ struct DeveloperItems: View {
                 closes: false) { flags.simulateWriteFailures.toggle() }
         MenuRow(check(flags.simulateAIUnavailable, "Simulate Apple Intelligence unavailable"), symbol: "bolt.slash", index: 11, focus: focus,
                 closes: false) { flags.simulateAIUnavailable.toggle() }
-        MenuRow(check(flags.simulatedCaptions, "Simulated live captions"), symbol: "captions.bubble", index: 12, focus: focus,
-                closes: false) { flags.simulatedCaptions.toggle() }
-        MenuRow("Light Lab", symbol: "sun.horizon", keys: "⌥L", index: 13, focus: focus) { flags.lightLab.toggle() }
+        MenuRow("Light Lab", symbol: "sun.horizon", keys: "⌃⌥L", index: 13, focus: focus) { flags.lightLab.toggle() }
         MenuRow("Replay onboarding", symbol: "arrow.counterclockwise", index: 14, focus: focus) { Task { await model.replayOnboarding() } }
         if model.isDemo {
             MenuRow("Reset demo journal…", symbol: "eraser", index: 15, focus: focus) { DevFlags.confirmReset(model) }

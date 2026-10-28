@@ -3,7 +3,7 @@ import SaroKit
 import SwiftUI
 
 /// Developer → Light Lab (components/dev/LightLab.tsx): a floating chip that flips the palette and pins the clock, to
-/// see the ground and palette at any hour. ⌥L shows and hides it; `-SaroHour 19.5` pins the clock at launch.
+/// see the ground and palette at any hour. ⌃⌥L shows and hides it; `-SaroHour 19.5` pins the clock at launch.
 struct LightLab: View {
     private static let moments: [(name: String, hour: Double)] = [("Dawn", 6.5), ("Noon", 13), ("Dusk", 19.5), ("Night", 23)]
 
