@@ -230,6 +230,25 @@ private func rows(_ entries: [String], now: Date = .now) -> [MemoryObservation] 
     #expect(!MemoryList.derive(old).contains { $0.key == "mood:anxious" })
 }
 
+@Test func whatYoureWorkingOnIsTheOpenCommitmentsInReflectionsTable() async throws {
+    let l = try tempLedger()
+    let (yesterday, today) = (LocalDay.adding(-1, to: LocalDay.today()), LocalDay.today())
+    let call = try #require(try await l.addCommitment("Call Maya back.", day: yesterday))
+    let done = try #require(try await l.addCommitment("Book the dentist", day: yesterday))
+    let gone = try #require(try await l.addCommitment("Clean the garage", day: yesterday))
+    let deleted = try #require(try await l.addCommitment("Water the plants", day: today))
+    try await l.setDone(done.id, true)
+    try await l.letGo([gone.id], day: today)
+    try await l.delete(deleted.id)
+    _ = try await l.carry([call.id], to: today)
+    let work = { try await memories(l).filter { $0.group == .work } }
+    #expect(try await texts(work()) == ["You’re working on “Call Maya back”."])
+    #expect(try await work().first?.count == 2)
+    // Undone, it's open again.
+    try await l.setDone(done.id, false)
+    #expect(try await texts(work()).contains("You’re working on “Book the dentist”."))
+}
+
 @Test func carriedCommitmentsAreOneAndAboutYouReadsAsSentences() {
     let c = [OpenCommitment(text: "Call Maya back about the weekend", createdAt: ago(3)),
              OpenCommitment(text: "Call Maya back about the weekend.", createdAt: ago(1))]

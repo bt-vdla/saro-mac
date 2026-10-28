@@ -240,10 +240,9 @@ extension Ledger {
                    [.text(entryId), .text(textSha256)]).first?.date("at")
     }
 
-    /// Open commitments, read from reflection's commitment table; none until that table exists.
+    /// Open commitments from reflection's v4 table, a carried one on each day it was carried to.
     public func openCommitments() throws -> [OpenCommitment] {
-        guard try !db.run("SELECT 1 FROM sqlite_master WHERE type='table' AND name='commitment'").isEmpty else { return [] }
-        return try db.run("""
+        try db.run("""
             SELECT text, created_at FROM commitment
             WHERE completed_at IS NULL AND let_go_on_day IS NULL AND deleted_at IS NULL ORDER BY created_at
             """).compactMap { r in r.str("text").map { OpenCommitment(text: $0, createdAt: r.date("created_at") ?? .distantPast) } }
