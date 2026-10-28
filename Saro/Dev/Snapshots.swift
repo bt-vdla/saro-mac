@@ -147,6 +147,7 @@ enum Snapshots {
                 ("knows-why", { NotificationCenter.default.post(name: showWhy, object: nil) }),
                 ("knows-search", { model.memory.query = "anxious" }),
                 ("knows-deleted", {
+                    model.memory.query = ""
                     if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
                 }),
                 // Navigation: the time lens at each level, the date picker, the palette's start and an empty past day.
@@ -226,17 +227,25 @@ enum Snapshots {
 }
 
 /// Synthetic writings on a scatter of earlier days (none in the last four, which other states show), so the time lens has a
-/// history to draw; they go through the gate and reading like any entry (SR-28: synthetic text only).
+/// history to draw (SR-28: synthetic text only). The on-device model can't gate this many inside the snapshot delay, so
+/// each carries a clear verdict for its own text and its day the person's own locked mood, which makes the day ready and
+/// lets the tiles show their mood fills.
 @MainActor private func seedHistory(_ model: AppModel) async {
     let lines = ["Walked by the river after work.", "Slow morning, good coffee.", "Long call with an old friend.",
                  "The team shipped the release.", "Rain all day; read on the sofa.", "Cooked dinner for everyone."]
+    let moods: [Mood] = [.calm, .grateful, .reflective, .energised, .tender, .anxious, .inspired]
     for (i, back) in [5, 6, 8, 9, 12, 15, 16, 20, 23, 27, 31, 34, 40, 47, 55, 62, 70, 88, 120, 160].enumerated() {
         let day = LocalDay.adding(-back, to: LocalDay.today())
-        let at = (LocalDay.date(day) ?? .now).addingTimeInterval(Double(i % 5) * 3600 - 2 * 3600)
-        let e = Entry(kind: .reflection, body: lines[i % lines.count], capturedAt: at, localDay: day)
-        try? await model.ledger.insertEntry(e)
-        if i % 3 == 0 { try? await model.ledger.insertEntry(Entry(kind: .reflection, body: lines[(i + 2) % lines.count], capturedAt: at.addingTimeInterval(5400), localDay: day)) }
-        model.process(e.id)
+        let at = (LocalDay.date(day) ?? .now).addingTimeInterval(Double(i % 5) * 3600 + 9 * 3600)
+        let writing = { (line: String, at: Date) in Entry(kind: .reflection, body: line, capturedAt: at, localDay: day, processingStatus: ProcessingStatus.done) }
+        var entries = [writing(lines[i % lines.count], at)]
+        if i % 3 == 0 { entries.append(writing(lines[(i + 2) % lines.count], at.addingTimeInterval(5400))) }
+        for e in entries {
+            try? await model.ledger.insertEntry(e)
+            try? await model.ledger.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(e.body ?? ""), safetyVersion: SafetyGate.version,
+                                                                  layer: 1, verdict: "clear", reasonCode: "snapshot"))
+        }
+        try? await model.ledger.setUserMood(day: day, label: moods[i % moods.count], note: nil, verdict: nil)
     }
     await model.reload()
 }
