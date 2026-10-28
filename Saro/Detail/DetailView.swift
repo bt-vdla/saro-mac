@@ -435,7 +435,7 @@ private struct WritingEditor: View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 if let prompt = model.prompt(for: entry) { PromptHeader(question: prompt).padding(.bottom, 4) }
-                TextField("Title", text: $title, prompt: Text("Untitled").foregroundStyle(Tok.ink4), axis: .vertical)
+                TextField("Title", text: $title, prompt: Text(model.untitled(model.entry(entry.id) ?? entry)).foregroundStyle(Tok.ink4), axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(Typo.ui(22, .semibold))
                     .foregroundStyle(Tok.reflectionInk)

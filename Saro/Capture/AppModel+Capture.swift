@@ -54,6 +54,15 @@ extension AppModel {
         return q
     }
 
+    /// A page's title field with nothing typed: what the card shows for it (its first line, or Saro's title once read),
+    /// else "Untitled".
+    func untitled(_ e: Entry) -> String {
+        var bare = e
+        bare.titleUser = nil
+        let t = title(for: bare)
+        return t == e.kind.noun ? "Untitled" : t
+    }
+
     /// The person's own words for an entry (DR-04), keeping the fields not edited; changed text is gated and read again.
     @discardableResult
     func saveText(_ e: Entry, body: String?, title: String?, caption: String?) async -> Bool {

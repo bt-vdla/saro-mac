@@ -213,7 +213,7 @@ struct ReflectionFace: View {
         VStack(alignment: .leading, spacing: 8) {
             Group {
                 if editing == .title {
-                    TextField("Title", text: $title, prompt: Text("Untitled").foregroundStyle(Tok.ink4), axis: .vertical)
+                    TextField("Title", text: $title, prompt: Text(model.untitled(entry)).foregroundStyle(Tok.ink4), axis: .vertical)
                         .lineLimit(1...2)
                         .focused($focus, equals: .title)
                         .onSubmit(commit)
