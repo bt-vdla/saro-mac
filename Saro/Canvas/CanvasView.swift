@@ -209,7 +209,7 @@ struct DayStage: View {
     @State private var scrim = false
     @State private var fanned = false
     @State private var userMoved = false
-    /// Cards let go and still gliding, which keep their motion blur until they land.
+    /// Cards thrown and still gliding, which keep their motion blur until they land.
     @State private var thrown: Set<String> = []
     /// The faces of cards flying to or from the Undo toast, taken while the day still has them.
     @State private var faces: [String: Image] = [:]
@@ -419,6 +419,8 @@ struct DayStage: View {
                                        resize(to: to, shift: keys.contains(.shift), option: keys.contains(.option))
                                    },
                                    onEnd: endResize), c, moving: moving)
+                // ponytail: a gliding card's handles wait for it to land; the web stops the glide where it is, which SwiftUI can't read back.
+                .allowsHitTesting(thrown.isDisjoint(with: c.ids))
             }
         }
         .position(at)
@@ -463,10 +465,10 @@ struct DayStage: View {
                     let s = snaps(g.rect.offsetBy(dx: glide.width / camera.zoom, dy: glide.height / camera.zoom), g)
                     total.width += glide.width + (s.x?.delta ?? 0) * camera.zoom
                     total.height += glide.height + (s.y?.delta ?? 0) * camera.zoom
+                    thrown.formUnion(d.ids)
                 }
                 // ponytail: the grid retracts where the card was let go; the web's follows the glide until it lands.
                 retractGrid()
-                thrown.formUnion(d.ids)
                 withAnimation(reduceMotion ? nil : speed > 1000 ? Motion.release : Motion.lift) {
                     model.move(d.ids, by: CGSize(width: total.width / camera.zoom, height: total.height / camera.zoom))
                     drag = nil
