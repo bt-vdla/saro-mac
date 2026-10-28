@@ -21,7 +21,7 @@ import Testing
     let a = out["a"]!, b = out["b"]!
     #expect(a.x < b.x)
     #expect(abs((a.y + 98) - (b.y + 66)) < 0.001)
-    #expect(abs(b.x - a.x - 276) < 0.001)
+    #expect(abs(b.x - a.x - (248 + CanvasMath.gap)) < 0.001)
 }
 
 @Test func fanIsCentred() {

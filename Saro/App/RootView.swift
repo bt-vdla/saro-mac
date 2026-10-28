@@ -31,6 +31,7 @@ struct RootView: View {
         #if DOGFOOD
         .devMode()
         #endif
+        .searchPalette(isPresented: $model.searchOpen)
     }
 }
 
