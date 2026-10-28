@@ -4,26 +4,31 @@ import SwiftUI
 /// Top-left: the Monolith and the search pill (OrbitNav.tsx).
 struct OrbitNav: View {
     @Environment(AppModel.self) private var model
+    @State private var hover = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image("Logo").resizable().scaledToFit().frame(width: 44, height: 44)
+        HStack(spacing: 12) {
+            Image("Logo").resizable().scaledToFit().frame(width: 72, height: 72)
                 .accessibilityLabel("Saro")
             Button { model.searchOpen = true } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .medium))
-                    Text("Search").font(Typo.ui(13))
+                    Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).frame(width: 18, height: 18)
+                    Text("Search").font(Typo.ui(13, .medium))
                     Text("⌘K").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Tok.surface.opacity(0.5), in: .rect(cornerRadius: 5))
                         .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Tok.line))
                 }
-                .foregroundStyle(Tok.ink2)
-                .padding(.horizontal, 16).frame(height: 40)
+                .foregroundStyle(Tok.sageDark)
+                .padding(.leading, 14).padding(.trailing, 12).frame(height: 44)
+                .background(Tok.bg.opacity(hover ? 0.4 : 0.2), in: .capsule)
                 .background(.ultraThinMaterial, in: .capsule)
                 .overlay(Capsule().strokeBorder(Tok.rim.opacity(0.6)))
+                .elevation(.lift)
+                .animation(Motion.fade, value: hover)
             }
-            .buttonStyle(PressStyle())
+            .buttonStyle(PressStyle(scale: 0.98))
+            .onHover { hover = $0 }
         }
     }
 }
@@ -142,12 +147,13 @@ enum MoodPalette {
 struct PressStyle: ButtonStyle {
     var hoverFill = false
     var radius: CGFloat = 14
+    var scale: CGFloat = 0.96
     @State private var hover = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(hoverFill && hover ? Tok.ink.opacity(0.05) : .clear, in: .rect(cornerRadius: radius))
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .scaleEffect(configuration.isPressed ? scale : 1)
             .animation(Motion.press, value: configuration.isPressed)
             .onHover { hover = $0 }
     }
