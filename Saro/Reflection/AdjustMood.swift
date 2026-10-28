@@ -137,21 +137,26 @@ struct AdjustMoodView: View {
     }
 }
 
-/// The panel's two button weights: sage for the action, a quiet pill beside it.
+/// The panel's button weights: sage for the action, a quiet pill beside it, or a ghost (Button.tsx's) that shows its
+/// fill and rim only under the pointer.
 struct Pill: ButtonStyle {
     let primary: Bool
+    var ghost = false
     @Environment(\.isEnabled) private var enabled
+    @State private var hover = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Typo.ui(13, primary ? .semibold : .medium))
             .foregroundStyle(primary ? Tok.onPrimary : Tok.ink2)
             .padding(.horizontal, primary ? 16 : 14).frame(minHeight: 36)
-            .background(primary ? Tok.sage.opacity(enabled ? 1 : 0.35) : Tok.surface.opacity(0.6), in: .capsule)
-            .overlay(Capsule().strokeBorder(primary ? .clear : Tok.rim.opacity(0.7)))
+            .background(primary ? Tok.sage.opacity(enabled ? 1 : 0.35) : ghost ? Tok.ink.opacity(hover ? 0.05 : 0) : Tok.surface.opacity(0.6),
+                        in: .capsule)
+            .overlay(Capsule().strokeBorder(primary || ghost && !hover ? .clear : Tok.rim.opacity(0.7)))
             .opacity(enabled || primary ? 1 : 0.4)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(Motion.press, value: configuration.isPressed)
             .contentShape(.capsule)
+            .onHover { hover = $0 }
     }
 }

@@ -31,7 +31,7 @@ struct CarryOverPrompt: View {
                         Button("Carry over") { answer { await $0.carry([first.id]) } }
                             .buttonStyle(Pill(primary: true)).focused($focused, equals: first.id)
                         Button("Let it go") { answer { await $0.letGo([first.id]) } }
-                            .buttonStyle(Pill(primary: false))
+                            .buttonStyle(Pill(primary: false, ghost: true))
                     }
                     if items.count >= Self.bulkFrom {
                         HStack(spacing: 4) {
