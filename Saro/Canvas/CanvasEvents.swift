@@ -40,6 +40,9 @@ struct CanvasEvents: NSViewRepresentable {
             guard enabled, e.window === window else { return false }
             let p = convert(e.locationInWindow, from: nil)
             guard bounds.contains(p) else { return false }
+            // A scroller on the canvas with more to show (an open voice note's transcript) scrolls itself.
+            if e.type == .scrollWheel, !e.modifierFlags.contains(.command), let s = window?.contentView?.hitTest(e.locationInWindow)?.enclosingScrollView,
+               (s.documentView?.frame.height ?? 0) > s.contentView.bounds.height + 1 { return false }
             switch e.type {
             case .magnify:
                 onZoom?(1 + e.magnification, p)

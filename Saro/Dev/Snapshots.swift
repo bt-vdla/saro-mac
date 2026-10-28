@@ -26,6 +26,7 @@ enum Snapshots {
                 ("detail", { model.showNoticed = false; model.openEntryID = model.entries.first(where: { $0.kind == .reflection })?.id }),
                 ("still", { model.openEntryID = model.entries.first(where: { $0.kind == .still })?.id }),
                 ("letter", { model.openEntryID = nil; model.showLetter = true }),
+                ("voice", { model.insight = .spine; model.openVoiceID = model.entries.first(where: { $0.kind == .voice })?.id }),
             ]
             for (name, apply) in steps {
                 apply()

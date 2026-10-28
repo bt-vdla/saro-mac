@@ -83,6 +83,12 @@ extension AppModel {
         guard verdicts[e.id]?.verdict == "clear", !isDayHeld else { return nil }
         return annotations[e.id]?.moodLabel
     }
+
+    /// Saro's line about the entry, wherever its mood may show; the labelled 'In your words' quote-back stays in the detail.
+    func summary(for e: Entry) -> String? {
+        guard verdicts[e.id]?.verdict == "clear", !isDayHeld, let a = annotations[e.id], a.generator != "heuristic" else { return nil }
+        return a.summary
+    }
 }
 
 /// A card on the canvas, drawn to the web build's specs (VideoMomentCard, VoiceEchoCard, ImageStillCard,
@@ -91,12 +97,14 @@ struct CardFace: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     var selected = false
+    /// A voice note open in place: the card takes the player's own size.
+    var open = false
     @State private var hover = false
     @State private var discHover = false
 
     var body: some View {
         content
-            .frame(width: size.width, height: size.height)
+            .frame(width: open ? nil : size.width, height: open ? nil : size.height)
             .overlay {
                 if selected && entry.kind != .voice {
                     RoundedRectangle(cornerRadius: radius + 4).strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4)
@@ -104,7 +112,7 @@ struct CardFace: View {
             }
             .onHover { hover = $0 }
             .animation(Motion.small, value: hover)
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: open ? .contain : .combine)
             .accessibilityLabel("\(entry.kind.noun), \(model.title(for: entry)), \(entry.capturedAt.formatted(date: .omitted, time: .shortened))")
             .accessibilityAddTraits(.isButton)
     }
@@ -116,7 +124,7 @@ struct CardFace: View {
     @ViewBuilder private var content: some View {
         switch entry.kind {
         case .moment: moment
-        case .voice: voice
+        case .voice: VoiceFace(entry: entry, selected: selected, open: open)
         case .still: still
         case .reflection, .music: reflection
         }
@@ -175,32 +183,6 @@ struct CardFace: View {
         .padding(.horizontal, 20).padding(.vertical, 16)
         .frame(width: size.width, height: size.height)
         .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3)
-    }
-
-    /// The orb and a one-line "title · time · duration" pill that hugs its words; the selection ring hugs both.
-    private var voice: some View {
-        HStack(spacing: 12) {
-            EchoOrb(size: 80)
-            HStack(spacing: 6) {
-                Text(model.title(for: entry)).font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink).lineLimit(1)
-                Text("·")
-                Text(entry.capturedAt.formatted(date: .omitted, time: .shortened)).fixedSize()
-                if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
-                    Text("·")
-                    Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond))).fixedSize()
-                }
-                if let s = model.status(for: entry) {
-                    Text(s).monoCaps(9.5, tracking: 0.06).foregroundStyle(Tok.ink3).lineLimit(1).fixedSize()
-                }
-            }
-            .font(Typo.ui(12)).foregroundStyle(Tok.ink2)
-            .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(Tok.paper.opacity(0.8), in: .capsule)
-            .overlay(Capsule().strokeBorder(Tok.rim.opacity(0.6)))
-            .elevation(.lift)
-        }
-        .overlay { if selected { Capsule().strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4) } }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -282,9 +264,11 @@ struct StackFace: View {
     }
 }
 
-/// The voice note's orb (EchoOrb.tsx): a lit lavender sphere in a glass ring, with a small dark play chip.
+/// The voice note's orb (EchoOrb.tsx): a lit lavender sphere in a glass ring, with a small dark play (or pause) chip.
 struct EchoOrb: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let size: CGFloat
+    var playing = false
 
     var body: some View {
         ZStack {
@@ -294,16 +278,36 @@ struct EchoOrb: View {
                                              .init(color: Color(0x8E87CF, 0x8E87CF), location: 1)],
                                      center: UnitPoint(x: 0.4, y: 0.35), startRadius: 0, endRadius: size * 0.45))
                 .padding(size * 0.09)
+            if playing && !reduceMotion { talking.padding(size * 0.09).transition(.opacity) }
             Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1)
             Circle().stroke(Color(0xB4AEEA, 0xB4AEEA).opacity(0.38), lineWidth: 1.5).padding(-2)
             Circle().fill(Color(0x1A102A, 0x1A102A).opacity(0.2)).frame(width: 28, height: 28)
                 .overlay(Circle().strokeBorder(.white.opacity(0.1)))
                 .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
-                .overlay(Image(systemName: "play.fill").font(.system(size: 14)).foregroundStyle(Tok.paper)
-                    .shadow(color: .black.opacity(0.9), radius: 4).offset(x: 1))
+                .overlay(Image(systemName: playing ? "pause.fill" : "play.fill").font(.system(size: 14)).foregroundStyle(Tok.paper)
+                    .shadow(color: .black.opacity(0.9), radius: 4).offset(x: playing ? 0 : 1))
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
+        .animation(Motion.easeOut(0.5), value: playing)
+    }
+
+    /// ponytail: the web's WebGL orb, approximated: its colours flow round the sphere and a white ring swells at the
+    /// shader's "talking" levels. Port orb.tsx to Metal if this reads flat.
+    private var talking: some View {
+        TimelineView(.animation) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let level = 0.65 + sin(t * 4.8) * 0.22
+            ZStack {
+                Circle().fill(AngularGradient(colors: [Color(0xB4ADEA, 0xB4ADEA), Color(0x8E87CF, 0x8E87CF), Color(0xFAFAF6, 0xFAFAF6),
+                                                       Color(0xB4ADEA, 0xB4ADEA)], center: .center, angle: .radians(t * 0.8)))
+                    .blur(radius: size * 0.08)
+                    .opacity(0.6)
+                Circle().strokeBorder(.white.opacity(0.12 + 0.33 * level), lineWidth: 1.5).scaleEffect(0.7 + 0.25 * level)
+            }
+            .clipShape(.circle)
+        }
+        .allowsHitTesting(false)
     }
 }
 

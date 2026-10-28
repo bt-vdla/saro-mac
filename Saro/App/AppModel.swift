@@ -38,6 +38,8 @@ final class AppModel {
     var openEntryID: String? { didSet { if openEntryID == nil { rollOver() } } }
     /// The stack fanned out in place, if any.
     var openStackID: String?
+    /// The voice note open in place on its card (VoiceEchoCard.tsx), if any.
+    var openVoiceID: String?
     var toast: Toast?
     enum Insight { case spine, panel, letter }
     var insight: Insight = .spine
@@ -278,6 +280,7 @@ final class AppModel {
                 pane = .day
                 openEntryID = nil
                 openStackID = nil
+                openVoiceID = nil
                 selection = []
                 if let data { apply(data) }
             }
@@ -604,6 +607,7 @@ final class AppModel {
             let batch = try await ledger.trash(Array(ids))
             selection = []
             if ids.contains(openEntryID ?? "") { openEntryID = nil }
+            if ids.contains(openVoiceID ?? "") { openVoiceID = nil }
             await reload()
             rereadDay()
             let restore: @MainActor () -> Void = { [weak self] in Task { await self?.restore(batch: batch) } }

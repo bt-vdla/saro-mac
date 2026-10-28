@@ -13,6 +13,7 @@
 		23EBC0A75857925ECC525882 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5FFC278D920442B79B07E9 /* DetailView.swift */; };
 		309D29B93A2FBCC914D5668F /* LitGround.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81644A536600F8AFD6FFD647 /* LitGround.swift */; };
 		3DC351D29BD3C0C22C30D8FA /* MenuBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121AD3F54C416054DB3AFF15 /* MenuBar.swift */; };
+		4E9493CCC108A944490F4617 /* VoiceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */; };
 		51E775D16964D65E690C4B4E /* TourAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E73D2841136756AAF6CEE1 /* TourAnchor.swift */; };
 		5730C84EE26D6371F5F8BA8F /* NoticedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FF3342FAB403844F740ECAF /* NoticedView.swift */; };
 		598EFFDDC58E3AC706155A63 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 953A0F3CF7976BE189E9EEC0 /* RootView.swift */; };
@@ -73,6 +74,7 @@
 		A09F8D26D339B641BEFEB048 /* RecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderView.swift; sourceTree = "<group>"; };
 		A769C058197B201354AD6998 /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
 		AA646C960CFACB390B21351C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCard.swift; sourceTree = "<group>"; };
 		D00D018E3D4830CC2D505F23 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Saro/Resources/Fonts; sourceTree = SOURCE_ROOT; };
 		D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastHost.swift; sourceTree = "<group>"; };
 		E33F63CB76CBB2928A7CA251 /* Daylight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Daylight.swift; sourceTree = "<group>"; };
@@ -188,6 +190,7 @@
 				A769C058197B201354AD6998 /* CanvasView.swift */,
 				21905B32B376B19FAC8A09BF /* CardView.swift */,
 				89D651C6DDCA649B5F35280A /* Chrome.swift */,
+				ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */,
 			);
 			path = Canvas;
 			sourceTree = "<group>";
@@ -364,6 +367,7 @@
 				C9D8F22016F2C3423FD28EE7 /* ToastHost.swift in Sources */,
 				C558D4221C7F7D2FAADB0884 /* Tour.swift in Sources */,
 				51E775D16964D65E690C4B4E /* TourAnchor.swift in Sources */,
+				4E9493CCC108A944490F4617 /* VoiceCard.swift in Sources */,
 				BC1CE38651D9D16211AFFEAD /* VoicePill.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

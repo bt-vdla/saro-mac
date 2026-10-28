@@ -42,12 +42,13 @@ struct DayView: View {
         .onExitCommand {
             if model.openEntryID != nil { model.openEntryID = nil }
             else if model.openStackID != nil { model.openStackID = nil }
+            else if model.openVoiceID != nil { model.openVoiceID = nil }
             else if model.insight != .spine { model.insight = model.insight == .letter ? .panel : .spine }
             else { model.selection = [] }
         }
         .onKeyPress(.return) {
             guard model.openEntryID == nil, model.selection.count == 1, let id = model.selection.first else { return .ignored }
-            model.openEntryID = id
+            if model.entry(id)?.kind == .voice { model.openVoiceID = id } else { model.openEntryID = id }
             return .handled
         }
         .onPasteCommand(of: [.image, .png, .tiff, .heic, .jpeg]) { providers in model.loadStills(providers, at: nil, origin: "pasted") }
@@ -66,6 +67,7 @@ struct DayView: View {
             case .reflection, .music: .writingDetail
             }
         }
+        if model.openVoiceID != nil { return .voiceDetail }
         if model.insight == .letter { return .letter }
         if model.insight == .panel { return .noticed }
         return model.openStackID != nil ? .stack : .canvas
@@ -262,6 +264,7 @@ struct DayStage: View {
         .gesture(marqueeGesture)
         .onTapGesture {
             model.selection = []
+            if model.openVoiceID != nil { model.openVoice(nil, reduceMotion: reduceMotion) }
             if model.insight != .spine { model.insight = .spine }
         }
         .tourAnchor(.canvas)
@@ -274,9 +277,12 @@ struct DayStage: View {
         let off = moving ? drag!.offset : .zero
         let p = screen(c.center)
         let selected = !model.selection.isDisjoint(with: c.ids)
+        let open = !c.item.isStack && model.openVoiceID == c.item.top.id
         return Group {
-            if c.item.isStack { StackFace(entries: c.item.entries, selected: selected) } else { CardFace(entry: c.item.top, selected: selected) }
+            if c.item.isStack { StackFace(entries: c.item.entries, selected: selected) } else { CardFace(entry: c.item.top, selected: selected, open: open) }
         }
+        // An open voice note grows right and down from the card's top-left corner.
+        .frame(width: c.size.width, height: c.size.height, alignment: .topLeading)
         .scaleEffect(moving && !reduceMotion ? 1.02 : 1)
         .rotationEffect(.degrees(moving && !reduceMotion ? drag!.tilt : 0))
         .animation(Motion.lift, value: moving)
@@ -284,7 +290,7 @@ struct DayStage: View {
         .scaleEffect(camera.zoom)
         .position(x: p.x + off.width, y: p.y + off.height)
         .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) ? 0 : 1)
-        .zIndex(moving ? 10 : 0)
+        .zIndex(moving ? 10 : open ? 5 : 0)
         .gesture(dragGesture(c))
         .onTapGesture { tap(c) }
         .pointerStyle(moving ? .grabActive : .grabIdle)
@@ -297,6 +303,10 @@ struct DayStage: View {
             return
         }
         model.selection = c.ids
+        // A tap opens a voice note in place and plays it (VoiceEchoCard.tsx); a tap anywhere else folds it.
+        let voice = !c.item.isStack && c.item.top.kind == .voice ? c.item.top.id : nil
+        if model.openVoiceID != voice { model.openVoice(voice, reduceMotion: reduceMotion) }
+        if voice != nil { return }
         if let sid = c.item.stackID {
             fanned = false
             withAnimation(Motion.pick(Motion.surface, reduce: reduceMotion)) { model.openStackID = sid }

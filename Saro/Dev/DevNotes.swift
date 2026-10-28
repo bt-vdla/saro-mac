@@ -82,8 +82,9 @@ struct DevNotes {
         case .voiceDetail:
             DevNotes(
                 name: "Voice detail",
-                does: "A voice note opened from its card: the player and the timed transcript, tap a sentence to seek.",
-                built: ["Player with timed transcript", "Tap a sentence to seek", "Your own title", "What Saro heard"],
+                does: "A voice note opens in place on its card and plays: the orb glides into the player, with a progress track and the timed transcript (tap a sentence to seek). What Saro heard opens the full detail.",
+                built: ["Opens in place (VoiceEchoCard): click outside or Esc folds it", "Scrub the track; tap a sentence to seek",
+                        "Full detail: your own title, What Saro heard"],
                 stubbed: ["Copy transcript, Show in Finder, Export a copy (FR-DAY-02)", "Edit summary (FR-DAY-04)"],
                 issues: [],
                 brd: ["FR-CAP-01", "FR-CAP-06", "FR-DAY-02"])
