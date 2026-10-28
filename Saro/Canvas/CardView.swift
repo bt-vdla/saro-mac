@@ -335,9 +335,12 @@ struct ResizeHandles: View {
     let size: CGSize
     let zoom: CGFloat
     let active: CanvasMath.Handle?
-    let onDrag: (CanvasMath.Handle, CGSize) -> Void
+    /// The handle, where the press landed and where the pointer is, on the stage.
+    let onDrag: (CanvasMath.Handle, CGPoint, CGPoint) -> Void
+    /// The drag ended or was cancelled.
     let onEnd: () -> Void
     @State private var hovered: CanvasMath.Handle?
+    @GestureState private var dragging = false
 
     var body: some View {
         let k = 1 / zoom
@@ -347,6 +350,7 @@ struct ResizeHandles: View {
             if let active { readout(active, k) }
         }
         .frame(width: size.width, height: size.height)
+        .onChange(of: dragging) { _, now in if !now { onEnd() } }
         .accessibilityHidden(true)
     }
 
@@ -372,7 +376,9 @@ struct ResizeHandles: View {
             .contentShape(.rect)
             .onHover { hovered = $0 ? h : hovered == h ? nil : hovered }
             .pointerStyle(.frameResize(position: Self.position(h)))
-            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).onChanged { onDrag(h, $0.translation) }.onEnded { _ in onEnd() })
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(DayStage.space))
+                .updating($dragging) { _, d, _ in d = true }
+                .onChanged { onDrag(h, $0.startLocation, $0.location) })
             .position(x: x.at, y: y.at)
             .zIndex(corner ? 2 : 1)
     }
