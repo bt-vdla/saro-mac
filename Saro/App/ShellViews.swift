@@ -117,7 +117,9 @@ extension AppModel {
             if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
             try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
             try await ledger.exportJSON(to: dest.appending(path: "saro.json"))
-            try FileManager.default.copyItem(at: ledger.mediaURL, to: dest.appending(path: "Media"))
+            // Off the main actor: every recording is copied, which would freeze the window for as long as that takes.
+            let media = ledger.mediaURL
+            try await Task.detached { try FileManager.default.copyItem(at: media, to: dest.appending(path: "Media")) }.value
             show(Toast("Exported to \(dir.lastPathComponent)/\(name)"))
         } catch {
             show(Toast("Export failed: \(error.localizedDescription)", style: .error))
