@@ -6,7 +6,7 @@ import SwiftUI
 /// A backdrop: put it under the canvas, not inside the pan and zoom. It redraws only on the minute, a resize or an
 /// appearance change. Reduce Transparency and Increase Contrast get the flat `Tok.bg`.
 struct LitGround: View {
-    /// Pins the light to an hour (0–24) instead of the clock, for snapshots.
+    /// Pins the light to an hour (0–24) instead of the clock, for a day replay or snapshots.
     var hour: Double?
 
     @Environment(\.colorScheme) private var scheme

@@ -14,7 +14,7 @@ struct DayView: View {
         GeometryReader { geo in
             let pitch = geo.size.width + 32
             ZStack {
-                LitGround().ignoresSafeArea()
+                ReplayGround().ignoresSafeArea()
                 DayStage(day: model.day, cards: model.stageCards, size: geo.size)
                     .id(model.day)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .offset(x: pitch * model.slideDirection),
@@ -42,6 +42,7 @@ struct DayView: View {
         .onExitCommand {
             if model.openEntryID != nil { model.openEntryID = nil }
             else if model.openStackID != nil { model.openStackID = nil }
+            else if model.replay.active { model.replay.exit(animated: false) }
             else if model.openVoiceID != nil { model.openVoiceID = nil }
             else if model.insight != .spine { model.insight = model.insight == .letter ? .panel : .spine }
             else { model.selection = [] }
@@ -51,9 +52,25 @@ struct DayView: View {
             if model.entry(id)?.kind == .voice { model.openVoiceID = id } else { model.openEntryID = id }
             return .handled
         }
+        // While the day replays (DayReplay.tsx): ← → step entry to entry, Home and End go to the ends of the day, Space plays.
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end, .space]) { press in
+            let replay = model.replay
+            guard replay.active, model.openEntryID == nil, press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return .ignored }
+            switch press.key {
+            case .rightArrow, .upArrow: replay.step(1)
+            case .leftArrow, .downArrow: replay.step(-1)
+            case .home, .end: replay.jump(toEnd: press.key == .end)
+            default: if press.phase == .down { replay.toggle() }
+            }
+            return .handled
+        }
         .onPasteCommand(of: [.image, .png, .tiff, .heic, .jpeg]) { providers in model.loadStills(providers, at: nil, origin: "pasted") }
         .onChange(of: screenID, initial: true) { _, s in model.screen = s }
+        .onChange(of: model.replayItems) { _, items in model.replay.update(items) }
+        .onChange(of: model.replay.active) { _, on in if on { focused = true } }
         .onAppear { focused = true }
+        // Leaving the journal ends the replay where it is.
+        .onDisappear { model.replay.exit(animated: false) }
         .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
     }
 
@@ -92,6 +109,14 @@ struct DayView: View {
             .padding(.bottom, 20)
         }
     }
+}
+
+/// The ground at the replay's playhead while one runs, else at the clock's hour. Its own view, so the playhead's every
+/// frame redraws only the ground.
+private struct ReplayGround: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View { LitGround(hour: model.replay.active ? model.replay.hour : nil) }
 }
 
 /// One card or stack as the stage draws it: a value snapshot, so a day sliding out keeps its own cards.
@@ -211,6 +236,13 @@ struct DayStage: View {
             case .zoom(let f, _):
                 userMoved = true
                 withAnimation(Motion.pick(Motion.small, reduce: reduceMotion)) { zoom(by: f, at: CGPoint(x: size.width / 2, y: size.height / 2)) }
+            case .focus(let id, _):
+                guard let c = cards.first(where: { $0.id == id }) else { return }
+                userMoved = true
+                model.selection = c.ids
+                withAnimation(Motion.pick(Motion.surface, reduce: reduceMotion)) {
+                    camera.pan = CGSize(width: size.width / 2 - c.center.x * camera.zoom, height: size.height / 2 - c.center.y * camera.zoom)
+                }
             }
         }
     }
@@ -287,6 +319,7 @@ struct DayStage: View {
         .rotationEffect(.degrees(moving && !reduceMotion ? drag!.tilt : 0))
         .animation(Motion.lift, value: moving)
         .animation(Motion.small, value: drag?.tilt)
+        .modifier(ReplayLanding(shown: model.replay.shows(c.id), cue: model.replay.cues[c.id], reduceMotion: reduceMotion))
         .scaleEffect(camera.zoom)
         .position(x: p.x + off.width, y: p.y + off.height)
         .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) ? 0 : 1)
@@ -294,6 +327,7 @@ struct DayStage: View {
         .gesture(dragGesture(c))
         .onTapGesture { tap(c) }
         .pointerStyle(moving ? .grabActive : .grabIdle)
+        .allowsHitTesting(model.replay.shows(c.id))
     }
 
     private func tap(_ c: StageCard) {

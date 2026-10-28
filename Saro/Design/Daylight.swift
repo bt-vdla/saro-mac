@@ -18,6 +18,10 @@ final class Daylight {
         }
     }
 
+    /// A day replay's playhead (0–24): the light of that hour, and at night the dark palette while the palette follows
+    /// the day. Nil goes back to the real clock.
+    @ObservationIgnored var replayHour: Double? { didSet { if replayHour != oldValue { apply(fade: 0.45) } } }
+
     @ObservationIgnored private var ticking = false
 
     /// Sets the palette and re-checks it on every minute. Call once at launch, before the first window shows.
@@ -38,7 +42,7 @@ final class Daylight {
     /// A slow dusk when the clock flips the palette, a quick fade when the person picks one.
     private func apply(fade: Double) {
         let next: NSAppearance? = switch mode {
-        case .clock: NSAppearance(named: Sky.isNight(Sky.localHour(.now)) ? .darkAqua : .aqua)
+        case .clock: NSAppearance(named: Sky.isNight(replayHour ?? Sky.localHour(.now)) ? .darkAqua : .aqua)
         case .system: nil
         case .light: NSAppearance(named: .aqua)
         case .dark: NSAppearance(named: .darkAqua)

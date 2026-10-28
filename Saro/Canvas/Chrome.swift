@@ -33,13 +33,43 @@ struct OrbitNav: View {
     }
 }
 
-/// The bottom glass bar (BottomLeftStatus.tsx, one row): day and mood ribbon, capture, then History and Recenter.
+/// The bottom glass bar (BottomLeftStatus.tsx, one row): day and mood ribbon, capture, then History and Recenter. The day
+/// and the replay share one cell, so opening the replay never resizes the bar; its track grows out of the date.
 struct BottomBar: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dateDirection: CGFloat = 0
+    @Namespace private var cell
 
     var body: some View {
+        let replaying = model.replay.active
+        HStack(spacing: 2) {
+            day
+                .opacity(replaying ? 0 : 1)
+                .allowsHitTesting(!replaying)
+                .accessibilityHidden(replaying)
+                .overlay {
+                    ReplayBar(namespace: cell)
+                        .opacity(replaying ? 1 : 0)
+                        .allowsHitTesting(replaying)
+                        .accessibilityHidden(!replaying)
+                }
+            Divider().frame(height: 26).padding(.horizontal, 4)
+            // History turns into Close in place; it and Recenter never move.
+            history
+                .tourAnchor(.history)
+            iconButton("scope", "Recenter") { model.camera = .fit(UUID()) }
+                .keyboardShortcut("0", modifiers: .command).help("Fit the day  ⌘0")
+        }
+        .padding(6)
+        .glassPanel(radius: Radius.sheet)
+        .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: replaying)
+        .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.day)
+        .onChange(of: model.day) { old, new in dateDirection = new > old ? 1 : -1 }
+        .tourAnchor(.captureBar)
+    }
+
+    private var day: some View {
         HStack(spacing: 2) {
             iconButton("chevron.left", "Previous day") { model.slide(-1) }.help("Previous day  ⌘[")
             VStack(spacing: 4) {
@@ -49,6 +79,9 @@ struct BottomBar: View {
                 MoodRibbon()
             }
             .frame(minWidth: 132)
+            .background {
+                if !model.replay.active { Color.clear.matchedGeometryEffect(id: reduceMotion ? "date" : "replayTrack", in: cell) }
+            }
             .tourAnchor(.dayNav)
             .contentShape(.rect)
             .onTapGesture { if !model.isToday { model.slide(to: LocalDay.today()) } }
@@ -70,18 +103,20 @@ struct BottomBar: View {
                 .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
             }
             .disabled(model.recorderKind != nil)
-            Divider().frame(height: 26).padding(.horizontal, 4)
-            iconButton("clock.arrow.circlepath", "History") { model.sidebarVisible.toggle() }
-                .help("Days, Trash and Decisions")
-                .tourAnchor(.history)
-            iconButton("scope", "Recenter") { model.camera = .fit(UUID()) }
-                .keyboardShortcut("0", modifiers: .command).help("Fit the day  ⌘0")
         }
-        .padding(6)
-        .glassPanel(radius: Radius.sheet)
-        .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.day)
-        .onChange(of: model.day) { old, new in dateDirection = new > old ? 1 : -1 }
-        .tourAnchor(.captureBar)
+    }
+
+    private var history: some View {
+        let replaying = model.replay.active
+        let empty = model.replayItems.isEmpty
+        let label = replaying ? "Close replay" : model.isToday ? "Replay today"
+            : "Replay \(LocalDay.date(model.day)?.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) ?? "")"
+        return iconButton(replaying ? "xmark" : "clock.arrow.circlepath", label) {
+            if replaying { model.replay.exit(animated: true) } else { model.startReplay(animated: true) }
+        }
+        .background(Tok.ink.opacity(replaying ? 0.06 : 0), in: .circle)
+        .opacity(!replaying && empty ? 0.4 : 1)
+        .help(replaying ? "Close replay  Esc" : empty ? "Nothing to replay yet" : label)
     }
 
     /// ICON_BUTTON: a sage-dark glyph in a 44 pt circle that fills on hover.
@@ -142,8 +177,10 @@ struct MoodRibbon: View {
 
 enum MoodPalette {
     /// The web's moodColor (lib/daylight.ts), ported in SaroKit's `Sky`.
-    static func color(_ m: Mood) -> Color {
-        let hex = Sky.moodColor(m.rawValue)
+    static func color(_ m: Mood) -> Color { color(m.rawValue) }
+
+    static func color(_ label: String) -> Color {
+        let hex = Sky.moodColor(label)
         return Color(hex, hex)
     }
 }

@@ -27,7 +27,9 @@ final class AppModel {
     let ai = SaroAI()
     let pipeline: Pipeline
     var pane: Pane = .day
-    var day: String = LocalDay.today()
+    /// Another day ends a replay where it is.
+    var day: String = LocalDay.today() { didSet { if replay.day.map({ $0 != day }) ?? false { replay.exit(animated: false) } } }
+    let replay = DayReplay()
     var days: [(day: String, count: Int)] = []
     var entries: [Entry] = []
     var media: [String: MediaAsset] = [:]
@@ -59,12 +61,19 @@ final class AppModel {
     /// The canvas's lean at tomorrow's edge.
     var lean: CGFloat = 0
     var week: [(day: String, mood: Mood?)] = []
-    enum CameraCommand: Equatable { case fit(UUID), zoom(CGFloat, UUID) }
+    /// `focus` centres and selects a card (jumpToEntry.ts).
+    enum CameraCommand: Equatable { case fit(UUID), zoom(CGFloat, UUID), focus(String, UUID) }
     var camera: CameraCommand?
     var devNotesVisible = false
     var screen: ScreenID = .canvas
     /// Non-nil while the in-window recorder is up.
-    var recorderKind: EntryKind? { didSet { if recorderKind != nil { openVoiceID = nil } } }
+    var recorderKind: EntryKind? {
+        didSet {
+            guard recorderKind != nil else { return }
+            openVoiceID = nil
+            replay.exit(animated: false)
+        }
+    }
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false

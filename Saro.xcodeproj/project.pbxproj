@@ -33,6 +33,7 @@
 		B4BF028C44531D06A70B991D /* CanvasEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB9C112B5827AA481D05A87 /* CanvasEvents.swift */; };
 		BBAC725F47B28896CDA6FB40 /* DevCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6CDFA3BC6CD9749F17A451 /* DevCommands.swift */; };
 		BC1CE38651D9D16211AFFEAD /* VoicePill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C60C4B0FF55279B0830DBB /* VoicePill.swift */; };
+		BD031E290EC19E370D1D4BE0 /* DayReplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C7DED65EDFFA345D4E774C /* DayReplay.swift */; };
 		C558D4221C7F7D2FAADB0884 /* Tour.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6662A64CD75AA6E77DB3717 /* Tour.swift */; };
 		C9D8F22016F2C3423FD28EE7 /* ToastHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */; };
 		D0184C2EAF95A67F6D3CED5F /* CaptureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED31938C0123C1789E50945 /* CaptureController.swift */; };
@@ -75,6 +76,7 @@
 		A769C058197B201354AD6998 /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
 		AA646C960CFACB390B21351C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCard.swift; sourceTree = "<group>"; };
+		C4C7DED65EDFFA345D4E774C /* DayReplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayReplay.swift; sourceTree = "<group>"; };
 		D00D018E3D4830CC2D505F23 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Saro/Resources/Fonts; sourceTree = SOURCE_ROOT; };
 		D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastHost.swift; sourceTree = "<group>"; };
 		E33F63CB76CBB2928A7CA251 /* Daylight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Daylight.swift; sourceTree = "<group>"; };
@@ -190,6 +192,7 @@
 				A769C058197B201354AD6998 /* CanvasView.swift */,
 				21905B32B376B19FAC8A09BF /* CardView.swift */,
 				89D651C6DDCA649B5F35280A /* Chrome.swift */,
+				C4C7DED65EDFFA345D4E774C /* DayReplay.swift */,
 				ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */,
 			);
 			path = Canvas;
@@ -344,6 +347,7 @@
 				9237C41C4BABB8103283DA39 /* CapturePanel.swift in Sources */,
 				8E06AB4E67A051E145F81371 /* CardView.swift in Sources */,
 				D0B01ACDA0BFB069FDB4AB83 /* Chrome.swift in Sources */,
+				BD031E290EC19E370D1D4BE0 /* DayReplay.swift in Sources */,
 				848E0232474677303258CA4D /* Daylight.swift in Sources */,
 				6AAC53A45874582A0E952878 /* DecisionsView.swift in Sources */,
 				23EBC0A75857925ECC525882 /* DetailView.swift in Sources */,

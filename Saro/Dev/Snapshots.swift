@@ -27,6 +27,12 @@ enum Snapshots {
                 ("still", { model.openEntryID = model.entries.first(where: { $0.kind == .still })?.id }),
                 ("letter", { model.openEntryID = nil; model.showLetter = true }),
                 ("voice", { model.insight = .spine; model.openVoiceID = model.entries.first(where: { $0.kind == .voice })?.id }),
+                ("replay", {
+                    model.startReplay(animated: false)
+                    let items = model.replay.items
+                    model.replay.scrub(to: items.isEmpty ? 12 : items[items.count / 2].hour)
+                    model.replay.tip = .key
+                }),
             ]
             for (name, apply) in steps {
                 apply()

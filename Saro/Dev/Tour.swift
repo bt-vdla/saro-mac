@@ -13,7 +13,7 @@ enum Tour {
 
     static let steps: [Step] = [
         Step(targets: [.history], title: "History",
-             body: "History opens your days, Trash and Decisions: every day you've journaled with its entry count, deleted entries kept for undo, and the register to review."),
+             body: "History replays the day: its cards land in the order you made them while the light moves through its hours. Space plays and pauses, ← → step, Esc stops. Your days are under View → Show Days (⌃⌘S); Trash and Decisions are in ⌘K."),
         Step(targets: [.dayNav], title: "Move between days",
              body: "⌘[ and ⌘] step a day back or forward, and Today (⌘T) brings you home. Capturing while a past day is open files the entry under that day."),
         Step(targets: [.canvas], title: "The day's canvas",
