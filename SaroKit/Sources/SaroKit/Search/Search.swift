@@ -7,7 +7,7 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
     public let kind: EntryKind
     public let localDay: String
     public let capturedAt: Date
-    /// The user's title, a writing's first line, the AI title (cleared entries only) or a still's caption.
+    /// The user's title, a writing's first line, a still's caption or the AI title (cleared, on a day that isn't held).
     /// Nil means the app shows the kind's noun.
     public let title: String?
     /// One line of the entry's words, starting a few words before the first match.
@@ -19,20 +19,21 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
 extension Ledger {
     /// Live entries containing every word of `query` (case- and diacritic-insensitive), best first: a title match
     /// outranks a summary match, which outranks body, caption or transcript; ties go to the newest. An empty query
-    /// returns the newest entries. AI text is read only for entries whose newest verdict is `clear` or
-    /// `unavailable_clear`, so a held entry is never found (or shown) by generated words.
+    /// returns the newest entries. Saro's text is read only for an entry cleared for its current text on a day that isn't
+    /// held (SR-13), so a held or unchecked entry, or any entry of a held day, is never found (or shown) by generated words.
     // ponytail: a full scan per keystroke; FTS5 once journals outgrow it (BRD: alpha search is a lexical filter).
     public func search(_ query: String, kind: EntryKind? = nil, limit: Int = 50) throws -> [SearchHit] {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        let held = try heldDays()
         let rows = try db.run("""
             SELECT e.id, e.kind, e.local_day, e.captured_at, e.title_user, e.caption_user, e.body,
-              CASE WHEN v.verdict IN ('clear','unavailable_clear') THEN a.title END AS ai_title,
-              CASE WHEN v.verdict IN ('clear','unavailable_clear') THEN a.summary END AS ai_summary,
+              v.verdict, v.text_sha256, r.input_hash, a.title AS ai_title, a.summary AS ai_summary,
               (SELECT group_concat(w.text, ' ' ORDER BY w.idx) FROM transcript_word w WHERE w.media_id = e.media_id
                  AND w.extractor_version = (SELECT extractor_version FROM transcript_word WHERE media_id = e.media_id
                                             ORDER BY rowid DESC LIMIT 1)) AS transcript
             FROM live_entry e
             LEFT JOIN entry_annotation a ON a.rowid = (SELECT MAX(rowid) FROM entry_annotation WHERE entry_id = e.id)
+            LEFT JOIN ai_run r ON r.id = a.ai_run_id
             LEFT JOIN safety_verdict v ON v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id)
             WHERE ?1 IS NULL OR e.kind = ?1
             ORDER BY e.captured_at DESC
@@ -43,11 +44,14 @@ extension Ledger {
         for r in rows {
             let text = { (k: String) in r.str(k).flatMap { $0.isEmpty ? nil : $0 } }
             let kind = EntryKind(rawValue: r.str("kind") ?? "") ?? .reflection
+            let cleared = Self.cleared(r, kind, held: held)
+            let saro = { (k: String) in cleared ? text(k) : nil }
             let body = text("body")
             let firstLine = kind == .reflection && body?.contains("\n") == true
                 ? body?.split(separator: "\n").first.map { String($0.prefix(80)) } : nil
-            let title = text("title_user") ?? firstLine ?? text("ai_title") ?? (kind == .still ? text("caption_user") : nil)
-            let fields: [(text: String?, weight: Int)] = [(title, 3), (text("ai_summary"), 2), (body, 1),
+            // The person's caption outranks Saro's words about a still (DR-04).
+            let title = text("title_user") ?? firstLine ?? (kind == .still ? text("caption_user") : nil) ?? saro("ai_title")
+            let fields: [(text: String?, weight: Int)] = [(title, 3), (saro("ai_summary"), 2), (body, 1),
                                                           (text("caption_user"), 1), (text("transcript"), 1)]
             var score = 0
             for w in words {
@@ -56,17 +60,42 @@ extension Ledger {
                 score += best
             }
             guard words.isEmpty || score > 0 else { continue }
-            let sources = [body, text("transcript"), text("caption_user"), text("ai_summary")].compactMap { $0 }
+            let sources = [body, text("transcript"), text("caption_user"), saro("ai_summary")].compactMap { $0 }
             let match = words.lazy.compactMap { w in sources.first { $0.localizedStandardContains(w) }.map { ($0, w) } }.first
             let snippet = match.map { Self.snippet($0.0, around: $0.1, dropping: title) }
-                ?? Self.snippet(text("ai_summary") ?? body ?? text("transcript") ?? text("caption_user") ?? "", around: nil, dropping: title)
-            let copyText = text("transcript") ?? body ?? text("caption_user") ?? text("ai_summary") ?? title ?? ""
+                ?? Self.snippet(saro("ai_summary") ?? body ?? text("transcript") ?? text("caption_user") ?? "", around: nil, dropping: title)
+            let copyText = text("transcript") ?? body ?? text("caption_user") ?? saro("ai_summary") ?? title ?? ""
             found.append((score, SearchHit(entryId: r.str("id") ?? "", kind: kind, localDay: r.str("local_day") ?? "",
                                            capturedAt: r.date("captured_at") ?? .distantPast, title: title, snippet: snippet,
                                            copyText: copyText)))
         }
         return found.sorted { $0.score != $1.score ? $0.score > $1.score : $0.hit.capturedAt > $1.hit.capturedAt }
             .prefix(limit).map(\.hit)
+    }
+
+    /// Days a safety hold covers (SR-13): an entry's newest verdict holds, or the person's answer or mood note does.
+    func heldDays() throws -> Set<String> {
+        Set(try db.run("""
+            SELECT e.local_day AS d FROM live_entry e JOIN safety_verdict v
+              ON v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id)
+            WHERE v.verdict NOT IN ('clear','unavailable_clear','technical_hold','unavailable_caution')
+            UNION SELECT local_day FROM reflection_turn WHERE answer_verdict = 'safety_hold'
+            UNION SELECT local_day FROM day_state WHERE mood_note_verdict = 'safety_hold'
+            """).compactMap { $0.str("d") })
+    }
+
+    /// Saro's text for an entry may show (§13.2): its newest verdict clears its current text, its newest reading was
+    /// made from that text, and its day isn't held. The row carries kind, local_day, body, caption_user, verdict,
+    /// text_sha256 and input_hash.
+    static func cleared(_ r: Row, _ kind: EntryKind, held: Set<String>) -> Bool {
+        let typed: String? = switch kind {
+        case .reflection, .music: r.str("body") ?? ""
+        case .still: r.str("caption_user").flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        case .moment, .voice: nil
+        }
+        let sha = r.str("text_sha256")
+        return ["clear", "unavailable_clear"].contains(r.str("verdict") ?? "") && !held.contains(r.str("local_day") ?? "")
+            && sha != nil && r.str("input_hash") == sha && (typed.map { sha256($0) == sha } ?? true)
     }
 
     /// `text` on one line, without a leading repeat of the title, starting at most ~24 characters (at a word
