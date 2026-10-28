@@ -84,8 +84,7 @@ struct YouSection: View {
             }
             RowRule()
             SettingsRow("About Saro", caption: "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · built for this Mac, on-device only.") {
-                // ponytail: the standard About panel until shell's own About window lands.
-                Button("About Saro") { NSApp.orderFrontStandardAboutPanel(nil) }.buttonStyle(.settingsQuiet)
+                Button("About Saro") { WindowActions.openWindow("about") }.buttonStyle(.settingsQuiet)
             }
             #if DOGFOOD
             RowRule()

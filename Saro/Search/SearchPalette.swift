@@ -200,6 +200,14 @@ struct SearchPalette: View {
             PaletteCommand(id: "export", title: "Export everything", symbol: "square.and.arrow.up", keywords: "backup download save data") { m in
                 Task { await m.exportEverything() }
             },
+            PaletteCommand(id: "dayimage", title: "Export day image", symbol: "photo.on.rectangle", keywords: "picture png canvas share download") { m in
+                Task { await m.exportDayImage() }
+            },
+            PaletteCommand(id: "shortcuts", title: "Keyboard shortcuts", symbol: "keyboard", keywords: "keys help hotkeys", shortcut: "⌘/") { _ in
+                WindowActions.openWindow("shortcuts")
+            },
+            PaletteCommand(id: "lock", title: "Lock Saro", symbol: "lock", keywords: "touch id privacy hide away", shortcut: "⌃⌘L",
+                           available: { _ in PrefsStore.shared.lockEnabled }) { _ in Locker.shared.lock() },
             PaletteCommand(id: "onboarding", title: "Replay onboarding", symbol: "arrow.counterclockwise", keywords: "welcome about you first week setup start again") { m in
                 Task { await m.replayOnboarding() }
             },
@@ -267,7 +275,7 @@ struct SearchPalette: View {
                 hits = found
                 hitsKey = k
             } catch {
-                model.show(Toast("Couldn't search: \(error.localizedDescription)", style: .error))
+                model.show(.failed("Couldn't search", error))
             }
         }
     }
