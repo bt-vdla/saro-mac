@@ -458,7 +458,7 @@ enum ThumbCache {
         return c
     }()
 
-    static func cached(_ url: URL?) -> NSImage? { url.flatMap { cache[$0] } }
+    static func cached(_ url: URL?) -> NSImage? { url.flatMap { cache.object(forKey: $0 as NSURL) } }
     /// The aspect of a thumbnail already made, so an opened still can take the photo's shape at once.
     static func aspect(_ url: URL?) -> CGFloat? { url.flatMap { cache.object(forKey: $0 as NSURL) }.map { $0.size.width / $0.size.height } }
 
