@@ -78,8 +78,8 @@ final class AppModel {
     var devNotesVisible = false
     /// The time lens, while it is open (Saro/TimeLens).
     var lens: LensState?
-    /// The date picker above the bar.
-    var datePickerOpen = false
+    /// The date picker above the bar, which an open entry or set hides: opening it closes them.
+    var datePickerOpen = false { didSet { if datePickerOpen, openEntryID != nil || openStackID != nil { (openEntryID, openStackID) = (nil, nil) } } }
     /// The world rect the day's camera shows inside the chrome, published by the stage; new cards land in it.
     var visibleWorld: CGRect?
     var stageSize = CGSize(width: 1320, height: 860)
@@ -207,9 +207,10 @@ final class AppModel {
         }
     }
 
-    /// Opens the time lens on the day on screen (FR: the lens). A key or the menu opens it in place; a pinch flies.
+    /// Opens the time lens on the day (FR: the lens), from any pane. A key or the menu opens it in place; a pinch flies.
     func openLens(level: LensMath.Level = .week, opener: LensState.Opener = .key) {
-        guard lens == nil, pane == .day else { return }
+        guard lens == nil else { return }
+        pane = .day
         lens = LensState(model: self, level: level, opener: opener)
     }
 
