@@ -43,10 +43,9 @@ extension AppModel {
             guard let self else { return }
             if stack, let sid = layouts[e.id]?.stackId { openStackID = sid } else { openEntryID = e.id }
         })
-        let export = EntryMenuItem(id: "export", title: "Export a Copy…", symbol: "square.and.arrow.up",
-                                   keys: KeyboardShortcut("s", modifiers: [.command, .shift]),
+        let export = EntryMenuItem(id: "export", title: "Export a Copy…", symbol: "square.and.arrow.up", keys: KeyboardShortcut(.exportCopy),
                                    body: .run { [weak self] in Task { await self?.exportCopy(targets) } })
-        let finder = EntryMenuItem(id: "finder", title: "Show in Finder", symbol: "folder", keys: KeyboardShortcut("r", modifiers: [.command, .option]),
+        let finder = EntryMenuItem(id: "finder", title: "Show in Finder", symbol: "folder", keys: KeyboardShortcut(.showInFinder),
                                    enabled: e.kind.hasFile, body: .run { [weak self] in self?.showInFinder(targets) })
         if stack { return [open, .divider("d0"), export, finder, .divider("d1"), trash] }
         let today = LocalDay.today()
@@ -60,13 +59,13 @@ extension AppModel {
         ]
         return [
             open,
-            EntryMenuItem(id: "edit", title: "Edit Details…", symbol: "pencil", keys: KeyboardShortcut("i", modifiers: .command),
+            EntryMenuItem(id: "edit", title: "Edit Details…", symbol: "pencil", keys: KeyboardShortcut(.editDetails),
                           body: .run { [weak self] in self?.editDetails(e.id) }),
             EntryMenuItem(id: "duplicate", title: "Duplicate To", symbol: "plus.square.on.square", body: .submenu(days)),
             .divider("d0"),
             export,
             finder,
-            EntryMenuItem(id: "copy", title: "Copy Text", symbol: "doc.on.doc", keys: KeyboardShortcut("c", modifiers: [.command, .shift]),
+            EntryMenuItem(id: "copy", title: "Copy Text", symbol: "doc.on.doc", keys: KeyboardShortcut(.copyText),
                           body: .run { [weak self] in Task { await self?.copyText(e) } }),
             .divider("d1"),
             trash,
@@ -140,13 +139,13 @@ struct EntryCommands: View {
     /// Nothing selected: the items show, greyed, so their keys can be learned.
     private static let placeholder: [EntryMenuItem] = [
         EntryMenuItem(id: "open", title: "Open", enabled: false, body: .run {}),
-        EntryMenuItem(id: "edit", title: "Edit Details…", keys: KeyboardShortcut("i", modifiers: .command), enabled: false, body: .run {}),
+        EntryMenuItem(id: "edit", title: "Edit Details…", keys: KeyboardShortcut(.editDetails), enabled: false, body: .run {}),
         .divider("d0"),
-        EntryMenuItem(id: "export", title: "Export a Copy…", keys: KeyboardShortcut("s", modifiers: [.command, .shift]), enabled: false, body: .run {}),
-        EntryMenuItem(id: "finder", title: "Show in Finder", keys: KeyboardShortcut("r", modifiers: [.command, .option]), enabled: false, body: .run {}),
-        EntryMenuItem(id: "copy", title: "Copy Text", keys: KeyboardShortcut("c", modifiers: [.command, .shift]), enabled: false, body: .run {}),
+        EntryMenuItem(id: "export", title: "Export a Copy…", keys: KeyboardShortcut(.exportCopy), enabled: false, body: .run {}),
+        EntryMenuItem(id: "finder", title: "Show in Finder", keys: KeyboardShortcut(.showInFinder), enabled: false, body: .run {}),
+        EntryMenuItem(id: "copy", title: "Copy Text", keys: KeyboardShortcut(.copyText), enabled: false, body: .run {}),
         .divider("d1"),
-        EntryMenuItem(id: "trash", title: "Move to Trash", keys: KeyboardShortcut(.delete, modifiers: .command), enabled: false, body: .run {}),
+        EntryMenuItem(id: "trash", title: "Move to Trash", keys: KeyboardShortcut(.moveToTrash), enabled: false, body: .run {}),
     ]
 }
 
@@ -170,7 +169,7 @@ struct CanvasMenu: View {
         Button("Paste", systemImage: "doc.on.clipboard") { Task { await model.paste(at: at) } }
             .disabled(!NSPasteboard.general.canReadObject(forClasses: [NSImage.self, NSString.self], options: nil))
         Divider()
-        Button("Recenter", systemImage: "scope") { model.camera = .fit(UUID()) }.keyboardShortcut("0", modifiers: .command)
+        Button("Recenter", systemImage: "scope") { model.camera = .fit(UUID()) }.keyboardShortcut(KeyboardShortcut(.fitDay))
         Button("Export Day as Image…", systemImage: "photo.on.rectangle") { Task { await model.exportDayImage() } }
     }
 

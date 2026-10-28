@@ -153,7 +153,7 @@ public enum FailureCopy {
     }
 }
 
-/// Every shortcut the Keyboard Shortcuts window lists, in one table.
+/// Every shortcut, in one table: the menus, the palette and the Keyboard Shortcuts window all take their keys from here.
 public struct Shortcut: Sendable, Hashable, Identifiable {
     public enum Group: String, Sendable, CaseIterable { case capture = "Capture", days = "Days", canvas = "Canvas", search = "Search", windows = "Windows" }
     public var group: Group
@@ -167,41 +167,73 @@ public struct Shortcut: Sendable, Hashable, Identifiable {
         (self.group, self.title, self.keys, self.scope) = (group, title, keys, scope)
     }
 
+    /// One chord a menu item can carry: its modifiers and a key, which is a character or "delete", "return" or "escape".
+    public struct Chord: Sendable, Hashable {
+        public enum Modifier: Sendable, Hashable { case control, option, shift, command }
+        public var modifiers: Set<Modifier>
+        public var key: String
+    }
+
+    /// The keys as a chord; nil for what isn't one (← →, Space, ⇧F10).
+    public var chord: Chord? {
+        let glyphs: [Character: Chord.Modifier] = ["⌃": .control, "⌥": .option, "⇧": .shift, "⌘": .command]
+        var modifiers = Set<Chord.Modifier>()
+        var rest = Substring(keys)
+        while let c = rest.first, let m = glyphs[c] {
+            modifiers.insert(m)
+            rest = rest.dropFirst()
+        }
+        let key: String? = switch rest {
+        case "⌫": "delete"
+        case "↵": "return"
+        case "Esc": "escape"
+        default: rest.count == 1 ? rest.lowercased() : nil
+        }
+        return key.map { Chord(modifiers: modifiers, key: $0) }
+    }
+
+    public static let recordMoment = Shortcut(.capture, "Record a moment", "⌘N")
+    public static let voiceNote = Shortcut(.capture, "Leave a voice note", "⇧⌘N")
+    public static let write = Shortcut(.capture, "Write", "⌥⌘W")
+    public static let captureAnywhere = Shortcut(.capture, "Capture from anywhere", "⌃⌘J")
+    public static let pasteStill = Shortcut(.capture, "Paste a photo as a still", "⌘V")
+    public static let today = Shortcut(.days, "Today", "⌘T")
+    public static let previousDay = Shortcut(.days, "Previous day", "⌘[")
+    public static let nextDay = Shortcut(.days, "Next day", "⌘]")
+    public static let showDays = Shortcut(.days, "Show days", "⌃⌘S")
+    public static let noticed = Shortcut(.days, "What Saro noticed", "⌥⌘I")
+    public static let letter = Shortcut(.days, "Evening letter", "⌥⌘L")
+    public static let fitDay = Shortcut(.canvas, "Fit the day", "⌘0")
+    public static let zoomIn = Shortcut(.canvas, "Zoom in", "⌘=")
+    public static let zoomOut = Shortcut(.canvas, "Zoom out", "⌘-")
+    public static let editDetails = Shortcut(.canvas, "Edit details", "⌘I")
+    public static let exportCopy = Shortcut(.canvas, "Export a copy", "⇧⌘S")
+    public static let showInFinder = Shortcut(.canvas, "Show in Finder", "⌥⌘R")
+    public static let copyText = Shortcut(.canvas, "Copy text", "⇧⌘C")
+    public static let stack = Shortcut(.canvas, "Stack", "⌘S")
+    public static let grid = Shortcut(.canvas, "Grid", "⌘G")
+    public static let moveToTrash = Shortcut(.canvas, "Move to Trash", "⌘⌫")
+    public static let search = Shortcut(.search, "Search and commands", "⌘K")
+    public static let whatSaroKnows = Shortcut(.windows, "What Saro knows", "⌥⌘K")
+    public static let settings = Shortcut(.windows, "Settings", "⌘,")
+    public static let shortcuts = Shortcut(.windows, "Keyboard shortcuts", "⌘/")
+    public static let lock = Shortcut(.windows, "Lock Saro", "⌃⌘L")
+
     public static let all: [Shortcut] = [
-        Shortcut(.capture, "Record a moment", "⌘N"),
-        Shortcut(.capture, "Leave a voice note", "⇧⌘N"),
-        Shortcut(.capture, "Write", "⌥⌘W"),
-        Shortcut(.capture, "Capture from anywhere", "⌃⌘J"),
-        Shortcut(.capture, "Paste a photo as a still", "⌘V"),
-        Shortcut(.days, "Today", "⌘T"),
-        Shortcut(.days, "Previous day", "⌘["),
-        Shortcut(.days, "Next day", "⌘]"),
-        Shortcut(.days, "Show days", "⌃⌘S"),
-        Shortcut(.days, "What Saro noticed", "⌥⌘I"),
-        Shortcut(.days, "Evening letter", "⌥⌘L"),
+        recordMoment, voiceNote, write, captureAnywhere, pasteStill,
+        today, previousDay, nextDay, showDays, noticed, letter,
         Shortcut(.days, "Step through a replay", "← →", scope: "replay"),
         Shortcut(.days, "Play or pause a replay", "Space", scope: "replay"),
-        Shortcut(.canvas, "Fit the day", "⌘0"),
-        Shortcut(.canvas, "Zoom in", "⌘="),
-        Shortcut(.canvas, "Zoom out", "⌘-"),
+        fitDay, zoomIn, zoomOut,
         Shortcut(.canvas, "Open the selected card", "↵"),
         Shortcut(.canvas, "Card menu", "⇧F10"),
-        Shortcut(.canvas, "Edit details", "⌘I"),
-        Shortcut(.canvas, "Export a copy", "⇧⌘S"),
-        Shortcut(.canvas, "Show in Finder", "⌥⌘R"),
-        Shortcut(.canvas, "Copy text", "⇧⌘C"),
-        Shortcut(.canvas, "Stack", "⌘S"),
-        Shortcut(.canvas, "Grid", "⌘G"),
-        Shortcut(.canvas, "Move to Trash", "⌘⌫"),
+        editDetails, exportCopy, showInFinder, copyText, stack, grid, moveToTrash,
         Shortcut(.canvas, "Undo", "⌘Z"),
-        Shortcut(.search, "Search and commands", "⌘K"),
+        search,
         Shortcut(.search, "Replay the row's day", "⌘↵", scope: "search"),
         Shortcut(.search, "Actions for the row", "⌘K", scope: "search"),
         Shortcut(.search, "Scope to a kind", "⌘P", scope: "search"),
-        Shortcut(.windows, "What Saro knows", "⌥⌘K"),
-        Shortcut(.windows, "Settings", "⌘,"),
-        Shortcut(.windows, "Keyboard shortcuts", "⌘/"),
-        Shortcut(.windows, "Lock Saro", "⌃⌘L"),
+        whatSaroKnows, settings, shortcuts, lock,
         Shortcut(.windows, "Close", "Esc"),
     ]
 }

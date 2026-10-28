@@ -953,10 +953,10 @@ private struct SelectionToolbar: View {
     var body: some View {
         HStack(spacing: 2) {
             Text("\(model.selection.count) selected").monoCaps(10).foregroundStyle(Tok.ink3).padding(.horizontal, 12)
-            tool("Stack", "square.stack.3d.up", "⌘S") { withAnimation(Motion.small) { model.stack(model.selection) } }
-                .keyboardShortcut("s", modifiers: .command).disabled(model.selection.count < 2)
-            tool("Grid", "rectangle.grid.1x2", "⌘G") { withAnimation(Motion.small) { model.grid(model.selection) } }
-                .keyboardShortcut("g", modifiers: .command)
+            tool("Stack", "square.stack.3d.up", Shortcut.stack.keys) { withAnimation(Motion.small) { model.stack(model.selection) } }
+                .keyboardShortcut(KeyboardShortcut(.stack)).disabled(model.selection.count < 2)
+            tool("Grid", "rectangle.grid.1x2", Shortcut.grid.keys) { withAnimation(Motion.small) { model.grid(model.selection) } }
+                .keyboardShortcut(KeyboardShortcut(.grid))
             tool("Delete", "trash", "⌫") {
                 let flies = !Motion.byKey && !reduceMotion
                 Task { await model.trash(model.selection, undoManager: undoManager, flies: flies) }

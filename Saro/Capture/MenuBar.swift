@@ -14,12 +14,12 @@ private struct SaroMenu: View {
 
     var body: some View {
         Button("New Moment") { CapturePanelController.shared.show(tab: .video) }
-            .keyboardShortcut("j", modifiers: [.control, .command])
+            .keyboardShortcut(KeyboardShortcut(.captureAnywhere))
         Button("New Voice Note") { CapturePanelController.shared.show(tab: .voice) }
         Button("Write") { CapturePanelController.shared.show(tab: .write) }
         Divider()
         Button("Open Saro", action: openSaro)
-        Button("Settings…") { showSettings(nil) }.keyboardShortcut(",", modifiers: .command)
+        Button("Settings…") { showSettings(nil) }.keyboardShortcut(KeyboardShortcut(.settings))
         Button("Profile…") { showSettings(.you) }
         if PrefsStore.shared.lockEnabled { Button("Lock Saro") { Locker.shared.lock() }.disabled(Locker.shared.locked) }
         Divider()

@@ -305,6 +305,21 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         #expect(FailureCopy.code(CocoaError(.fileWriteNoPermission)) == "NSCocoaErrorDomain 513")
     }
 
+    @Test func theMenusKeysComeFromTheTable() {
+        #expect(Shortcut.today.chord == Shortcut.Chord(modifiers: [.command], key: "t"))
+        #expect(Shortcut.exportCopy.chord == Shortcut.Chord(modifiers: [.shift, .command], key: "s"))
+        #expect(Shortcut.lock.chord == Shortcut.Chord(modifiers: [.control, .command], key: "l"))
+        #expect(Shortcut.moveToTrash.chord == Shortcut.Chord(modifiers: [.command], key: "delete"))
+        #expect(Shortcut.previousDay.chord?.key == "[")
+        // What a menu item carries is one chord; the replay's arrows and ⇧F10 are listed but not menu keys.
+        let menuKeys: [Shortcut] = [.recordMoment, .voiceNote, .write, .captureAnywhere, .today, .previousDay, .nextDay, .showDays, .noticed,
+                                    .letter, .fitDay, .zoomIn, .zoomOut, .editDetails, .exportCopy, .showInFinder, .copyText, .stack,
+                                    .grid, .moveToTrash, .search, .whatSaroKnows, .settings, .shortcuts, .lock]
+        #expect(menuKeys.allSatisfy { $0.chord != nil && Shortcut.all.contains($0) })
+        #expect(Shortcut.all.first { $0.keys == "⇧F10" }?.chord == nil)
+        #expect(Shortcut.all.first { $0.keys == "← →" }?.chord == nil)
+    }
+
     @Test func noTwoShortcutsShareKeysInOneScope() {
         let keyed = Dictionary(grouping: Shortcut.all) { "\($0.scope ?? "app")|\($0.keys)" }
         #expect(keyed.values.allSatisfy { $0.count == 1 }, "\(keyed.filter { $0.value.count > 1 }.keys)")

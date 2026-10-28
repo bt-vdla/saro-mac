@@ -33,8 +33,23 @@ struct AboutView: View {
     }
 }
 
-/// Keyboard Shortcuts (⌘/): every shortcut, grouped Capture, Days, Canvas, Search and Windows, from Shortcut.all, so it
-/// can't drift from what Saro answers to.
+extension KeyboardShortcut {
+    /// A menu item's keys from Shortcut's one table, which the palette and Keyboard Shortcuts read too.
+    init?(_ s: Shortcut) {
+        guard let c = s.chord else { return nil }
+        let key: KeyEquivalent = switch c.key {
+        case "delete": .delete
+        case "return": .return
+        case "escape": .escape
+        default: KeyEquivalent(Character(c.key))
+        }
+        let pairs: [(Shortcut.Chord.Modifier, EventModifiers)] = [(.command, .command), (.shift, .shift), (.option, .option), (.control, .control)]
+        self.init(key, modifiers: EventModifiers(pairs.filter { c.modifiers.contains($0.0) }.map(\.1)))
+    }
+}
+
+/// Keyboard Shortcuts (⌘/): every shortcut, grouped Capture, Days, Canvas, Search and Windows, from Shortcut.all, the
+/// table the menus and the palette take their keys from, so it can't drift from what Saro answers to.
 struct ShortcutsView: View {
     var body: some View {
         ScrollView {

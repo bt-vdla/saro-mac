@@ -111,39 +111,39 @@ struct SaroCommands: Commands {
         }
         CommandGroup(after: .appSettings) {
             Button("Lock Saro") { Locker.shared.lock() }
-                .keyboardShortcut("l", modifiers: [.control, .command])
+                .keyboardShortcut(KeyboardShortcut(.lock))
                 .disabled(!PrefsStore.shared.lockEnabled || Locker.shared.locked)
         }
         CommandMenu("Entry") { EntryCommands(model: model).disabled(Locker.shared.locked) }
         CommandMenu("Go") {
             Group {
-                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
+                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut(KeyboardShortcut(.search))
                 Divider()
-                Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
+                Button("Today") { model.goToday() }.keyboardShortcut(KeyboardShortcut(.today))
                 // During onboarding ⌘[ and ⌘] are its own Previous and Next Step, so these give the keys up.
-                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("[", modifiers: .command))
-                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("]", modifiers: .command))
+                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut(.previousDay))
+                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut(.nextDay))
                 Divider()
-                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option])
+                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut(KeyboardShortcut(.whatSaroKnows))
             }
             .disabled(model.showsOnboarding || Locker.shared.locked)
         }
         CommandGroup(after: .toolbar) {
             Group {
-                Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
-                Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
-                Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
+                Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut(KeyboardShortcut(.zoomIn))
+                Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut(KeyboardShortcut(.zoomOut))
+                Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut(KeyboardShortcut(.showDays))
                 Divider()
                 Button("What Saro Noticed") {
                     model.pane = .day
                     model.insight = model.insight == .panel ? .spine : .panel
                 }
-                .keyboardShortcut("i", modifiers: [.command, .option])
+                .keyboardShortcut(KeyboardShortcut(.noticed))
                 Button("Evening Letter") {
                     model.pane = .day
                     model.insight = model.insight == .letter ? .spine : .letter
                 }
-                .keyboardShortcut("l", modifiers: [.command, .option])
+                .keyboardShortcut(KeyboardShortcut(.letter))
                 Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
                     .disabled(!model.reflection.canRefresh)
             }
@@ -155,7 +155,7 @@ struct SaroCommands: Commands {
                 openWindow(id: "main")
                 model.safetyCardRequested = true
             }
-            Button("Keyboard Shortcuts") { openWindow(id: "shortcuts") }.keyboardShortcut("/", modifiers: .command)
+            Button("Keyboard Shortcuts") { openWindow(id: "shortcuts") }.keyboardShortcut(KeyboardShortcut(.shortcuts))
             Button("Privacy") { model.open(DeepLink.settings("data").url) }
             Button("Acknowledgements") { openWindow(id: "acknowledgements") }
         }
