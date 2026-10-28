@@ -35,7 +35,15 @@ extension Ledger {
             """, [.text(from), .text(to)]) {
             guard let day = r.str("day"), let kind = EntryKind(rawValue: r.str("kind") ?? ""), let n = r.int("n") else { continue }
             out[day, default: DaySummary(day: day)].counts[kind] = n
-            out[day]?.total += n
+        }
+        // A stack of mixed kinds is one card, though each kind's dot counts it.
+        for r in try db.run("""
+            SELECT e.local_day AS day, COUNT(DISTINCT COALESCE(l.stack_id, e.session_id, e.id)) AS n
+            FROM live_entry e LEFT JOIN card_layout l ON l.entry_id = e.id
+            WHERE e.local_day BETWEEN ? AND ?
+            GROUP BY e.local_day
+            """, [.text(from), .text(to)]) {
+            if let day = r.str("day") { out[day]?.total = r.int("n") ?? 0 }
         }
         // The newest picture wins, a moment over a still.
         for r in try db.run("""

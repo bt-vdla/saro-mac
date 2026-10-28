@@ -535,6 +535,17 @@ private func key(_ i: Int) -> String { lens.days[i].key }
     #expect(try await l.poster(mediaId: clip.id) == "\(day)/\(clip.id).poster.jpg")
 }
 
+@Test func aStackOfTwoKindsIsOneCardOnItsTile() async throws {
+    let l = try tempLedger()
+    let day = "2026-10-20"
+    let page = Entry(kind: .reflection, body: "A synthetic page.", capturedAt: at("\(day)T09:00:00Z"), localDay: day)
+    let still = Entry(kind: .still, capturedAt: at("\(day)T10:00:00Z"), localDay: day)
+    for e in [page, still] { try await l.insertEntry(e) }
+    try await l.setLayouts([CardLayout(entryId: page.id, x: 0, y: 0, stackId: "k"), CardLayout(entryId: still.id, x: 0, y: 0, stackId: "k")])
+    let s = try #require(try await l.daySummaries(from: day, to: day).first)
+    #expect(s.counts == [.reflection: 1, .still: 1] && s.total == 1)
+}
+
 @Test func lensEntriesCarryMoodsOnlyWhereSaroMayShowThem() async throws {
     let l = try tempLedger()
     let (day, held) = ("2026-10-20", "2026-10-21")
