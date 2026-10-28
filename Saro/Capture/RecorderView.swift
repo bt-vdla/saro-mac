@@ -149,13 +149,13 @@ struct RecorderView: View {
             Spacer(minLength: 8)
             if inSession {
                 Button("Done", action: done)
-                    .buttonStyle(CaptureButtonStyle.glass(padding: 24))
+                    .buttonStyle(CaptureButtonStyle.glass(padding: 24, compact: compact))
                     .keyboardShortcut(.defaultAction)
                     .disabled(capture.starting || developing)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
             } else {
                 Button("Close") { countdown == nil ? close() : cancelCountdown() }
-                    .buttonStyle(CaptureButtonStyle.glass())
+                    .buttonStyle(CaptureButtonStyle.glass(compact: compact))
                     .keyboardShortcut(.cancelAction)
                     .opacity(countdown == nil ? 1 : 0)
                     .allowsHitTesting(countdown == nil)
@@ -169,7 +169,8 @@ struct RecorderView: View {
 
     private var bottomBar: some View {
         HStack(alignment: .top, spacing: compact ? 8 : 24) {
-            Group { if inSession { timer.transition(.opacity) } }
+            // A stack, not a Group: the column must keep its width before the first turn.
+            VStack { if inSession { timer.transition(.opacity) } }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, 20)
             recordButton
@@ -281,7 +282,7 @@ struct RecorderView: View {
             if capture.owner == surface { return RecorderNotice(title: "Saving your last recording…") }
             return RecorderNotice(icon: "record.circle",
                                   title: capture.owner == .panel ? "Saro is recording in the capture panel." : "The recorder is open in Saro's window.",
-                                  detail: "Finish there, then come back.")
+                                  detail: "Finish there, then come back.", alarm: false)
         }
         switch capture.state {
         case .previewing, .recording, .paused:
@@ -363,6 +364,8 @@ struct RecorderNotice: Equatable {
     var detail: String?
     var settings: URL?
     var voiceInstead = false
+    /// Permission and failure states get the danger disc; a busy hand-off doesn't.
+    var alarm = true
 }
 
 /// The web build's motion tokens (lib/motion.ts).
@@ -387,6 +390,7 @@ struct CaptureButtonStyle: ButtonStyle {
     var frosted = false
     var padding: CGFloat = 20
     var size: CGFloat = 14
+    var height: CGFloat = 44
     /// A disc of this size instead of a pill.
     var diameter: CGFloat?
 
@@ -394,9 +398,10 @@ struct CaptureButtonStyle: ButtonStyle {
     static var secondary: Self { Self(fill: Tok.surfaceAlt, hover: Tok.bg, ink: Tok.ink, line: Tok.border) }
 
     /// Frosted glass over video: black/30 on a blur, a white/20 hairline.
-    static func glass(padding: CGFloat = 20) -> Self {
+    static func glass(padding: CGFloat = 20, compact: Bool = false) -> Self {
         Self(fill: .black.opacity(0.3), hover: .white.opacity(0.2), ink: .white, line: .white.opacity(0.2),
-             shadow: .black.opacity(0.1), frosted: true, padding: padding)
+             shadow: .black.opacity(0.1), frosted: true, padding: compact ? 14 : padding, size: compact ? 13 : 14,
+             height: compact ? 32 : 44)
     }
 
     func makeBody(configuration: Configuration) -> some View { Styled(style: self, configuration: configuration) }
@@ -412,7 +417,7 @@ struct CaptureButtonStyle: ButtonStyle {
                 .font(Typo.ui(style.size, .medium))
                 .foregroundStyle(style.ink)
                 .padding(.horizontal, style.diameter == nil ? style.padding : 0)
-                .frame(width: style.diameter, height: style.diameter ?? 44)
+                .frame(width: style.diameter, height: style.diameter ?? style.height)
                 .background(hovering && enabled ? style.hover : style.fill, in: .capsule)
                 .background { if style.frosted { Capsule().fill(.ultraThinMaterial) } }
                 .overlay(Capsule().strokeBorder(style.line))
@@ -588,10 +593,10 @@ private struct StateCard: View {
                     if let icon = notice.icon {
                         Image(systemName: icon)
                             .font(.system(size: compact ? 20 : 26, weight: .medium))
-                            .foregroundStyle(Tok.danger)
+                            .foregroundStyle(notice.alarm ? Tok.danger : Tok.ink3)
                             .frame(width: compact ? 48 : 64, height: compact ? 48 : 64)
-                            .background(Tok.dangerBg, in: .circle)
-                            .overlay(Circle().strokeBorder(Tok.dangerBorder))
+                            .background(notice.alarm ? Tok.dangerBg : Tok.surfaceAlt, in: .circle)
+                            .overlay(Circle().strokeBorder(notice.alarm ? Tok.dangerBorder : Tok.border))
                     } else {
                         Spinner()
                     }
