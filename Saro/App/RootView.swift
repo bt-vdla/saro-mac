@@ -11,16 +11,19 @@ struct RootView: View {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
         } detail: {
-            switch model.pane {
-            case .day: DayView()
-            case .trash: TrashView()
-            case .decisions:
-                #if DOGFOOD
-                DecisionsView()
-                #else
-                EmptyView()
-                #endif
+            Group {
+                switch model.pane {
+                case .day: DayView()
+                case .trash: TrashView()
+                case .decisions:
+                    #if DOGFOOD
+                    DecisionsView()
+                    #else
+                    EmptyView()
+                    #endif
+                }
             }
+            .overlay { ToastHost() }
         }
         .background(Tok.bg)
         .tint(Tok.sage)

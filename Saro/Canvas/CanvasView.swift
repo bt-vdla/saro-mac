@@ -31,7 +31,6 @@ struct DayView: View {
                         // A window close or pane switch ends the session too; left set, the camera would come back on its own.
                         .onDisappear { model.recorderKind = nil }
                 }
-                ToastHost()
             }
             .animation(Motion.pick(Motion.easeOut(0.3), reduce: reduceMotion), value: model.recorderKind)
         }
