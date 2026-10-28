@@ -304,18 +304,16 @@ private struct WritingEditor: View {
 
     private func save(process: Bool) async {
         let body = text
-        let changed = body != (model.entry(entry.id)?.body ?? "")
-        if changed { try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser) }
-        if process {
-            if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try? await model.ledger.discardIfEmpty(entry.id)
-                await model.reload()
-                return
-            }
-            await model.reload()
-            // Always: the pipeline skips text it has already gated and read, and an autosave may have saved the edit.
-            model.process(entry.id)
+        if body != (model.entry(entry.id)?.body ?? "") {
+            try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser)
+            await model.edited(entry.id)
         }
+        guard process else { return }
+        if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { try? await model.ledger.discardIfEmpty(entry.id) }
+        await model.reload()
+        // Always, even when emptied (an entry that was gated is kept, and must not stay pending): the pipeline skips text
+        // it has already gated and read, and an autosave may have saved the edit.
+        model.process(entry.id)
     }
 }
 

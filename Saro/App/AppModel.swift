@@ -317,8 +317,16 @@ final class AppModel {
     /// Queues an entry for transcription → SafetyGate → reading, one job at a time (§11.7), then re-reads the
     /// days those entries belong to.
     func process(_ entryId: String) {
-        if !queue.contains(entryId) && entryId != current { queue.append(entryId) }
+        // The entry under way queues again too: its pass read the text before this request, and a rerun skips cached work.
+        if !queue.contains(entryId) { queue.append(entryId) }
         drain()
+    }
+
+    /// An autosave changed an entry's text, which is unchecked until gated. Pending lets the launch sweep gate it if Saro
+    /// quits before the editor closes; a pass already reading the old text runs again.
+    func edited(_ entryId: String) async {
+        try? await ledger.setProcessingStatus(id: entryId, ProcessingStatus.pending)
+        if entryId == current { process(entryId) }
     }
 
     /// Works the queue until it is empty, re-reading each touched day; work that arrives meanwhile is picked up.
