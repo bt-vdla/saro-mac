@@ -155,20 +155,26 @@ struct EntryCommands: View {
 /// Paste, Recenter and Export Day as Image.
 struct CanvasMenu: View {
     @Environment(AppModel.self) private var model
-    /// Where it was opened, in the day's world space.
-    var at: CGPoint?
+    /// Where it was opened, in the day's world space, read when an item is chosen.
+    let at: () -> CGPoint?
 
     var body: some View {
         Menu {
             Button("Moment", systemImage: "video") { record(.moment) }
             Button("Voice Note", systemImage: "waveform") { record(.voice) }
-            Button("Still…", systemImage: "photo") { model.pickStill(at: at) }
-            Button("Reflection", systemImage: "text.alignleft") { Task { await model.newWriting(at: at) } }
+            Button("Still…", systemImage: "photo") { model.pickStill(at: at()) }
+            Button("Reflection", systemImage: "text.alignleft") {
+                let p = at()
+                Task { await model.newWriting(at: p) }
+            }
         } label: {
             Label("New", systemImage: "plus.circle")
         }
         .disabled(model.recorderKind != nil)
-        Button("Paste", systemImage: "doc.on.clipboard") { Task { await model.paste(at: at) } }
+        Button("Paste", systemImage: "doc.on.clipboard") {
+            let p = at()
+            Task { await model.paste(at: p) }
+        }
             .disabled(!NSPasteboard.general.canReadObject(forClasses: [NSImage.self, NSString.self], options: nil))
         Divider()
         Button("Recenter", systemImage: "scope") { model.camera = .fit(UUID()) }.keyboardShortcut(KeyboardShortcut(.fitDay))
@@ -179,7 +185,7 @@ struct CanvasMenu: View {
     private func record(_ kind: EntryKind) {
         model.pane = .day
         model.recorderKind = kind
-        model.recorderLandsAt = at
+        model.recorderLandsAt = at()
     }
 }
 

@@ -217,8 +217,11 @@ struct DayStage: View {
     /// The card whose handles show because the pointer is on it, kept 150 ms after the pointer leaves.
     @State private var hoverID: String?
     @State private var unhover: Task<Void, Never>?
-    /// Where the pointer last was over the empty canvas, so something new from its menu lands there.
-    @State private var menuPoint: CGPoint?
+    /// Where the pointer last was over the empty canvas, so something new from its menu lands there. A plain box, so
+    /// following the pointer doesn't redraw the stage.
+    @State private var menuPoint = PointerBox()
+
+    private final class PointerBox { var point: CGPoint? }
 
     /// A card's box while one of its handles is dragged (world units).
     private struct Sizing {
@@ -363,8 +366,8 @@ struct DayStage: View {
             DayStateView(day: day, empty: cards.isEmpty, width: size.width)
         }
         .contentShape(.rect)
-        .onContinuousHover { if case .active(let p) = $0 { menuPoint = p } }
-        .contextMenu { CanvasMenu(at: menuPoint.map(world)) }
+        .onContinuousHover { if case .active(let p) = $0 { menuPoint.point = p } }
+        .contextMenu { CanvasMenu { menuPoint.point.map(world) } }
         .gesture(marqueeGesture)
         .onTapGesture {
             model.selection = []
