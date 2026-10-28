@@ -27,6 +27,7 @@ public actor Pipeline {
     let ledger: Ledger
     let ai: SaroAI
     let gate: SafetyGate
+    var stillsToDescribe: Set<String> = []
 
     public init(ledger: Ledger, ai: SaroAI) {
         self.ledger = ledger
@@ -44,7 +45,7 @@ public actor Pipeline {
         case .reflection, .music:
             return (entry.body ?? "", "body", nil)
         case .still:
-            return (entry.captionUser ?? "", "caption_user", nil)
+            return try await stillText(entry)
         case .moment, .voice:
             guard let id = entry.mediaId else { return nil }
             let words = try await ledger.transcript(mediaId: id)
@@ -86,6 +87,8 @@ public actor Pipeline {
                 }
             }
         }
+        // 1b. Saro's description of a still (Pipeline+Stills).
+        guard await describeStillIfDue(entry, onStatus: onStatus) else { return }
 
         guard let source = try? await text(for: entry), !source.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             await status(ProcessingStatus.done)
@@ -116,6 +119,11 @@ public actor Pipeline {
             verdict = row
         }
         guard let v = verdict?.verdict, v == "clear" || v == "unavailable_clear" else {
+            await status(ProcessingStatus.done)
+            return
+        }
+        if source.field == Self.aiCaptionField {
+            await keepStillCaptionCurrent(entryId, hash: hash)
             await status(ProcessingStatus.done)
             return
         }
@@ -238,8 +246,11 @@ public actor Pipeline {
                   (try? await ledger.hasAnnotation(entryId: e.id, inputHash: row.textSha256)) == true else { continue }
             digests.append(EntryDigest(entryId: e.id, kind: e.kind.rawValue, time: e.capturedAt.formatted(date: .omitted, time: .shortened),
                                        title: a.title ?? e.kind.rawValue, summary: a.summary ?? "", mood: a.moodLabel.flatMap(Mood.init(rawValue:))))
-            candidates += Heuristics.candidates(entryId: e.id, field: src.field, text: src.text, firstIndex: candidates.count)
-                .prefix(Self.candidatesPerEntryInDay)
+            // Only the user's own words are quoted: a still's description is its digest, never a candidate.
+            if src.field != Self.aiCaptionField {
+                candidates += Heuristics.candidates(entryId: e.id, field: src.field, text: src.text, firstIndex: candidates.count)
+                    .prefix(Self.candidatesPerEntryInDay)
+            }
             inputs.append(AIRunInput(entryId: e.id, field: src.field, text: src.text))
             sources.append(src.text)
         }
