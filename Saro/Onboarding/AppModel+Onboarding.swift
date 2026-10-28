@@ -2,10 +2,11 @@ import Foundation
 import SaroKit
 
 extension AppModel {
-    /// Onboarding shows while the profile isn't done. A demo or snapshot journal skips it unless `-SaroOnboarding YES`
+    /// Onboarding shows while the profile isn't done. A demo or snapshot run skips it unless `-SaroOnboarding YES`
     /// asks for it, even in the moment before its seed marks it done.
     var showsOnboarding: Bool {
-        profile?.onboardingDoneAt == nil && !(isDemo && !UserDefaults.standard.bool(forKey: "SaroOnboarding"))
+        let d = UserDefaults.standard
+        return profile?.onboardingDoneAt == nil && !((isDemo || d.string(forKey: "SaroSnapshot") != nil) && !d.bool(forKey: "SaroOnboarding"))
     }
 
     enum FirstMode { case moment, voice, write }

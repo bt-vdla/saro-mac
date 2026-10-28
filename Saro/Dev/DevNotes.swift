@@ -201,17 +201,20 @@ struct DevNotes {
                 built: ["extract.ts ported, plus NLTagger personal names on top of the lists", "NSTextView field: Return commits, Shift-Return new line, ⌥← at the start goes back, IME-safe",
                         "Live marks as layout-manager temporary attributes (400 ms settle near the caret, 160 ms fade)", "'Saro heard' toggles; Q5 tone chips after 1.5 s",
                         "Every answer through SafetyGate before it's saved; a held answer shows the SafetyCard instead of a personal prompt",
-                        "First prompt (firstPrompt.ts) with their words set in sans; Ask me something else", "Q1 prefilled from this Mac's user name"],
+                        "First prompt (firstPrompt.ts) with their words set in sans; Ask me something else", "Q1 prefilled from this Mac's user name",
+                        "An answer awaiting a check (caution hit, no verdict) is kept but feeds no name, focus, tone, goal or ritual; re-gated on each step and on activation",
+                        "A caution hit shows 'Talk to someone' under the first question", "Return presses Answer it once the screen has risen, never on a held key's repeat"],
                 stubbed: ["On-device model drafts of the first prompt (templates only, by design for the alpha)", "Onboarding observations for What Saro knows (memory package)"],
-                issues: [],
-                brd: ["FR-ONB-02", "FR-ONB-03", "SR-01", "SR-17"])
+                issues: ["Unchecked answers re-gate only while onboarding is open; after it they stay unused until a replay"],
+                brd: ["FR-ONB-02", "FR-ONB-03", "SR-01", "SR-14", "SR-17"])
         case .onboardingFirstWeek:
             DevNotes(
                 name: "First week",
                 does: "The week at the ritual hour: seven days on one horizon, each a reminder toggle, the ritual time, the reminder word for word, then the ask.",
                 built: ["Ritual time from the answers (ritualFromSpans), typed or ↑↓ by 15 min, Esc restores", "Week row: one tab stop, arrows, Home/End, Space toggles; today stays on",
                         "Milestones and VoiceOver change lines (weekChange)", "Seven Sunrises entrance on one clock (WeekLight timings), landing on a click or key",
-                        "Content-free NotificationPreview; Allow → test notification; denied → System Settings", "Palette follows the ritual hour while open"],
+                        "Content-free NotificationPreview; Allow → test notification; denied → System Settings", "Palette follows the ritual hour while open",
+                        "Return starts today's moment only once the week is at rest (and not while the time is typed)", "Below a 1256 pt window the ritual, preview and ask stack"],
                 stubbed: ["The WeekSky Metal shader: the light is drawn in a SwiftUI Canvas instead"],
                 issues: [],
                 brd: ["FR-ONB-04", "R-03"])
@@ -223,7 +226,8 @@ struct DevNotes {
                         "Status rows with Turn off and Esc", "Camera picker incl. Continuity Camera", "Readiness card: Apple Intelligence and speech download",
                         "Hand-off: moment recorder, voice pill, or a writing page with the prompt as its question"],
                 stubbed: [],
-                issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras"],
+                issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras",
+                         "The first question shows in the recorder and voice pill once the capture package renders todaysPrompt"],
                 brd: ["FR-ONB-05", "FR-ONB-03"])
         }
     }

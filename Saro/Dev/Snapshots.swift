@@ -113,6 +113,11 @@ enum Snapshots {
                 ("onboarding-held", { p.contentView = onboarding(.preview(step: .about, about: .prompt, answers: Self.answers, held: [2]), model) }),
                 ("onboarding-week", { p.contentView = onboarding(.preview(step: .firstWeek, answers: Self.answers), model) }),
                 ("onboarding-light", { p.contentView = onboarding(.preview(step: .findLight, answers: Self.answers), model) }),
+                ("onboarding-caution", { p.contentView = onboarding(.preview(step: .about, about: .prompt, answers: Self.answers, caution: [4]), model) }),
+                ("onboarding-week-narrow", {
+                    p.setContentSize(NSSize(width: 960, height: 860))
+                    p.contentView = onboarding(.preview(step: .firstWeek, answers: Self.answers), model)
+                }),
             ]
             // `-SaroSnapshotOnly <prefix>` runs only the states whose names start with it.
             let only = UserDefaults.standard.string(forKey: "SaroSnapshotOnly")
