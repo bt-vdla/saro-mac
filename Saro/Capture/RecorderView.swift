@@ -40,6 +40,8 @@ struct RecorderView: View {
             if available { await capture.prepare(kind, for: surface, model: model) }
         }
         .onAppear { appeared = true }
+        // A moment's 3-2-1 must not go on to start whatever kind replaced it.
+        .onChange(of: kind) { if countdown != nil { cancelCountdown() } }
         .onDisappear {
             ritual?.cancel()
             capture.finish(surface)
@@ -294,7 +296,8 @@ struct RecorderView: View {
                                   detail: "Turn it on in System Settings → Privacy & Security → \(camera ? "Camera" : "Microphone"), then reopen the recorder.",
                                   settings: access.settingsURL, voiceInstead: camera && !compact)
         case .failed(let text):
-            return RecorderNotice(icon: "exclamationmark.triangle", title: text, voiceInstead: kind == .moment && !compact)
+            // Mid-session the controller keeps recording the session's kind, so a switch would record video behind a voice pill.
+            return RecorderNotice(icon: "exclamationmark.triangle", title: text, voiceInstead: kind == .moment && !compact && !inSession)
         default:
             return kind == .moment
                 ? RecorderNotice(title: "Getting your camera ready…", detail: "If macOS asks, allow the camera and microphone.")
