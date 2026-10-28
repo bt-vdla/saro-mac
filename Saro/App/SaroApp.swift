@@ -133,11 +133,10 @@ struct SaroCommands: Commands {
             }
         }
         CommandGroup(after: .importExport) {
-            Group {
-                Button("Export Everything…") { Task { await model.exportEverything() } }
-                Button("Import…") { Task { await model.importJournal() } }
-            }
-            .disabled(model.showsOnboarding)
+            Button("Export Everything…") { Task { await model.exportEverything() } }
+                .disabled(model.showsOnboarding)
+            // From the welcome door too: a blank profile takes the export's, which ends onboarding (DR-20).
+            Button("Import…") { Task { await model.importJournal() } }
         }
     }
 }

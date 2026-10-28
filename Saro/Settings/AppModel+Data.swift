@@ -99,7 +99,10 @@ extension AppModel {
             let added = try await ledger.importExport(from: url) { f in
                 Task { @MainActor in if DataProgress.shared.importing != nil { DataProgress.shared.importing = f } }
             }
-            await loadProfile()
+            // The export's profile is older than this blank one, so it is taken as read, not through loadProfile's
+            // newer-wins guard: an onboarded export ends the welcome door, and nothing later saves the blank row over it.
+            profile = try await ledger.profile()
+            starter = try await ledger.latestStarter()
             await reload()
             // Imported entries the other Mac never finished reading go through this one's gate.
             for e in (try? await ledger.unfinishedEntries()) ?? [] { process(e.id) }
