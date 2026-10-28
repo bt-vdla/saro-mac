@@ -238,6 +238,14 @@ public actor Ledger {
                   a.quote.map { .text(sha256($0)) } ?? .null, .text(a.createdAt.iso)])
     }
 
+    /// Whether this entry already has a reading made from exactly this text.
+    public func hasAnnotation(entryId: String, inputHash: String) throws -> Bool {
+        try !db.run("""
+            SELECT 1 FROM entry_annotation a JOIN ai_run r ON r.id = a.ai_run_id
+            WHERE a.entry_id=? AND r.input_hash=? AND a.rowid = (SELECT MAX(rowid) FROM entry_annotation WHERE entry_id=?)
+            """, [.text(entryId), .text(inputHash), .text(entryId)]).isEmpty
+    }
+
     /// The newest annotation per entry for a day (DR-05: newest is current).
     public func annotations(day: String) throws -> [String: EntryAnnotation] {
         let rows = try db.run("""

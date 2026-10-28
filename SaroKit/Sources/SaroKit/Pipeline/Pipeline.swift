@@ -101,7 +101,11 @@ public actor Pipeline {
             return
         }
 
-        // 3. Per-entry reading on the ladder; "In your words" when the model can't run.
+        // 3. Per-entry reading on the ladder; "In your words" when the model can't run. Skipped if this text was read.
+        if (try? await ledger.hasAnnotation(entryId: entryId, inputHash: hash)) == true {
+            await status(ProcessingStatus.done)
+            return
+        }
         await status(ProcessingStatus.reading)
         let candidates = Heuristics.candidates(entryId: entryId, field: source.field, text: source.text)
         let fallback = Heuristics.heuristicReading(text: source.text, candidates: candidates)

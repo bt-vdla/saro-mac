@@ -35,6 +35,12 @@ func tempLedger() throws -> Ledger {
         await #expect(throws: (any Error).self) { try await l.run("UPDATE \(table) SET id = id") }
     }
     #expect(try await l.annotations(day: e.localDay)[e.id]?.title == "Tea with Ravi")
+    var hashed = AIRun(feature: "entry", executor: "heuristic", status: "ok")
+    hashed.inputHash = "h1"
+    try await l.insertRun(hashed)
+    try await l.insertAnnotation(EntryAnnotation(entryId: e.id, aiRunId: hashed.id, generator: "heuristic"))
+    #expect(try await l.hasAnnotation(entryId: e.id, inputHash: "h1"))
+    #expect(try await !l.hasAnnotation(entryId: e.id, inputHash: "h2"))
 }
 
 @Test func newestAnnotationAndVerdictWin() async throws {

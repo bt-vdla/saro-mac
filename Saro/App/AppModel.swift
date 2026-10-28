@@ -48,6 +48,7 @@ final class AppModel {
     var showLetter = false
     private var queue: [String] = []
     private var working = false
+    private var current: String?
 
     init(ledger: Ledger) {
         self.ledger = ledger
@@ -191,16 +192,18 @@ final class AppModel {
     /// Queues an entry for transcription → SafetyGate → reading, one job at a time (§11.7), then re-reads the
     /// days those entries belong to.
     func process(_ entryId: String) {
-        if !queue.contains(entryId) { queue.append(entryId) }
+        if !queue.contains(entryId) && entryId != current { queue.append(entryId) }
         guard !working else { return }
         working = true
         Task {
             var days = Set<String>()
             while !queue.isEmpty {
                 let id = queue.removeFirst()
+                current = id
                 if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
                 await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
             }
+            current = nil
             for d in days { await pipeline.readDay(d) }
             working = false
             await reload()
