@@ -180,6 +180,157 @@ private func doc(_ id: String? = nil, title: String? = nil, body: String, time: 
     #expect(SearchText.tokenize("Café, didn’t!").map(\.term) == ["cafe", "didnt"])
 }
 
+@Test func searchPenalisesEditsAndFavoursShortFieldsAndInOrderPhrases() {
+    #expect(find("stillness", in: SearchIndex([doc("two", body: "evening stilnes river"), doc("one", body: "evening stilness river")])) == ["one", "two"])
+    let lengths = SearchIndex([doc("long", body: "sleep " + String(repeating: "filler words here ", count: 10)), doc("short", body: "sleep well")])
+    #expect(find("sleep", in: lengths) == ["short", "long"])
+    let phrase = SearchIndex([doc("apart", body: "work went well launch today ok"), doc("reversed", body: "launch work went well today ok"),
+                              doc("phrase", body: "work launch went well today ok")]).search("work launch")
+    #expect(phrase.count == 3 && phrase[1].score == phrase[2].score)
+    // The phrase skips stopwords: "walk in the park" is adjacent, "walk by big park" isn't.
+    #expect(find("walk park", in: SearchIndex([doc("big", body: "walk by big park"), doc("in", body: "walk in the park")])) == ["in", "big"])
+    // Recency only breaks ties: an older title match still beats a newer body match.
+    let better = SearchIndex([doc("old", title: "Lemon", body: "cake", time: "2020-01-01T00:00:00Z"),
+                              doc("new", title: "Cake", body: "lemon", time: "2025-01-01T00:00:00Z")])
+    #expect(find("lemon", in: better) == ["old", "new"])
+}
+
+@Test func searchMatchesEveryWordThenTheMostInsideTheKinds() {
+    #expect(index.search("maya launch").allSatisfy { $0.matchedTerms == ["maya", "launch"] })
+    #expect(index.search("maya zebra").allSatisfy { $0.matchedTerms == ["maya"] })
+    #expect(Array(index.search("maya coffee running").map(\.matchedTerms.count).prefix(2)) == [2, 2])
+    #expect(find("sleep", kinds: [.music, .voice]).sorted() == ["e1", "m1"])
+    #expect(index.search("maya launch", kinds: [.reflection]).allSatisfy { $0.doc.kind == .reflection && $0.matchedTerms.count == 1 })
+    let many = SearchIndex((0..<30).map { doc(body: "walk \($0)") })
+    #expect(many.search("walk").count == 20)
+    #expect(many.search("walk", limit: 5).count == 5 && many.search("walk", limit: 50).count == 30 && many.search("walk", limit: 0).isEmpty)
+}
+
+@Test func searchHighlightsAreWholeWordsInEveryFixtureResult() {
+    for q in ["maya", "sleep", "walked", "sistr", "medit", "the launch", "didn't", "the", "cafe"] {
+        for r in index.search(q) {
+            for h in r.highlights {
+                let s = slice(r.snippet, h)
+                #expect(!s.isEmpty && s.trimmingCharacters(in: .whitespaces) == s && SearchText.tokenize(s).count == 1, "\(q): \(s)")
+            }
+            for h in r.titleHighlights { #expect(SearchText.tokenize(slice(r.doc.title ?? "", h)).count == 1, "\(q)") }
+        }
+    }
+    let maya = Dictionary(uniqueKeysWithValues: index.search("maya").map { ($0.doc.id, $0) })
+    #expect(maya["v1"].map { r in r.titleHighlights.map { slice(r.doc.title ?? "", $0) } } == ["Maya"])
+    #expect(maya["e1"]?.titleHighlights.isEmpty == true)
+    let memory = index.search("memory")[0]
+    #expect(memory.field == .title && memory.snippet.contains("memories"))
+}
+
+@Test func searchSnippetsAreCentredAndCutBetweenWords() throws {
+    let filler = (0..<40).map { "word\($0)" }.joined(separator: " ")
+    let body = "\(filler) and then Maya called \(filler)"
+    let r = SearchIndex([doc(body: body)]).search("maya")[0]
+    let core = String(r.snippet.dropFirst().dropLast())
+    let at = try #require(body.range(of: core))
+    #expect(body[body.index(before: at.lowerBound)] == " " && body[at.upperBound] == " ")
+    let maya = try #require(r.highlights.first)
+    #expect(abs(Double(maya.lowerBound) - Double(r.snippet.utf16.count) / 2) < 30)
+}
+
+@Test func searchSurvivesOddQueriesAndIgnoresInsertionOrder() {
+    for q in ["", "   ", "\n\t ", "…", "—"] { #expect(index.search(q).isEmpty, "\(q)") }
+    for q in ["*?()[]", "(", ")", "[", "\\", ".*", "$^", "+?", "(?<x>", "|||", "a**b", "💥", "\u{0}",
+              String(repeating: "x", count: 100_000), String(repeating: "maya ", count: 5_000)] { _ = index.search(q) }
+    // Long queries keep their first 12 terms.
+    let words = (0..<40).map { "term\(Character(Unicode.Scalar(97 + $0 % 26)!))\($0)" }
+    let capped = SearchIndex([doc("thirteenth", body: words[12]), doc("first", body: words[0])]).search(words.joined(separator: " "))
+    #expect(capped.map(\.doc.id) == ["first"] && capped.allSatisfy { $0.matchedTerms.count <= 12 })
+    let reversed = SearchIndex(journal.reversed())
+    for q in ["maya", "sleep", "the", "walk", "cafe coffee", "sistr", "medit"] {
+        let key = { (r: SearchIndex.Result) in "\(r.doc.id) \((r.score * 1e9).rounded()) \(r.snippet) \(r.highlights)" }
+        #expect(reversed.search(q).map(key) == index.search(q).map(key), "\(q)")
+    }
+}
+
+// MARK: Normalising and fuzzy matching (ports of normalize.test.ts and fuzzy.test.ts; the web's stripHtml has no native
+// counterpart, since native writings are plain text)
+
+private func terms(_ s: String) -> [String] { SearchText.tokenize(s).map(\.term) }
+
+@Test func tokenizeLowercasesFoldsAndSplits() {
+    #expect(terms("Hello, WORLD! self-care; x/y (ok)") == ["hello", "world", "self", "care", "x", "y", "ok"])
+    #expect(terms("Café Lumière ÅNGSTRÖM naïve") == ["cafe", "lumiere", "angstrom", "naive"])
+    #expect(terms("ﬁne Ｆｕｌｌ ①") == ["fine", "full", "1"])
+    #expect(terms("cafe\u{301}") == ["cafe"])
+}
+
+@Test func tokenizeJoinsApostrophesKeepsNumbersAndSplitsOnEmoji() {
+    #expect(terms("didn't didn’t Maya's 'quoted' rock 'n' roll") == ["didnt", "didnt", "mayas", "quoted", "rock", "n", "roll"])
+    #expect(terms("5k at 7:30, 2024 and 10pm") == ["5k", "at", "7", "30", "2024", "and", "10pm"])
+    #expect(terms("run🏃‍♀️fast ❤️ 🎉done") == ["run", "fast", "done"])
+}
+
+@Test func tokenOffsetsPointBackIntoTheText() {
+    let text = "  Didn’t sleep at Café Lumière — ﬁne!"
+    let tokens = SearchText.tokenize(text)
+    for t in tokens { #expect(terms(slice(text, t.start..<t.end)) == [t.term]) }
+    #expect(slice(text, tokens[0].start..<tokens[0].end) == "Didn’t")
+    #expect(SearchText.tokenize(String(repeating: "a", count: 500))[0].term.count == 64)
+    #expect(SearchText.tokenize("").isEmpty && SearchText.tokenize(" \n\t *?()[] ").isEmpty)
+}
+
+@Test func stemConflatesInflectionsWithoutOverStemming() {
+    let groups = [["walk", "walks", "walking", "walked"], ["memory", "memories"], ["run", "runs", "running"], ["try", "tries", "tried", "trying"],
+                  ["hope", "hopes", "hoped", "hoping"], ["launch", "launches", "launched", "launching"],
+                  ["meditate", "meditates", "meditated", "meditating"], ["sister", "sisters"], ["family", "families"], ["cafe", "cafes"],
+                  ["coffee", "coffees"], ["smile", "smiled", "smiling"], ["agree", "agreed"]]
+    for g in groups { #expect(Set(g.map(SearchText.stem)).count == 1, "\(g)") }
+    for w in ["bus", "gas", "yes", "was", "has", "this", "is", "us", "news", "sing", "thing", "bed", "stillness", "5ks", "2024", "straße"] {
+        #expect(SearchText.stem(w) == w, "\(w)")
+    }
+    #expect(SearchText.stem("hope") != SearchText.stem("hop"))
+    #expect(SearchText.stem("hoping") != SearchText.stem("hopping"))
+    #expect(SearchText.stem("meditation") != SearchText.stem("meditate"))
+}
+
+@Test func stopwordsKeepContractionsThatMeanSomething() {
+    #expect(SearchText.stopwords.contains("the") && SearchText.stopwords.contains("im"))
+    #expect(!SearchText.stopwords.contains("didnt") && !SearchText.stopwords.contains("ill") && !SearchText.stopwords.contains("maya"))
+}
+
+@Test func editDistanceIsABoundedDamerauLevenshtein() {
+    let d = { (a: String, b: String, bound: Int) -> Int in SearchText.editDistance(a, b, max: bound) }
+    let exact: [Int] = [d("walk", "walk", 2), d("wlak", "walk", 2), d("sistr", "sister", 2), d("stilness", "stillness", 2),
+                        d("meditatoin", "meditation", 2), d("ab", "ba", 2), d("kitten", "sitting", 5), d("", "ab", 2)]
+    #expect(exact == [0, 1, 1, 1, 1, 1, 3, 2])
+    // Anything over the bound comes back as bound + 1.
+    let bounded: [Int] = [d("kitten", "sitting", 2), d("walk", "running", 1), d("a", "abcdef", 2),
+                          d(String(repeating: "x", count: 200), String(repeating: "y", count: 200), 2)]
+    #expect(bounded == [3, 2, 3, 3])
+    #expect([1, 2, 3, 4, 7, 8, 12].map(SearchText.maxEdits) == [0, 0, 0, 1, 1, 2, 2])
+    #expect(SearchText.bigrams("walk") == ["^w", "wa", "al", "lk", "k$"])
+    #expect(SearchText.bigrams("aaa") == ["^a", "aa", "a$"] && SearchText.bigrams("a") == ["^a", "a$"])
+}
+
+// MARK: The palette's pure parts (ports of palette.test.ts's matchCommand and parseDay; its sections are the view's own)
+
+@Test func commandsMatchByWordPrefixKeywordOrInitials() {
+    let m = { (q: String, title: String, keywords: String) in CommandMatch.matches(q, title: title, keywords: keywords) }
+    #expect(m("new ref", "New reflection", "write") && m("rec voice", "Record voice note", "audio") && m("theme", "Appearance", "theme dark"))
+    #expect(!m("record", "New reflection", "write") && !m("", "New reflection", "write"))
+    #expect(m("nr", "New reflection", "") && m("RAM", "Record a moment", "video") && !m("rn", "New reflection", ""))
+}
+
+@Test func typedDaysReadAsThePaletteReadsThem() throws {
+    // Tuesday 22 September 2026, 3:33 PM.
+    let now = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 22, hour: 15, minute: 33)))
+    let cases: [(String, String?)] = [
+        ("today", "2026-09-22"), (" Yesterday ", "2026-09-21"), ("3 days ago", "2026-09-19"), ("1 day ago", "2026-09-21"),
+        ("tue", "2026-09-22"), ("tuesday", "2026-09-22"), ("last tue", "2026-09-15"), ("monday", "2026-09-21"), ("wed", "2026-09-16"),
+        ("last wed", "2026-09-16"), ("12 sep", "2026-09-12"), ("sep 12", "2026-09-12"), ("September 12", "2026-09-12"),
+        ("22 sep", "2026-09-22"), ("23 sep", "2025-09-23"), ("12 oct", "2025-10-12"),
+        ("12/9", nil), ("coffee", nil), ("31 feb", nil), ("last", nil), ("mo", nil), ("12 se", nil), ("", nil),
+    ]
+    for (text, day) in cases { #expect(LocalDay.parse(text, now: now) == day, "\(text)") }
+}
+
 @Test func searchStaysFastAt300Entries() {
     var seed: UInt64 = 42
     func next() -> Double {
@@ -412,22 +563,45 @@ private func key(_ i: Int) -> String { lens.days[i].key }
 
 // MARK: Key frames (ports of keyframes.test.ts)
 
-@Test func keyframesFitTheShortSideAndSkipBlackFrames() {
+private func frame(_ rgb: (UInt8, UInt8, UInt8), pixels: Int = 16) -> [UInt8] { (0..<pixels).flatMap { _ in [rgb.0, rgb.1, rgb.2, 255] } }
+
+@Test func keyframesFitTheShortSideWithoutUpscalingOrDistorting() {
     #expect(Keyframe.fit(width: 1920, height: 1080) == (455, 256))
+    #expect(Keyframe.fit(width: 720, height: 540) == (341, 256))
     #expect(Keyframe.fit(width: 1080, height: 1920) == (256, 455))
-    #expect(Keyframe.fit(width: 4000, height: 1000) == (512, 128)) // the long side stays within twice the short
-    #expect(Keyframe.fit(width: 100, height: 80) == (100, 80)) // never upscaled
+    #expect(Keyframe.fit(width: 200, height: 120) == (200, 120))
+    #expect(Keyframe.fit(width: 4000, height: 500) == (512, 64))
     #expect(Keyframe.fit(width: 0, height: 0) == (256, 256))
-    let black = [UInt8](repeating: 8, count: 32 * 18 * 4)
-    var lit = black
-    for i in stride(from: 0, to: lit.count / 10, by: 4) { (lit[i], lit[i + 1], lit[i + 2]) = (200, 200, 200) }
-    #expect(Keyframe.isBlack(black) && !Keyframe.isBlack(lit))
-    #expect(Keyframe.luma([255, 255, 255, 255]).mean > 254)
+}
+
+@Test func keyframeLumaWeighsChannelsByPerceivedBrightness() {
+    #expect(Keyframe.luma(frame((0, 0, 0))).mean == 0)
+    #expect(Keyframe.luma(frame((255, 255, 255))).mean.rounded() == 255)
+    #expect(Keyframe.luma(frame((0, 255, 0))).mean > Keyframe.luma(frame((255, 0, 0))).mean)
+    #expect(Keyframe.luma([]) == (0, 0))
+}
+
+@Test func keyframesSkipWarmUpBlackButKeepDimRealFrames() {
+    #expect(Keyframe.isBlack(frame((0, 0, 0))) && Keyframe.isBlack(frame((12, 12, 14))))
+    #expect(!Keyframe.isBlack(frame((40, 34, 30))))
+    var mostlyDark = frame((0, 0, 0), pixels: 100)
+    mostlyDark.replaceSubrange(0..<12, with: [200, 180, 160, 255, 200, 180, 160, 255, 200, 180, 160, 255])
+    #expect(!Keyframe.isBlack(mostlyDark))
+}
+
+@Test func keyframesProbeTheOpeningSecondsInsideTheClip() {
     #expect(Keyframe.seekTimes(nil) == [0.05, 0.4, 1, 2, 3.5])
+    #expect(Keyframe.seekTimes(.infinity) == [0.05, 0.4, 1, 2, 3.5] && Keyframe.seekTimes(.nan) == [0.05, 0.4, 1, 2, 3.5])
+    #expect(Keyframe.seekTimes(3) == [0.05, 0.4, 1, 2])
     #expect(Keyframe.seekTimes(1.5) == [0.05, 0.4, 1])
     #expect(Keyframe.seekTimes(0.04) == [0.02])
+}
+
+/// The web's isFresh: a poster is reused only for the same version of the file, so its name carries the file's stamp.
+@Test func keyframesAreNamedByMediaAndFileVersion() {
     let m = MediaAsset(id: "m1", fileName: "2026-10-27/s1/part-1.mov", kind: .video, origin: "recorded")
     #expect(Keyframe.file(for: m, stamp: 42) == "2026-10-27/posters/m1-42.jpg")
+    #expect(Keyframe.file(for: m, stamp: 42) != Keyframe.file(for: m, stamp: 43))
 }
 
 // MARK: Day layout (ports of dayLayout.test.ts)

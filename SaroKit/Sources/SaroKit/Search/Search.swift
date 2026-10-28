@@ -170,3 +170,18 @@ extension LocalDay {
         return nil
     }
 }
+
+/// How ⌘K finds a command (palette.ts's matchCommand): every query word starts a word of its title or keywords, or the
+/// query is its title's initials ("nr" for New reflection).
+public enum CommandMatch {
+    public static func matches(_ query: String, title: String, keywords: String) -> Bool {
+        let words = Self.words(query), titleWords = Self.words(title)
+        guard !words.isEmpty else { return false }
+        if words.allSatisfy({ w in (titleWords + Self.words(keywords)).contains { $0.hasPrefix(w) } }) { return true }
+        return words.count == 1 && words[0].count >= 2 && String(titleWords.compactMap(\.first)) == words[0]
+    }
+
+    private static func words(_ s: String) -> [String] {
+        s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
+}

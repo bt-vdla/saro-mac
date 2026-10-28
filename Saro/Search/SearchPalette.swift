@@ -23,18 +23,7 @@ struct PaletteCommand: Identifiable {
     var value: (@MainActor (AppModel) -> String)?
     let run: @MainActor (AppModel) -> Void
 
-    /// Every query word starts a word of the title or keywords, or the query is the title's initials ("wsn").
-    func matches(_ query: String) -> Bool {
-        let words = Self.words(query)
-        let title = Self.words(self.title)
-        guard !words.isEmpty else { return false }
-        if words.allSatisfy({ w in (title + Self.words(keywords)).contains { $0.hasPrefix(w) } }) { return true }
-        return words.count == 1 && words[0].count >= 2 && String(title.compactMap(\.first)) == words[0]
-    }
-
-    private static func words(_ s: String) -> [String] {
-        s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
-    }
+    func matches(_ query: String) -> Bool { CommandMatch.matches(query, title: title, keywords: keywords) }
 }
 
 private enum Row: Identifiable {
