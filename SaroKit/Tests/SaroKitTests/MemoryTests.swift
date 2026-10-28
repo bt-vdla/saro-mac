@@ -133,6 +133,11 @@ private func people(_ entries: [String]) -> [String] { texts(derived(entries).fi
     #expect(MemoryRules.intention(in: "I'll be honest")?.label == "be honest")
     #expect(MemoryRules.intention(in: "I want to be") == nil)
     #expect(MemoryRules.intention(in: "Tomorrow I start the new job.")?.label == "start the new job")
+    #expect(MemoryRules.intention(in: "Tomorrow I will book the restaurant.")?.label == "book the restaurant")
+    #expect(MemoryRules.intention(in: "Tomorrow I'll call Mum.")?.label == "call Mum")
+    #expect(MemoryRules.intention(in: "Tomorrow I want to rest.")?.label == "rest")
+    let plan = { (t: String) in MemoryRules.observe(entryId: "e", field: "body", text: t, localDay: "d").filter { $0.kind == .intention }.map(\.key) }
+    #expect(plan("Tomorrow I will book the restaurant.") == plan("I will book the restaurant."), "one plan, one key")
     #expect(MemoryRules.intention(in: "If I have to sit through one more meeting I'll scream.") == nil, "a condition, not a plan")
 }
 
@@ -422,6 +427,28 @@ private func memoryAI(_ reply: String) -> SaroAI {
     #expect(rows.first { $0.kind == .intention }?.label == "call Mum this week")
     #expect(rows.allSatisfy { text.contains($0.quote ?? "∅") })
     #expect(try await l.run("SELECT executor FROM ai_run WHERE feature='memory'").first?["executor"] == .text("on_device"))
+}
+
+@Test func aFeelingNeverTakesTheModelsLineageWithoutTheModelsReading() async throws {
+    let text = "Had chai with Ravi after work. So anxious about the launch all evening."
+    let candidates = Heuristics.candidates(entryId: "e", field: "body", text: text)
+    let ravi = try #require(candidates.first { $0.text.contains("Ravi") })
+    let reply = #"{"people": [{"name": "Ravi", "phrase": \#(ravi.index)}], "themes": [], "intentions": []}"#
+    // Cleared, but its reading hasn't run yet (deferred): the model's people, and no heuristic feeling under its name.
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: text)
+    try await l.insertEntry(e)
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(text), safetyVersion: SafetyGate.version, layer: 2,
+                                               verdict: "clear", reasonCode: "t"))
+    await Pipeline(ledger: l, ai: memoryAI(reply)).learn(entryId: e.id)
+    let rows = try await l.activeObservations()
+    #expect(rows.first { $0.key == "person:ravi" }?.lineage == "on_device")
+    #expect(!rows.contains { $0.kind == .emotion })
+
+    // The heuristic twin alone keeps its own feeling.
+    let h = try tempLedger()
+    _ = try await write(h, offline(h), text)
+    #expect(try await h.activeObservations().first { $0.kind == .emotion }.map { $0.lineage == "heuristic" && $0.key == "mood:anxious" } == true)
 }
 
 // MARK: The graph

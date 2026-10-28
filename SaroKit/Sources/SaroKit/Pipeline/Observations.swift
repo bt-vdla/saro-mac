@@ -94,10 +94,14 @@ extension Pipeline {
         }
 
         let tombstones = (try? await ledger.tombstoneHashes()) ?? []
-        rows = MemoryRules.dedupe(rows).filter { !tombstones.contains(sha256($0.key)) }.map { o in
+        // A feeling's lineage is the reading it came from (DR-13). Without a reading mood it is the heuristic's, which a
+        // model run mustn't claim, so it is left out then.
+        let readingMood = reading?.moodLabel != nil
+        rows = MemoryRules.dedupe(rows).filter { o in
+            !tombstones.contains(sha256(o.key)) && (o.kind != .emotion || readingMood || run.executor == "heuristic")
+        }.map { o in
             var o = o
-            // A feeling's lineage is the reading it came from (DR-13).
-            if o.kind == .emotion, reading?.moodLabel != nil { o.aiRunId = reading?.aiRunId }
+            if o.kind == .emotion, readingMood { o.aiRunId = reading?.aiRunId }
             return o
         }
         do {

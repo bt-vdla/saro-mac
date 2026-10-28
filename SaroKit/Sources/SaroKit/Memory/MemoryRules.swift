@@ -164,9 +164,11 @@ public enum MemoryRules {
 
     // MARK: Intentions
 
+    /// "Tomorrow I" takes the lead after it too ("Tomorrow I will book…" is "book…"), so one plan keeps one key.
     private static let intentionLead = try! NSRegularExpression(pattern: """
-        (?i)\\b(?:i\\s+(?:(?:really|just|still|also|finally)\\s+)?(?:want|need|have|plan|hope|mean|intend)\\s+to|i\\s+(?:will|should|must)|\
-        i['’]ll|i['’]m\\s+(?:going|planning|trying)\\s+to|i\\s+am\\s+(?:going|planning|trying)\\s+to|tomorrow\\s+i)\\s+
+        (?i)\\b(?:(?:tomorrow\\s+)?(?:i\\s+(?:(?:really|just|still|also|finally)\\s+)?(?:want|need|have|plan|hope|mean|intend)\\s+to|\
+        i\\s+(?:will|should|must)|i['’]ll|i['’]m\\s+(?:going|planning|trying)\\s+to|i\\s+am\\s+(?:going|planning|trying)\\s+to)|\
+        tomorrow\\s+i)\\s+
         """)
     private static let dangling = words("a an the to of for with at in on by from into onto about until till than as because if when while and but or so my our your their its very really just")
 
