@@ -173,7 +173,7 @@ private func report(_ name: String, _ results: [Scored]) {
     for r in venting where flagged(r) { print("  FALSE POSITIVE \(r.outcome): \(r.text)") }
 }
 
-@Test(.enabled(if: liveModelAvailable), .timeLimit(.minutes(10))) func liveClassifierEval() async {
+@Test(.enabled(if: liveModelAvailable), .liveModel, .timeLimit(.minutes(10))) func liveClassifierEval() async {
     let ai = SaroAI()
     var results: [Scored] = [], unscored: [Scored] = []
     var retried = 0

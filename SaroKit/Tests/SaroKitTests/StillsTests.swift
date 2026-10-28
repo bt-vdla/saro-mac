@@ -397,7 +397,7 @@ actor Switch {
 
 // MARK: Live model (a synthetic image, SR-28)
 
-@Test(.enabled(if: liveModelAvailable && SaroAI().canSee)) func liveStillIsDescribedAndCleared() async throws {
+@Test(.enabled(if: liveModelAvailable && SaroAI().canSee), .liveModel) func liveStillIsDescribedAndCleared() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: SaroAI())
     let s = try await stillEntry(l, rgb: (0.12, 0.29, 0.22))
