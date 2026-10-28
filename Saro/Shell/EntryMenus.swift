@@ -244,6 +244,8 @@ enum CardMenuKeys {
         guard !targets.isEmpty, let view = event.window?.contentView else { return false }
         let stack = targets.count > 1 && targets.allSatisfy { model.layouts[$0.id]?.stackId != nil }
         let menu = NSMenu()
+        // Items keep the enabled state they were given (Show in Finder on a page): no validateMenuItem re-enables them.
+        menu.autoenablesItems = false
         for item in model.entryMenu(targets, stack: stack, undoManager: event.window?.undoManager) { menu.addItem(nsItem(item)) }
         let frame = targets.compactMap { frames[$0.id] ?? model.layouts[$0.id]?.stackId.flatMap { frames["stack:\($0)"] } }.first
         let p = frame.map { CGPoint(x: $0.minX + 8, y: view.isFlipped ? $0.maxY : view.bounds.height - $0.maxY) }
@@ -258,6 +260,8 @@ enum CardMenuKeys {
         case .submenu(let sub):
             let m = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
             m.submenu = NSMenu(title: item.title)
+            m.submenu?.autoenablesItems = false
+            m.isEnabled = item.enabled
             for s in sub { m.submenu?.addItem(nsItem(s)) }
             return m
         case .run(let run):
