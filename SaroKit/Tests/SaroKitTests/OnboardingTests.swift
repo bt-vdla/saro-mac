@@ -248,6 +248,29 @@ private let answers: [Int: String] = [
     #expect(stored.held == [2] && !stored.picks.contains { $0.q == 2 } && stored.firstPrompt == nil)
 }
 
+@Test func anAnswerAwaitingACheckIsKeptButNothingIsLearnedFromIt() {
+    var s = StarterContext(version: 1)
+    s.answers = [1: "Bee", 3: "Around 9:30, after dinner", 4: "More sleep, less rehearsing conversations", 5: "Straight to it"]
+    let v = { (q: Int, verdict: String?) in AnswerVerdict(text: s.answers[q]!, verdict: verdict) }
+    var verdicts = [1: v(1, "clear"), 3: v(3, "unavailable_clear"), 4: v(4, "unavailable_caution"), 5: v(5, nil)]
+    let gated = s.gated(verdicts, knownName: "Bee").storable
+    // Their words stay; the caution hit and the deferred answer give no goal, focus or tone, and no ritual span.
+    #expect(gated.answers.keys.sorted() == [1, 3, 4, 5])
+    #expect(Set(gated.picks.map(\.q)) == [1, 3])
+    #expect(Onboarding.focusAreas(gated.picks).isEmpty && Onboarding.tone(gated.picks) == nil)
+    #expect(FirstWeek.ritualFromSpans(gated.picks).span?.text == "Around 9:30")
+    #expect(FirstWeek.plan(on: allOn, goal: gated.picks.first { $0.kind == .goal }?.text)[4].milestone?.note == "How’s the week sitting?")
+    #expect(FirstPrompt.state(s, verdicts: verdicts, name: "Bee", tone: .gentle) == .ready([FirstPrompt.Candidate(text: "Bee, what moment still lingers?")]))
+    // Only the caution hit offers someone to talk to; the gate is asked again for the deferred one, and for both once
+    // the model can run.
+    #expect(verdicts.values.filter(\.caution).count == 1)
+    #expect(verdicts.filter { $0.value.needsRegate(modelAvailable: false) }.keys.sorted() == [5])
+    #expect(verdicts.filter { $0.value.needsRegate(modelAvailable: true) }.keys.sorted() == [3, 4, 5])
+    // Cleared later, it counts.
+    verdicts[4] = v(4, "clear")
+    #expect(s.gated(verdicts, knownName: "Bee").storable.picks.contains { $0.q == 4 && $0.kind == .goal })
+}
+
 @Test func emptyAnswersGateClearWithoutTheModel() async throws {
     let ledger = try Ledger(rootURL: URL.temporaryDirectory.appending(path: "onb-\(UUID().uuidString)"))
     let pipeline = Pipeline(ledger: ledger, ai: SaroAI())

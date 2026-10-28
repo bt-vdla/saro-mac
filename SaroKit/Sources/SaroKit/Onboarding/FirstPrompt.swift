@@ -322,16 +322,29 @@ public struct AnswerVerdict: Sendable, Hashable {
         self.text = text
         self.verdict = verdict
     }
+
+    /// Read by the gate and clear, with or without Apple Intelligence. Anything else is held or awaiting a check (a
+    /// caution hit while the model is off, or no verdict yet), and nothing is learned from it (SR-14).
+    public var checked: Bool { verdict == "clear" || verdict == "unavailable_clear" }
+
+    /// A caution hit while the model is off: kept, unread, with a quiet way to talk to someone.
+    public var caution: Bool { verdict == "unavailable_caution" }
+
+    /// Whether to ask the gate again: no verdict yet, or one made without the model once it can run (SR-17).
+    public func needsRegate(modelAvailable: Bool) -> Bool {
+        verdict == nil || (modelAvailable && (verdict == "unavailable_clear" || caution))
+    }
 }
 
 extension StarterContext {
     /// What may be stored or used: only answers whose verdict is in for the text they have now, the held ones marked,
-    /// and the picks made again from those, so nothing is composed or learned from text the gate hasn't seen.
+    /// and the picks made again from the checked ones, so nothing is composed or learned from text the gate hasn't
+    /// seen or hasn't cleared. An answer awaiting a check is kept as they wrote it.
     public func gated(_ verdicts: [Int: AnswerVerdict], knownName: String) -> StarterContext {
         var s = self
         s.answers = answers.filter { verdicts[$0.key]?.text == $0.value }
         s.held = Set(s.answers.keys.filter { verdicts[$0]?.verdict == "safety_hold" })
-        s.picks = Onboarding.picks(answers: s.answers, dropped: dropped, knownName: knownName)
+        s.picks = Onboarding.picks(answers: s.answers.filter { verdicts[$0.key]?.checked == true }, dropped: dropped, knownName: knownName)
         s.reflectTime = Onboarding.reflectTime(s.picks)
         return s
     }
@@ -354,7 +367,7 @@ extension FirstPrompt {
         if answered.contains(where: { verdicts[$0.key]?.text != $0.value }) { return .waiting }
         let s = starter.gated(verdicts, knownName: name)
         if !s.held.isEmpty { return .held }
-        let unchecked = s.answers.keys.contains { !["clear", "unavailable_clear"].contains(verdicts[$0]?.verdict ?? "") }
+        let unchecked = s.answers.keys.contains { verdicts[$0]?.checked != true }
         if unchecked { return .ready([Candidate(text: tone.previewLine(name: name))]) }
         return .ready(compose(starter: s, name: name, tone: tone))
     }
