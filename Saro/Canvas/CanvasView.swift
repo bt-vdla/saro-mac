@@ -86,6 +86,7 @@ struct DayView: View {
         .onChange(of: model.openEntryID == nil) { _, closed in if closed { focused = true } }
         .onChange(of: model.insight == .spine) { _, closed in if closed { focused = true } }
         .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
+        .onChange(of: ShellPanels.shared.panel == nil) { _, closed in if closed { focused = true } }
         // With keyboard navigation on, focus goes back to the date button instead (BottomBar).
         .onChange(of: model.datePickerOpen) { _, open in if !open && !NSApp.isFullKeyboardAccessEnabled { focused = true } }
         .onDeleteCommand {
