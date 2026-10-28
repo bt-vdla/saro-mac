@@ -528,7 +528,7 @@ struct StillBelow: View {
                         .accessibilityLabel("Tags: \(d.tags.joined(separator: ", "))")
                 }
                 Spacer(minLength: 0)
-                Text(provenance(d)).font(Typo.mono(9)).foregroundStyle(Tok.ink3).lineLimit(1)
+                Text(provenance(d)).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink3).lineLimit(1)
                     .accessibilityLabel(d.executor == "heuristic" ? "Described on this Mac by Vision" : "Described on this Mac by Apple Intelligence")
             }
         } else if yours == nil, let line = statusLine {
