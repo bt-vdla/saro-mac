@@ -773,6 +773,29 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
     }
 }
 
+@MainActor @Suite struct AutosaveTests {
+    @MainActor final class Landed { var count = 0 }
+
+    private func until(_ limit: Duration, _ done: () -> Bool) async {
+        let end = ContinuousClock.now + limit
+        while !done(), ContinuousClock.now < end { try? await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    /// The tick's 2.2 s never holds the next write back, so a pick made just after another is saved at once (a quit
+    /// then keeps it); the tick still leaves once the last write has shown it.
+    @Test func aWriteDoesNotWaitForTheLastTick() async {
+        let save = Autosave(), landed = Landed()
+        save.run { landed.count += 1 }
+        await until(.seconds(2)) { save.state == .saved }
+        save.run { landed.count += 1 }
+        await until(.seconds(1.5)) { landed.count == 2 }
+        #expect(landed.count == 2)
+        #expect(save.state == .saved)
+        await until(.seconds(4)) { save.state == .idle }
+        #expect(save.state == .idle)
+    }
+}
+
 @Suite struct NamesTests {
     @Test func capAndInitialsKeepGraphemesWhole() {
         #expect(Names.cap("  Alex  ") == "Alex")
