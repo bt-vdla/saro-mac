@@ -7,7 +7,25 @@ import SwiftUI
 /// Light Lab, the lock, the day image), then galleries of what sits in sheets or other windows.
 @MainActor
 enum ShellSnapshots {
+    /// Edit Details' fields where they show: the voice note's own summary open in place, and a page's caption.
+    static func details(_ model: AppModel) {
+        model.pane = .day
+        model.openEntryID = nil
+        guard let voice = model.entries.first(where: { $0.kind == .voice }) else { return }
+        Task {
+            try? await model.ledger.updateSummary(id: voice.id, "The walk home through the park, and feeling lighter.")
+            if let page = model.entries.first(where: { $0.kind == .reflection }) {
+                try? await model.ledger.updateEntryText(id: page.id, body: page.body ?? "", titleUser: page.titleUser,
+                                                       captionUser: "Written on the bus home")
+                model.process(page.id)
+            }
+            await model.reload()
+            model.openVoiceID = voice.id
+        }
+    }
+
     static func toasts(_ model: AppModel) {
+        model.openVoiceID = nil
         model.pane = .day
         model.show(Toast(title: "Couldn't save your changes", detail: "Your Mac may be out of space.",
                          action: Toast.Action(label: "Retry", run: {}), style: .destructive, duration: .seconds(60)))
@@ -90,6 +108,18 @@ enum ShellSnapshots {
                 .padding(32).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).background(Tok.bg)))
             }),
             ("shell-acknowledgements", { host(AnyView(AcknowledgementsView())) }),
+            // A song's artist under its title, and a page's caption under its words, as Edit Details saves them.
+            ("shell-cards", {
+                let song = Entry(kind: .music, titleUser: "Weightless", captionUser: "Marconi Union",
+                                 body: "https://open.spotify.com/search/weightless%20marconi%20union")
+                let page = Entry(kind: .reflection, titleUser: "Morning run", captionUser: "Before work, by the river",
+                                 body: "Ran 8k along the river. My legs are sore but my head is quiet.")
+                host(AnyView(HStack(alignment: .top, spacing: 40) {
+                    CardFace(entry: song)
+                    CardFace(entry: page)
+                }
+                .padding(48).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).background(Tok.bg)))
+            }),
         ]
     }
 }

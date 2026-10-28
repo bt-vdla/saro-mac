@@ -149,8 +149,10 @@ enum Snapshots {
                     model.memory.query = ""
                     if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
                 }),
-                // The shell on the demo day: the toast stack, the account menu with a save that failed, Trash over the bar
+                // The shell on the demo day: what Edit Details saved, on its cards; the toast stack, the account menu with a save
+                // that failed, Trash over the bar
                 // and as the pane, the Light Lab at dusk, the lock, and the day as Export Day as Image draws it.
+                ("shell-details", { ShellSnapshots.details(model) }),
                 ("shell-toasts", { ShellSnapshots.toasts(model) }),
                 ("shell-account", { ShellSnapshots.accountMenu(model) }),
                 ("shell-trash", { ShellSnapshots.trash(model) }),
