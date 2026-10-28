@@ -223,12 +223,12 @@ struct ScreenShare: View {
         for w in NSApp.windows where w.sharingType != type { w.sharingType = type }
     }
 
-    /// New windows (Settings, the capture panel, sheets) take it as they appear.
+    /// New windows (Settings, the capture panel, sheets, popovers) take it as they come on screen.
     static func install() {
         apply()
         guard !observing else { return }
         observing = true
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification, NSApplication.didUpdateNotification] {
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification, NSWindow.didChangeOcclusionStateNotification] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in MainActor.assumeIsolated { apply() } }
         }
     }
