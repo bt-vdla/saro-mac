@@ -108,6 +108,12 @@ public actor Pipeline {
                                        verdict: r.verdict, reasonCode: r.reasonCode)
             try? await ledger.insertVerdict(row)
             verdict = row
+        } else if let cached = verdict, (try? await ledger.verdicts(day: entry.localDay))?[entryId]?.id != cached.id {
+            // An edit back to text gated before: its verdict is restated as the newest, which the day and the canvas read.
+            let row = SafetyVerdictRow(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version, layer: cached.layer,
+                                       verdict: cached.verdict, reasonCode: cached.reasonCode)
+            try? await ledger.insertVerdict(row)
+            verdict = row
         }
         guard let v = verdict?.verdict, v == "clear" || v == "unavailable_clear" else {
             await status(ProcessingStatus.done)
