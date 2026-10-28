@@ -30,6 +30,8 @@ struct SaroApp: App {
             switch boot {
             case .success(let model):
                 RootView()
+                    // The bar's two-row layout fits from here; narrower would crowd the canvas for no gain.
+                    .frame(minWidth: 760, minHeight: 560)
                     .environment(model)
                     .environment(PrefsStore.shared)
                     .comfortEnvironment()
@@ -93,12 +95,20 @@ struct SaroCommands: Commands {
     var body: some Commands {
         CommandMenu("Go") {
             Group {
-                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
+                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command).disabled(model.lens != nil)
                 Divider()
-                Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
+                Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command).disabled(model.lens != nil)
                 // During onboarding ⌘[ and ⌘] are its own Previous and Next Step, so these give the keys up.
-                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("[", modifiers: .command))
-                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("]", modifiers: .command))
+                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("[", modifiers: .command)).disabled(model.lens != nil)
+                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("]", modifiers: .command)).disabled(model.lens != nil)
+                Button("Go to Date…") { model.pane = .day; model.datePickerOpen = true }.keyboardShortcut("g", modifiers: [.command, .option]).disabled(model.lens != nil)
+                Button("Time Lens") { model.lens == nil ? model.openLens() : model.lens?.close(how: .instant) }
+                    .keyboardShortcut("t", modifiers: [.command, .option])
+                ForEach(LensMath.Level.allCases, id: \.self) { l in
+                    Button(l.title) { model.lens?.go(to: l, how: .instant) }
+                        .keyboardShortcut(KeyEquivalent(Character("\(l.rawValue + 1)")), modifiers: .command)
+                        .disabled(model.lens == nil)
+                }
                 Divider()
                 Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option])
             }
