@@ -18,6 +18,7 @@ enum Pane: Hashable {
     case day
     case trash
     case decisions
+    case knows
 }
 
 /// The app's root state. One per process; every surface reads it from the environment.
@@ -77,6 +78,11 @@ final class AppModel {
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false
+    /// Nil until `loadProfile` has read it at launch.
+    var profile: Profile?
+    var starter: StarterContext?
+    /// `saro://knows?q=`: what What Saro knows opens filtered by.
+    var knowsQuery: String?
 
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
@@ -149,6 +155,7 @@ final class AppModel {
 
     /// Synthetic entries only (SR-28: real user text never enters fixtures).
     private func seedDemo() async {
+        if !UserDefaults.standard.bool(forKey: "SaroOnboarding") { await completeOnboarding() }
         let texts = [
             "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. Feeling tired but good.",
             "It's been a year since Dad died. I keep picking up the phone to call him on Sundays. Today I cried in the car outside the grocery store and couldn't go in.",
@@ -320,7 +327,7 @@ final class AppModel {
             }
             return
         }
-        go(to: day, animation: UserDefaults.standard.bool(forKey: "reduceMotionOverride") ? Motion.fade : Motion.surface)
+        go(to: day, animation: PrefsStore.shared.reduceMotionEffective ? Motion.fade : Motion.surface)
     }
 
     /// Adds photos chosen in an open panel as stills on the day on screen.

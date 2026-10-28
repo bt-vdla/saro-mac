@@ -39,6 +39,9 @@ targets:
         NSMicrophoneUsageDescription: Saro records your voice for moments and voice notes. The audio stays on this Mac.
         NSSpeechRecognitionUsageDescription: Saro transcribes your recordings on this Mac so you can read and search them. Nothing is sent anywhere.
         SaroGitCommit: unknown
+        CFBundleURLTypes:
+          - CFBundleURLName: com.saro.dogfood
+            CFBundleURLSchemes: [saro]
     entitlements:
       path: Saro/Saro.entitlements
       properties:

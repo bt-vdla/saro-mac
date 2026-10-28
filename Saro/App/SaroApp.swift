@@ -24,6 +24,9 @@ struct SaroApp: App {
             case .success(let model):
                 RootView()
                     .environment(model)
+                    .environment(PrefsStore.shared)
+                    .deepLinks(model)
+                    .task { await model.loadProfile() }
                     .task { await model.sweep() }
                     #if DOGFOOD
                     .task { Snapshots.runIfRequested(model) }
@@ -70,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return .terminateLater
     }
+
+    func applicationWillFinishLaunching(_ notification: Notification) { Reminders.shared.install() }
 }
 
 struct SaroCommands: Commands {

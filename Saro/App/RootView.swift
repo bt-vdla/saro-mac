@@ -21,6 +21,7 @@ struct RootView: View {
                     #else
                     EmptyView()
                     #endif
+                case .knows: Color.clear
                 }
             }
             .overlay { ToastHost() }

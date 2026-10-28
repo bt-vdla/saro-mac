@@ -40,6 +40,19 @@ enum Snapshots {
                     model.openVoiceID = nil
                     NotificationCenter.default.post(name: hold, object: nil)
                 }),
+                // Deep links, without bringing the app forward.
+                ("link-day", {
+                    WindowActions.openMain = {}
+                    model.openVoiceID = nil
+                    model.open(DeepLink.day(LocalDay.adding(-1, to: LocalDay.today())).url)
+                }),
+                ("link-missing", {
+                    Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        model.open(DeepLink.entry("gone").url)
+                    }
+                }),
+                ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
             ]
             for (name, apply) in steps {
                 apply()
@@ -51,6 +64,43 @@ enum Snapshots {
             }
             NSApp.terminate(nil)
         }
+    }
+}
+
+/// Foundation's shared pieces, which no screen of their own shows yet: the reminder banner, the greeting, readiness and
+/// the privacy copy.
+private struct FoundationGallery: View {
+    let profile: Profile?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 40) {
+            VStack(alignment: .leading, spacing: 16) {
+                NotificationPreview(time: "9:30 PM")
+                NotificationPreview(time: "7:15 AM").environment(\._accessibilityReduceTransparency, true)
+                ForEach([0.0, 5, 8, 11, 13, 16, 18, 21, 23], id: \.self) { h in
+                    Text("\(Greeting.eyebrow(hour: h).uppercased()) · \(Greeting.line(hour: h))").font(Typo.ui(12)).foregroundStyle(Tok.ink2)
+                }
+                Text(Readiness.model().line).font(Typo.ui(12)).foregroundStyle(Tok.ink2)
+                Text("Prompt: \(profile.map { $0.tone.previewLine(name: $0.address) } ?? "no profile")").font(Typo.serif(15)).foregroundStyle(Tok.voice)
+                Text("Onboarding done: \(profile?.onboardingDoneAt?.formatted() ?? "no")").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
+            }
+            .frame(width: 380, alignment: .leading)
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(PrivacyCopy.nfr02, id: \.self) { Text($0).font(Typo.serif(15)).foregroundStyle(Tok.ink) }
+                ForEach(PrivacyCopy.promises) { p in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(p.title).font(Typo.serif(18, .medium))
+                        ForEach(p.body, id: \.self) { Text($0).font(Typo.ui(12)).foregroundStyle(Tok.ink2) }
+                        Text(p.proofs.joined(separator: "  ·  ")).font(Typo.mono(10)).foregroundStyle(Tok.ink3)
+                        Text(p.where).font(Typo.ui(11, .medium)).foregroundStyle(Tok.sageTeal)
+                    }
+                    .padding(.top, 8)
+                }
+            }
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Tok.bg)
     }
 }
 
