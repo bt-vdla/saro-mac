@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// One entry found by `Ledger.search`.
 public struct SearchHit: Sendable, Hashable, Identifiable {
@@ -10,77 +11,121 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
     /// The user's title, a writing's first line, the AI title (cleared entries only) or a still's caption.
     /// Nil means the app shows the kind's noun.
     public let title: String?
-    /// One line of the entry's words, starting a few words before the first match.
+    /// One line of the entry's words around the densest cluster of matches.
     public let snippet: String
     /// What Copy text copies (SearchPalette.tsx): the transcript, body or caption, else the summary or title shown above.
     public let copyText: String
+    /// UTF-16 ranges of the matched words in `snippet` and in `title`.
+    public var highlights: [Range<Int>] = []
+    public var titleHighlights: [Range<Int>] = []
+    /// The meta column: a recording's length ("1:24").
+    public var meta: String?
 }
 
 extension Ledger {
-    /// Live entries containing every word of `query` (case- and diacritic-insensitive), best first: a title match
-    /// outranks a summary match, which outranks body, caption or transcript; ties go to the newest. An empty query
-    /// returns the newest entries. AI text is read only for entries whose newest verdict is `clear` or
-    /// `unavailable_clear`, so a held entry is never found (or shown) by generated words.
-    // ponytail: a full scan per keystroke; FTS5 once journals outgrow it (BRD: alpha search is a lexical filter).
+    private static let cache = Mutex<(ledger: ObjectIdentifier, changes: Int, index: SearchIndex)?>(nil)
+
+    /// Live entries matching `query` through the web's engine (stems, prefixes while typing, typos, field weights,
+    /// phrase and recency boosts; every word when it can, else the most), best first. An empty query returns the newest
+    /// entries. Saro's own text (titles, summaries, still descriptions, moods) is indexed only for an entry the gate
+    /// cleared for its current text, on a day that isn't held, so held or unchecked entries are never found or shown by
+    /// generated words.
     public func search(_ query: String, kind: EntryKind? = nil, limit: Int = 50) throws -> [SearchHit] {
-        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        let index = try searchIndex()
+        guard !SearchText.tokenize(query).isEmpty else {
+            return index.docs.filter { kind == nil || $0.kind == kind }.prefix(limit).map { Self.hit($0, snippet: String(SearchIndex.lead($0).prefix(160))) }
+        }
+        return index.search(query, kinds: kind.map { [$0] }, limit: limit).map { r in
+            var h = Self.hit(r.doc, snippet: r.snippet)
+            h.highlights = r.highlights
+            h.titleHighlights = r.titleHighlights
+            return h
+        }
+    }
+
+    /// The index, rebuilt only when the journal changed since it was built: every write goes through this connection,
+    /// so its change count is a cheap version (the web keeps its index live per session the same way).
+    private func searchIndex() throws -> SearchIndex {
+        let changes = try db.run("SELECT total_changes() AS n").first?.int("n") ?? 0
+        let me = ObjectIdentifier(self)
+        if let c = Self.cache.withLock({ $0 }), c.ledger == me, c.changes == changes { return c.index }
+        let built = SearchIndex(try searchDocs())
+        Self.cache.withLock { $0 = (me, changes, built) }
+        return built
+    }
+
+    private static func hit(_ d: SearchDoc, snippet: String) -> SearchHit {
+        SearchHit(entryId: d.id, kind: d.kind, localDay: d.day, capturedAt: d.capturedAt, title: d.title, snippet: snippet,
+                  copyText: d.copySource ?? d.summary ?? d.title ?? "", meta: d.meta)
+    }
+
+    /// Every live entry, newest first, as the web's search-docs.ts builds it.
+    func searchDocs() throws -> [SearchDoc] {
+        let held = try heldDays()
         let rows = try db.run("""
-            SELECT e.id, e.kind, e.local_day, e.captured_at, e.title_user, e.caption_user, e.body,
-              CASE WHEN v.verdict IN ('clear','unavailable_clear') THEN a.title END AS ai_title,
-              CASE WHEN v.verdict IN ('clear','unavailable_clear') THEN a.summary END AS ai_summary,
+            SELECT e.id, e.kind, e.local_day, e.captured_at, e.title_user, e.caption_user, e.body, m.duration_ms,
+              v.verdict, v.text_sha256, r.input_hash, a.title AS ai_title, a.summary AS ai_summary, a.caption AS ai_caption,
+              a.mood_label,
               (SELECT group_concat(w.text, ' ' ORDER BY w.idx) FROM transcript_word w WHERE w.media_id = e.media_id
                  AND w.extractor_version = (SELECT extractor_version FROM transcript_word WHERE media_id = e.media_id
                                             ORDER BY rowid DESC LIMIT 1)) AS transcript
             FROM live_entry e
+            LEFT JOIN media_asset m ON m.id = e.media_id
             LEFT JOIN entry_annotation a ON a.rowid = (SELECT MAX(rowid) FROM entry_annotation WHERE entry_id = e.id)
+            LEFT JOIN ai_run r ON r.id = a.ai_run_id
             LEFT JOIN safety_verdict v ON v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id)
-            WHERE ?1 IS NULL OR e.kind = ?1
             ORDER BY e.captured_at DESC
-            LIMIT ?2
-            """, [kind.map { .text($0.rawValue) } ?? .null, .int(words.isEmpty ? Int64(limit) : -1)])
-
-        var found: [(score: Int, hit: SearchHit)] = []
-        for r in rows {
-            let text = { (k: String) in r.str(k).flatMap { $0.isEmpty ? nil : $0 } }
+            """)
+        return rows.map { r in
+            let text = { (k: String) in r.str(k).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } }
             let kind = EntryKind(rawValue: r.str("kind") ?? "") ?? .reflection
-            let body = text("body")
-            let firstLine = kind == .reflection && body?.contains("\n") == true
-                ? body?.split(separator: "\n").first.map { String($0.prefix(80)) } : nil
-            let title = text("title_user") ?? firstLine ?? text("ai_title") ?? (kind == .still ? text("caption_user") : nil)
-            let fields: [(text: String?, weight: Int)] = [(title, 3), (text("ai_summary"), 2), (body, 1),
-                                                          (text("caption_user"), 1), (text("transcript"), 1)]
-            var score = 0
-            for w in words {
-                let best = fields.filter { $0.text?.localizedStandardContains(w) == true }.map(\.weight).max() ?? 0
-                if best == 0 { score = 0; break }
-                score += best
+            let day = r.str("local_day") ?? ""
+            let body = text("body"), caption = text("caption_user")
+            let cleared = Self.cleared(r, kind, held: held)
+            let saro = { (k: String) in cleared ? text(k) : nil }
+            var doc = SearchDoc(id: r.str("id") ?? "", kind: kind, day: day, capturedAt: r.date("captured_at") ?? .distantPast,
+                                title: text("title_user"), summary: saro("ai_summary"), transcript: text("transcript"))
+            doc.copySource = text("transcript") ?? body ?? caption
+            switch kind {
+            case .moment, .voice:
+                doc.title = doc.title ?? saro("ai_title")
+                doc.tags = [saro("mood_label")].compactMap { $0 }
+                doc.meta = r.int("duration_ms").flatMap(Self.clock)
+            case .reflection:
+                doc.body = body
+                // A writing's first line is its title when it has more than one; the rest is its body.
+                if doc.title == nil, let body, body.contains("\n"), let first = body.split(separator: "\n").first {
+                    doc.title = String(first.prefix(80))
+                    doc.body = String(body.dropFirst(first.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                doc.title = doc.title ?? saro("ai_title")
+            case .still:
+                doc.title = doc.title ?? caption ?? saro("ai_caption")
+                doc.extra = [caption, saro("ai_caption")].compactMap { $0 }.joined(separator: " · ")
+            case .music:
+                doc.title = doc.title ?? saro("ai_title")
+                doc.body = body
             }
-            guard words.isEmpty || score > 0 else { continue }
-            let sources = [body, text("transcript"), text("caption_user"), text("ai_summary")].compactMap { $0 }
-            let match = words.lazy.compactMap { w in sources.first { $0.localizedStandardContains(w) }.map { ($0, w) } }.first
-            let snippet = match.map { Self.snippet($0.0, around: $0.1, dropping: title) }
-                ?? Self.snippet(text("ai_summary") ?? body ?? text("transcript") ?? text("caption_user") ?? "", around: nil, dropping: title)
-            let copyText = text("transcript") ?? body ?? text("caption_user") ?? text("ai_summary") ?? title ?? ""
-            found.append((score, SearchHit(entryId: r.str("id") ?? "", kind: kind, localDay: r.str("local_day") ?? "",
-                                           capturedAt: r.date("captured_at") ?? .distantPast, title: title, snippet: snippet,
-                                           copyText: copyText)))
+            return doc
         }
-        return found.sorted { $0.score != $1.score ? $0.score > $1.score : $0.hit.capturedAt > $1.hit.capturedAt }
-            .prefix(limit).map(\.hit)
     }
 
-    /// `text` on one line, without a leading repeat of the title, starting at most ~24 characters (at a word
-    /// boundary) before the first match of `word`.
-    static func snippet(_ text: String, around word: String?, dropping title: String?) -> String {
-        var flat = Substring(text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
-        if let title, let r = flat.range(of: title, options: [.anchored, .caseInsensitive]) {
-            flat = flat[r.upperBound...].drop { " .,;:!?…—–-".contains($0) }
-        }
-        guard let word, let r = flat.localizedStandardRange(of: word),
-              flat.distance(from: flat.startIndex, to: r.lowerBound) > 24 else { return String(flat.prefix(160)) }
-        var cut = flat.index(r.lowerBound, offsetBy: -24)
-        while cut < r.lowerBound, flat[flat.index(before: cut)] != " " { cut = flat.index(after: cut) }
-        return "…" + flat[cut...].prefix(160)
+    /// Days a safety hold covers (SR-13): an entry's newest verdict holds, or the person's answer or mood note does.
+    func heldDays() throws -> Set<String> {
+        Set(try db.run("""
+            SELECT e.local_day AS d FROM live_entry e JOIN safety_verdict v
+              ON v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id)
+            WHERE v.verdict NOT IN ('clear','unavailable_clear','technical_hold','unavailable_caution')
+            UNION SELECT local_day FROM reflection_turn WHERE answer_verdict = 'safety_hold'
+            UNION SELECT local_day FROM day_state WHERE mood_note_verdict = 'safety_hold'
+            """).compactMap { $0.str("d") })
+    }
+
+    /// A recording's length as m:ss (search-docs.ts's clock).
+    static func clock(_ ms: Int) -> String? {
+        guard ms > 0 else { return nil }
+        let s = Int((Double(ms) / 1000).rounded())
+        return "\(s / 60):" + String(format: "%02d", s % 60)
     }
 }
 

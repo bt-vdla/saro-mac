@@ -2,15 +2,18 @@ import Foundation
 import Testing
 @testable import SaroKit
 
+/// A reading and verdicts for the entry's current text, as the pipeline writes them.
 private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? = nil, verdicts: [String]) async throws {
-    let run = AIRun(feature: "entry", executor: "heuristic", status: "ok")
+    let sha = e.kind == .reflection ? sha256(e.body ?? "") : "h"
+    var run = AIRun(feature: "entry", executor: "heuristic", status: "ok")
+    run.inputHash = sha
     try await l.insertRun(run)
     var a = EntryAnnotation(entryId: e.id, aiRunId: run.id, generator: "on_device")
     a.title = title
     a.summary = summary
     try await l.insertAnnotation(a)
     for v in verdicts {
-        try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: "h", safetyVersion: "1", layer: 1, verdict: v, reasonCode: v))
+        try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha, safetyVersion: "1", layer: 1, verdict: v, reasonCode: v))
     }
 }
 
@@ -21,14 +24,15 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     try await l.insertEntry(Entry(kind: .reflection, body: "Nothing to see here."))
     #expect(try await l.search("cafe").map(\.entryId) == [e.id])
     #expect(try await l.search("RAVI  chai").map(\.entryId) == [e.id])
-    #expect(try await l.search("ravi tokyo").isEmpty)
+    // Every word when it can, else the most (engine.ts).
+    #expect(try await l.search("ravi tokyo").map(\.entryId) == [e.id])
 }
 
 @Test func titleOutranksSummaryOutranksBodyThenNewestFirst() async throws {
     let l = try tempLedger()
     let base = Date(timeIntervalSince1970: 1_790_000_000)
     let body = Entry(kind: .reflection, body: "A note about tea.", capturedAt: base.addingTimeInterval(300))
-    let older = Entry(kind: .reflection, body: "More about tea.", capturedAt: base)
+    let older = Entry(kind: .reflection, body: "A note on tea.", capturedAt: base)
     let titled = Entry(kind: .reflection, titleUser: "Tea with Ravi", body: "Long day.", capturedAt: base.addingTimeInterval(100))
     let summarised = Entry(kind: .reflection, body: "Long day.", capturedAt: base.addingTimeInterval(200))
     for e in [body, older, titled, summarised] { try await l.insertEntry(e) }
@@ -47,16 +51,18 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     try await l.setTranscript(mediaId: m.id, words: words("walked home the long way and the sky was pink"), extractorVersion: "v2")
     let hits = try await l.search("sky was pink")
     #expect(hits.map(\.entryId) == [e.id])
-    #expect(hits.first?.snippet == "…the long way and the sky was pink")
+    #expect(hits.first?.snippet == "walked home the long way and the sky was pink")
     #expect(hits.first?.title == nil)
     #expect(try await l.search("old words").isEmpty)
 }
 
 @Test func heldEntriesAreNeverFoundOrTitledByGeneratedText() async throws {
     let l = try tempLedger()
-    let held = Entry(kind: .reflection, body: "Words of my own.")
+    // Held entries on a day of their own: a hold covers its whole day (SR-13).
+    let heldDay = LocalDay.adding(-1, to: LocalDay.today())
+    let held = Entry(kind: .reflection, body: "Words of my own.", localDay: heldDay)
     let cleared = Entry(kind: .reflection, body: "Words of my own.")
-    let flipped = Entry(kind: .reflection, body: "Words of my own.")
+    let flipped = Entry(kind: .reflection, body: "Words of my own.", localDay: heldDay)
     let unchecked = Entry(kind: .reflection, body: "Words of my own.")
     let unavailable = Entry(kind: .reflection, body: "Words of my own.")
     for e in [held, cleared, flipped, unchecked, unavailable] { try await l.insertEntry(e) }
@@ -83,7 +89,7 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     let page = Entry(kind: .reflection, titleUser: "Tuesday", body: "Tea with Ravi.")
     let still = Entry(kind: .still, captionUser: "The pink sky")
     let untranscribed = Entry(kind: .voice)
-    let held = Entry(kind: .voice)
+    let held = Entry(kind: .voice, localDay: LocalDay.adding(-1, to: LocalDay.today()))
     for e in [voice, page, still, untranscribed, held] { try await l.insertEntry(e) }
     try await l.setTranscript(mediaId: m.id, words: [TranscriptWord(text: "walked", startMs: 0, durMs: 300, confidence: 0.9),
                                                      TranscriptWord(text: "home", startMs: 300, durMs: 300, confidence: 0.9)],
@@ -116,7 +122,7 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     try await l.insertEntry(e)
     let hit = try #require(try await l.search("ravi").first)
     #expect(hit.title == "Monday notes")
-    #expect(hit.snippet == "…and then had chai with Ravi in the evening.")
+    #expect(hit.snippet == "Shipped the onboarding flow finally, and then had chai with Ravi in the evening.")
     #expect(try await l.search("onboarding").first?.snippet == "Shipped the onboarding flow finally, and then had chai with Ravi in the evening.")
 }
 
