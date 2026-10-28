@@ -642,10 +642,21 @@ final class AppModel {
     }
 
     func restore(batch: String) async {
-        try? await ledger.restore(batch: batch)
-        await reload()
-        rereadDay()
+        await restored((try? await ledger.restore(batch: batch)) ?? [])
         show(Toast("Restored"))
+    }
+
+    /// The Trash pane's Restore.
+    func restore(ids: [String]) async {
+        try? await ledger.restore(ids: ids)
+        await restored(ids)
+    }
+
+    /// Restored entries go back on the queue: one trashed before its pass ran was never read, and its day's reading
+    /// misses it until read again (the drain reads each entry's day; a rerun skips cached work).
+    private func restored(_ ids: [String]) async {
+        await reload()
+        for id in ids { process(id) }
     }
 
     // MARK: Stills

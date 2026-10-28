@@ -27,9 +27,8 @@ struct TrashView: View {
                         Spacer()
                         Button("Restore") {
                             Task {
-                                try? await model.ledger.restore(ids: [e.id])
+                                await model.restore(ids: [e.id])
                                 await load()
-                                await model.reload()
                             }
                         }
                     }
