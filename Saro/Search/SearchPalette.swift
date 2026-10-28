@@ -620,8 +620,14 @@ struct SearchPalette: View {
     }
 
     private func copy(_ h: SearchHit) {
-        NSPasteboard.general.clearContents()
-        let text = NSPasteboard.general.setString(h.copyText, forType: .string) ? "Copied" : "Couldn't copy"
+        // An entry with no words of its own (a held one shows none of Saro's) leaves the clipboard as it was.
+        let text: String
+        if h.copyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text = "Nothing to copy"
+        } else {
+            NSPasteboard.general.clearContents()
+            text = NSPasteboard.general.setString(h.copyText, forType: .string) ? "Copied" : "Couldn't copy"
+        }
         // In the footer, where the row's context was, for 1.6 s.
         flash = text
         flashOn = true
