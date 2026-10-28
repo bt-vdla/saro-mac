@@ -253,12 +253,14 @@ public actor Ledger {
                   a.quote.map { .text(sha256($0)) } ?? .null, .text(a.createdAt.iso)])
     }
 
-    /// Whether this entry already has a reading made from exactly this text.
-    public func hasAnnotation(entryId: String, inputHash: String) throws -> Bool {
+    /// Whether this entry already has a reading made from exactly this text. With `needsModel`, a heuristic reading
+    /// made without any model call doesn't count, so text read while the model couldn't run is read again once it can.
+    public func hasAnnotation(entryId: String, inputHash: String, needsModel: Bool = false) throws -> Bool {
         try !db.run("""
             SELECT 1 FROM entry_annotation a JOIN ai_run r ON r.id = a.ai_run_id
             WHERE a.entry_id=? AND r.input_hash=? AND a.rowid = (SELECT MAX(rowid) FROM entry_annotation WHERE entry_id=?)
-            """, [.text(entryId), .text(inputHash), .text(entryId)]).isEmpty
+              AND NOT (? AND r.executor='heuristic' AND COALESCE(r.model_calls, 0)=0)
+            """, [.text(entryId), .text(inputHash), .text(entryId), .int(needsModel ? 1 : 0)]).isEmpty
     }
 
     /// The newest annotation per entry for a day (DR-05: newest is current).

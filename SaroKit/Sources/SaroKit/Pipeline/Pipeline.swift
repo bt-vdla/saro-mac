@@ -114,8 +114,9 @@ public actor Pipeline {
             return
         }
 
-        // 3. Per-entry reading on the ladder; "In your words" when the model can't run. Skipped if this text was read.
-        if (try? await ledger.hasAnnotation(entryId: entryId, inputHash: hash)) == true {
+        // 3. Per-entry reading on the ladder; "In your words" when the model can't run. Skipped if this text was read,
+        //    unless only the heuristic read it and the model now can (a re-gate after Apple Intelligence came back).
+        if (try? await ledger.hasAnnotation(entryId: entryId, inputHash: hash, needsModel: v == "clear" && ai.status == .available)) == true {
             await status(ProcessingStatus.done)
             return
         }
@@ -236,8 +237,9 @@ public actor Pipeline {
             sources.append(src.text)
         }
         guard !digests.isEmpty else { return nil }
+        // The model's mark keeps a reading made without the model from standing in once the model can run.
         let inputHash = sha256(digests.map { "\($0.entryId)|\($0.title)|\($0.summary)|\($0.mood?.rawValue ?? "")" }.joined(separator: "\n")
-                               + candidates.map(\.text).joined(separator: "\n"))
+                               + candidates.map(\.text).joined(separator: "\n") + (modelOK ? "\nmodel" : ""))
         if let last = try? await ledger.latestSnapshot(kind: "day_reading", day: day), last.inputHash == inputHash,
            let payload = try? JSONDecoder().decode(DayPayload.self, from: Data(last.payload.utf8)) {
             return payload

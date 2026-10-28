@@ -174,6 +174,45 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "on_device")
 }
 
+@Test func heuristicReadingGivesWayOnceTheModelCanRun() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    // What a pass made while Apple Intelligence was off: unavailable_clear and an "In your words" reading.
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(chai), safetyVersion: SafetyGate.version, layer: 1,
+                                               verdict: "unavailable_clear", reasonCode: "model_unavailable"))
+    let words = Heuristics.heuristicReading(text: chai, candidates: Heuristics.candidates(entryId: e.id, field: "body", text: chai))
+    var run = AIRun(feature: "entry_reading", executor: "heuristic", status: "ok")
+    run.inputHash = sha256(chai)
+    run.modelCalls = 0
+    var a = EntryAnnotation(entryId: e.id, aiRunId: run.id, generator: "heuristic")
+    (a.title, a.summary, a.moodLabel) = (words.title, words.summary, words.mood.rawValue)
+    try await l.insertRun(run)
+    try await l.insertAnnotation(a)
+    // Every entry reply drifts (Priya), so the model's reading falls back to that same "In your words" digest.
+    let asked = CallLog()
+    let p = Pipeline(ledger: l, ai: stubAI { ask in
+        switch ask {
+        case .classify: return "NONE"
+        case .entry: await asked.hitPermissive(); return cleanEntry.replacingOccurrences(of: "Ravi", with: "Priya")
+        case .day: await asked.hitGuided(); return cleanDay
+        }
+    })
+    await p.readDay(e.localDay)
+    #expect(await p.latestDayReading(e.localDay)?.generator == "heuristic")
+    #expect(await asked.guided == 0)
+    // Re-gated clear, then read by the model although a heuristic reading of this text exists.
+    await p.process(entryId: e.id) {}
+    #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "clear")
+    #expect(await asked.permissive == 4)
+    // The model's own fallback counts as read: no second round of calls.
+    await p.process(entryId: e.id) {}
+    #expect(await asked.permissive == 4)
+    // Same digests as the heuristic day, but the model can run now.
+    await p.readDay(e.localDay)
+    #expect(await p.latestDayReading(e.localDay)?.generator == "on_device")
+}
+
 @Test func outputGateHitOnAnEntryReadingHoldsIt() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: answers(entry: cleanEntry.replacingOccurrences(of: "You had chai with Ravi.", with: "You said you want to end it all.")))
