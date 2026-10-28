@@ -17,11 +17,12 @@ let guardrail = LanguageModelError.guardrailViolation(.init(debugDescription: "t
 func walk(permissive: @escaping @Sendable (Int) async throws -> String,
           guided: @escaping @Sendable (Int) async throws -> EntryReading,
           validate: @escaping @Sendable (EntryReading) -> Bool = { _ in true },
-          log: CallLog) async -> (value: EntryReading, rung: Rung, calls: Int) {
+          log: CallLog) async -> (value: EntryReading, rung: Rung, calls: Int, stop: String?) {
     await Ladder.walk(
         permissive: { attempt in await log.hitPermissive(); return try await permissive(attempt) },
         decode: { try SaroAI.reading(Ladder.decode(EntryOut.self, from: $0)) },
         guided: { attempt in await log.hitGuided(); return try await guided(attempt) },
+        prose: { $0.prose },
         validate: validate,
         fallback: fallbackReading)
 }
@@ -111,6 +112,19 @@ func walk(permissive: @escaping @Sendable (Int) async throws -> String,
     #expect(result.rung == .heuristic)
     #expect(result.calls == 4)
     #expect(await log.permissive + log.guided == 4)
+}
+
+@Test func outputGateHitEndsTheLadder() async {
+    // SR-08: a hit is a hold, never a grounding miss that a clean retry or the next rung can paper over.
+    let hit = entryJSON.replacingOccurrences(of: "You had chai with Ravi.", with: "You said you want to end it all.")
+    let log = CallLog()
+    let first = await walk(permissive: { _ in hit }, guided: { _ in guidedReading }, log: log)
+    #expect(first.stop == "output_gate" && first.rung == .heuristic && first.calls == 1)
+    #expect(await log.guided == 0)
+    let hitGuided = EntryReading(title: "Guided", summary: "You want to end it all.", mood: .reflective)
+    let second = await walk(permissive: { _ in "garbage" }, guided: { _ in hitGuided }, log: CallLog())
+    #expect(second.stop == "output_gate" && second.calls == 3)
+    #expect(await walk(permissive: { _ in entryJSON }, guided: { _ in guidedReading }, log: CallLog()).stop == nil)
 }
 
 @Test func quoteIndexOutOfRangeIsRejected() {

@@ -58,11 +58,16 @@ public actor SaroAI {
     private let base = SystemLanguageModel.default
     private let permissive = SystemLanguageModel(guardrails: .permissiveContentTransformations)
     private var warm: LanguageModelSession?
+    /// Tests only: answers every prompt (classifier and both rungs) in the model's place.
+    private let stub: (@Sendable (String) async throws -> String)?
 
-    public init() {}
+    public init() { stub = nil }
+
+    init(stub: @escaping @Sendable (String) async throws -> String) { self.stub = stub }
 
     public nonisolated var status: Status {
-        switch base.availability {
+        if stub != nil { return .available }
+        return switch base.availability {
         case .available: .available
         case .unavailable(let reason): .unavailable(reason: "\(reason)")
         }
@@ -87,11 +92,10 @@ public actor SaroAI {
         let full = prompt.contains("{text}") ? prompt.replacingOccurrences(of: "{text}", with: text) : prompt + "\n" + text
         // ponytail: over-budget text fails closed as a hold; chunk at 3,000 tokens (§11.5) when long entries show up.
         guard await tokens(instructions, full, nil) <= contextSize - 16 else { return .uncertain(reason: "too_long") }
-        let model = permissive
+        let (model, stub) = (permissive, self.stub)
         do {
             let reply = try await Self.withTimeout(Self.classifierTimeout) {
-                try await LanguageModelSession(model: model, instructions: instructions)
-                    .respond(to: full, options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 8)).content
+                try await Self.ask(model, instructions, full, GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 8), stub)
             }
             guard let reply else { return .uncertain(reason: "timeout") }
             return Ladder.label(reply)
@@ -104,8 +108,8 @@ public actor SaroAI {
 
     // MARK: Per-entry reading
 
-    /// Title, summary, mood and one quote index for one gate-cleared entry. `validate` is the caller's drift check
-    /// and output gate; an out-of-range quote index is rejected here before it runs.
+    /// Title, summary, mood and one quote index for one gate-cleared entry. `validate` is the caller's drift check;
+    /// an out-of-range quote index is rejected here before it runs. A layer-3 hit ends with status `output_gate`.
     public func readEntry(entryId: String, text: String, candidates: [Candidate], fallback: EntryReading,
                           validate: @escaping @Sendable (EntryReading) -> Bool) async -> (EntryReading, Provenance) {
         let start = ContinuousClock.now
@@ -117,22 +121,21 @@ public actor SaroAI {
 
         let text = fitted.text
         let indexes = Set(shown.map(\.index))
-        let (base, permissive) = (self.base, self.permissive)
+        let (base, permissive, stub) = (self.base, self.permissive, self.stub)
         let result = await Ladder.walk(
             permissive: { attempt in
-                try await LanguageModelSession(model: permissive, instructions: Self.entryInstructions)
-                    .respond(to: Self.entryTask(text, shown, json: true, retry: attempt > 0), options: Self.options).content
+                try await Self.ask(permissive, Self.entryInstructions, Self.entryTask(text, shown, json: true, retry: attempt > 0),
+                                   Self.options, stub)
             },
             decode: { try Self.reading(Ladder.decode(EntryOut.self, from: $0)) },
             guided: { attempt in
-                let out = try await LanguageModelSession(model: base, instructions: Self.entryInstructions)
-                    .respond(to: Self.entryTask(text, shown, json: false, retry: attempt > 0), generating: EntryOut.self,
-                             options: Self.options).content
-                return try Self.reading(out)
+                try await Self.reading(Self.ask(EntryOut.self, base, Self.entryInstructions,
+                                                Self.entryTask(text, shown, json: false, retry: attempt > 0), stub))
             },
+            prose: { $0.prose },
             validate: { Self.grounded($0, in: indexes) && validate($0) },
             fallback: fallback)
-        return (result.value, provenance(result.rung, result.calls, fitted.tokens, Self.entryPromptVersion, start))
+        return (result.value, provenance(result.rung, result.calls, fitted.tokens, Self.entryPromptVersion, start, result.stop))
     }
 
     // MARK: Day reading
@@ -158,22 +161,21 @@ public actor SaroAI {
         }
 
         let indexes = Set(shown.map(\.index))
-        let (base, permissive, kept) = (self.base, self.permissive, digests)
+        let (base, permissive, stub, kept) = (self.base, self.permissive, self.stub, digests)
         let result = await Ladder.walk(
             permissive: { [shown] attempt in
-                try await LanguageModelSession(model: permissive, instructions: Self.dayInstructions)
-                    .respond(to: Self.dayTask(kept, shown, json: true, retry: attempt > 0), options: Self.options).content
+                try await Self.ask(permissive, Self.dayInstructions, Self.dayTask(kept, shown, json: true, retry: attempt > 0),
+                                   Self.options, stub)
             },
             decode: { try Self.reading(Ladder.decode(DayOut.self, from: $0)) },
             guided: { [shown] attempt in
-                let out = try await LanguageModelSession(model: base, instructions: Self.dayInstructions)
-                    .respond(to: Self.dayTask(kept, shown, json: false, retry: attempt > 0), generating: DayOut.self,
-                             options: Self.options).content
-                return try Self.reading(out)
+                try await Self.reading(Self.ask(DayOut.self, base, Self.dayInstructions,
+                                                Self.dayTask(kept, shown, json: false, retry: attempt > 0), stub))
             },
+            prose: { $0.prose },
             validate: { Self.grounded($0, in: indexes) && validate($0) },
             fallback: fallback)
-        return (result.value, provenance(result.rung, result.calls, tokensIn, Self.dayPromptVersion, start))
+        return (result.value, provenance(result.rung, result.calls, tokensIn, Self.dayPromptVersion, start, result.stop))
     }
 
     // MARK: Prompts
@@ -286,11 +288,26 @@ public actor SaroAI {
         }
     }
 
+    /// One call in a fresh session (§11.7); the test stub answers in the model's place.
+    static func ask(_ model: SystemLanguageModel, _ instructions: String, _ prompt: String, _ options: GenerationOptions,
+                    _ stub: (@Sendable (String) async throws -> String)?) async throws -> String {
+        if let stub { return try await stub(prompt) }
+        return try await LanguageModelSession(model: model, instructions: instructions).respond(to: prompt, options: options).content
+    }
+
+    static func ask<T: Generable>(_ type: T.Type, _ model: SystemLanguageModel, _ instructions: String, _ prompt: String,
+                                  _ stub: (@Sendable (String) async throws -> String)?) async throws -> T {
+        if let stub { return try await Ladder.decode(T.self, from: stub(prompt)) }
+        return try await LanguageModelSession(model: model, instructions: instructions)
+            .respond(to: prompt, generating: T.self, options: options).content
+    }
+
     private func provenance(_ rung: Rung, _ calls: Int, _ tokensIn: Int?, _ promptVersion: String,
-                            _ start: ContinuousClock.Instant) -> Provenance {
+                            _ start: ContinuousClock.Instant, _ stop: String? = nil) -> Provenance {
         Provenance(executor: rung == .heuristic ? "heuristic" : "on_device", rung: rung,
                    guardrails: rung == .permissiveJSON ? "permissive" : rung == .guided ? "default" : nil,
                    variant: variant, osBuild: Self.osBuild, contextSize: contextSize, promptVersion: promptVersion,
-                   tokensIn: tokensIn, modelCalls: calls, latencyMs: Int((ContinuousClock.now - start) / .milliseconds(1)))
+                   tokensIn: tokensIn, modelCalls: calls, latencyMs: Int((ContinuousClock.now - start) / .milliseconds(1)),
+                   status: stop ?? "ok")
     }
 }

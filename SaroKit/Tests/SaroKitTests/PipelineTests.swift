@@ -78,3 +78,68 @@ import Testing
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.failed)
     #expect(await p.dayStatus(e.localDay) == .empty)
 }
+
+// MARK: With a model stand-in (synthetic replies; no real model call runs)
+
+enum Ask { case classify, entry, day }
+
+/// Routes each prompt by kind: the classifier's ends in "Label:", the day's opens with its notes.
+func stubAI(_ answer: @escaping @Sendable (Ask) throws -> String) -> SaroAI {
+    SaroAI(stub: { prompt in
+        try answer(prompt.hasSuffix("Label:") ? .classify : prompt.hasPrefix("Notes on today's entries") ? .day : .entry)
+    })
+}
+
+let chai = "Had chai with Ravi after work."
+let cleanEntry = #"{"title": "Chai with Ravi", "summary": "You had chai with Ravi.", "mood": "Calm", "moodBasis": "chai", "quoteIndex": null}"#
+let cleanDay = #"{"mood": "Calm", "moodBasis": "chai", "quoteIndexes": [0], "question": "What did Ravi say?", "narrative": null}"#
+
+func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
+    stubAI { ask in
+        switch ask {
+        case .classify: "NONE"
+        case .entry: entry
+        case .day: day
+        }
+    }
+}
+
+@Test func cleanRepliesAreStoredAsOnDeviceReadings() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "on_device")
+    #expect(await p.dayStatus(e.localDay) == .ready)
+    #expect(await p.readDay(e.localDay)?.reading.question == "What did Ravi say?")
+    #expect(await p.latestDayReading(e.localDay)?.generator == "on_device")
+}
+
+@Test func outputGateHitOnAnEntryReadingHoldsIt() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers(entry: cleanEntry.replacingOccurrences(of: "You had chai with Ravi.", with: "You said you want to end it all.")))
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    let v = try await l.verdicts(day: e.localDay)[e.id]
+    #expect(v?.verdict == "safety_hold" && v?.layer == 3 && v?.reasonCode == "output_gate")
+    #expect(try await l.annotations(day: e.localDay).isEmpty)
+    #expect(await p.dayStatus(e.localDay) == .held)
+    #expect(await p.readDay(e.localDay) == nil)
+}
+
+@Test func outputGateHitOnTheDayReadingHoldsTheDay() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers(day: cleanDay.replacingOccurrences(of: "What did Ravi say?", with: "Do you want to end it all?")))
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    #expect(await p.readDay(e.localDay) == nil)
+    let v = try await l.verdicts(day: e.localDay)[e.id]
+    #expect(v?.verdict == "safety_hold" && v?.layer == 3 && v?.reasonCode == "output_gate")
+    #expect(await p.dayStatus(e.localDay) == .held)
+    #expect(try await l.run("SELECT COUNT(*) AS n FROM insight_snapshot").first?["n"]?.int == 0)
+    await p.process(entryId: e.id) {}
+    #expect(await p.dayStatus(e.localDay) == .held)
+}

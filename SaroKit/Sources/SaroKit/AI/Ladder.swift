@@ -5,34 +5,39 @@ import FoundationModels
 enum Ladder {
     /// Permissive JSON (two tries), then guided (two tries), then the caller's fallback. A guardrail or refusal on
     /// any rung goes straight to the fallback and is never re-asked (SR-09). `attempt` is 0 or 1; 1 means "add the
-    /// correction line". At most 4 calls (SR-10).
+    /// correction line". At most 4 calls (SR-10). Every reply passes the layer-3 phrase gate before anything else, and
+    /// a hit ends the ladder (SR-08), so a clean retry can't hide it. `stop` says why it ended early: `output_gate`, or
+    /// a stop error's `reason`.
     static func walk<T: Sendable>(
         permissive: @Sendable (Int) async throws -> String,
         decode: @Sendable (String) throws -> T,
         guided: @Sendable (Int) async throws -> T,
+        prose: @Sendable (T) -> String,
         validate: @Sendable (T) -> Bool,
         fallback: T
-    ) async -> (value: T, rung: Rung, calls: Int) {
+    ) async -> (value: T, rung: Rung, calls: Int, stop: String?) {
         var calls = 0
         for attempt in 0..<2 {
             calls += 1
             do {
                 let raw = try await permissive(attempt)
-                if let value = try? decode(raw), validate(value) { return (value, .permissiveJSON, calls) }
+                if SafetyGate.phraseHit(raw) { return (fallback, .heuristic, calls, "output_gate") }
+                if let value = try? decode(raw), validate(value) { return (value, .permissiveJSON, calls, nil) }
             } catch let error where isStop(error) {
-                return (fallback, .heuristic, calls)
+                return (fallback, .heuristic, calls, reason(error))
             } catch {}
         }
         for attempt in 0..<2 {
             calls += 1
             do {
                 let value = try await guided(attempt)
-                if validate(value) { return (value, .guided, calls) }
+                if SafetyGate.phraseHit(prose(value)) { return (fallback, .heuristic, calls, "output_gate") }
+                if validate(value) { return (value, .guided, calls, nil) }
             } catch let error where isStop(error) {
-                return (fallback, .heuristic, calls)
+                return (fallback, .heuristic, calls, reason(error))
             } catch {}
         }
-        return (fallback, .heuristic, calls)
+        return (fallback, .heuristic, calls, nil)
     }
 
     /// Errors where another call can't help or must not happen: guardrail and refusal (SR-09), an over-long input

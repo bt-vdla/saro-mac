@@ -124,7 +124,6 @@ public actor Pipeline {
         if v == "clear" {
             (reading, prov) = await ai.readEntry(entryId: entryId, text: text, candidates: candidates, fallback: fallback) { r in
                 Heuristics.driftOK(generated: "\(r.title). \(r.summary)", source: text)
-                    && !SafetyGate.phraseHit("\(r.title) \(r.summary) \(r.moodBasis ?? "")")
             }
         } else {
             (reading, prov) = (fallback, Provenance(executor: "heuristic", rung: .heuristic, guardrails: nil, variant: nil,
@@ -132,8 +131,9 @@ public actor Pipeline {
                                                     tokensIn: nil, modelCalls: 0, latencyMs: 0))
         }
 
-        // Layer 3 over whatever was generated, heuristic included (SR-08). A hit stores nothing but a verdict.
-        if SafetyGate.phraseHit("\(reading.title) \(reading.summary) \(reading.moodBasis ?? "")") {
+        // Layer 3 over whatever was generated, heuristic included (SR-08): the ladder stops on a hit in any reply, and
+        // the result is checked again here. A hit stores nothing but a verdict.
+        if prov.status == "output_gate" || SafetyGate.phraseHit(reading.prose) {
             try? await ledger.insertVerdict(SafetyVerdictRow(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version,
                                                             layer: 3, verdict: "safety_hold", reasonCode: "output_gate"))
             await status(ProcessingStatus.done)
@@ -235,14 +235,21 @@ public actor Pipeline {
         let prov: Provenance
         if modelOK {
             (reading, prov) = await ai.readDay(day: day, digests: digests, candidates: candidates, fallback: fallback) { r in
-                (r.narrative.map { Heuristics.driftOK(generated: $0, source: source) } ?? true)
-                    && !SafetyGate.phraseHit([r.narrative, r.question, r.moodBasis].compactMap { $0 }.joined(separator: " "))
+                r.narrative.map { Heuristics.driftOK(generated: $0, source: source) } ?? true
             }
         } else {
             (reading, prov) = (fallback, Provenance(executor: "heuristic", rung: .heuristic, guardrails: nil, variant: nil, osBuild: SaroAI.osBuild,
                                                     contextSize: nil, promptVersion: SaroAI.dayPromptVersion, tokensIn: nil, modelCalls: 0, latencyMs: 0))
         }
-        guard !SafetyGate.phraseHit([reading.narrative, reading.question, reading.moodBasis].compactMap { $0 }.joined(separator: " ")) else { return nil }
+        // Layer 3 (SR-08): a hit holds every entry the reading drew on, so the whole day is held and nothing is stored.
+        if prov.status == "output_gate" || SafetyGate.phraseHit(reading.prose) {
+            for d in digests {
+                guard let row = verdicts[d.entryId] else { continue }
+                try? await ledger.insertVerdict(SafetyVerdictRow(entryId: d.entryId, textSha256: row.textSha256, safetyVersion: SafetyGate.version,
+                                                                layer: 3, verdict: "safety_hold", reasonCode: "output_gate"))
+            }
+            return nil
+        }
 
         let picked = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
         let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId))

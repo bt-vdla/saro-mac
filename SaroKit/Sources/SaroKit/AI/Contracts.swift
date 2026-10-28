@@ -61,6 +61,9 @@ public struct EntryReading: Sendable, Hashable, Codable {
         self.moodBasis = moodBasis
         self.quoteIndex = quoteIndex
     }
+
+    /// Every generated string, one per line, for the layer-3 output gate (SR-08).
+    public var prose: String { [title, summary, moodBasis ?? ""].joined(separator: "\n") }
 }
 
 /// One entry as the day reading sees it: its stored annotation, never raw history.
@@ -99,6 +102,9 @@ public struct DayReading: Sendable, Hashable, Codable {
         self.question = question
         self.narrative = narrative
     }
+
+    /// Every generated string, one per line, for the layer-3 output gate (SR-08).
+    public var prose: String { [moodBasis, question, narrative].compactMap { $0 }.joined(separator: "\n") }
 }
 
 /// Layer-2 classifier labels (SR-07).
@@ -134,9 +140,11 @@ public struct Provenance: Sendable, Hashable, Codable {
     public var tokensIn: Int?
     public var modelCalls: Int
     public var latencyMs: Int
+    /// `ok`, or why the ladder stopped early: `output_gate` (a layer-3 hit) or a stop error's reason.
+    public var status: String
 
     public init(executor: String, rung: Rung, guardrails: String?, variant: String?, osBuild: String, contextSize: Int?,
-                promptVersion: String, tokensIn: Int?, modelCalls: Int, latencyMs: Int) {
+                promptVersion: String, tokensIn: Int?, modelCalls: Int, latencyMs: Int, status: String = "ok") {
         self.executor = executor
         self.rung = rung
         self.guardrails = guardrails
@@ -147,5 +155,6 @@ public struct Provenance: Sendable, Hashable, Codable {
         self.tokensIn = tokensIn
         self.modelCalls = modelCalls
         self.latencyMs = latencyMs
+        self.status = status
     }
 }
