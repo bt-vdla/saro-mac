@@ -248,3 +248,18 @@ func exported(_ l: Ledger) async throws -> String {
     #expect(try await l.stillCaption(entryId: e.id)?.status == "unreadable")
     #expect(try await rowCount(l, "safety_verdict") == 0)
 }
+
+// MARK: Live model (a synthetic image, SR-28)
+
+@Test(.enabled(if: liveModelAvailable && SaroAI().canSee)) func liveStillIsDescribedAndCleared() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: SaroAI())
+    let s = try await stillEntry(l, rgb: (0.12, 0.29, 0.22))
+    await p.process(entryId: s.id) {}
+    let c = try #require(try await l.stillCaption(entryId: s.id))
+    #expect(c.executor == "on_device" && c.rung == "guided" && (1...2).contains(c.modelCalls))
+    #expect(c.caption != nil && (1...6).contains(c.tags.count))
+    #expect(try await l.verdicts(day: s.localDay)[s.id]?.verdict == "clear")
+    #expect(await p.dayStatus(s.localDay) == .ready)
+    print("live still:", c)
+}
