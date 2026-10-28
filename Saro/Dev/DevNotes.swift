@@ -107,6 +107,7 @@ struct DevNotes {
                 built: ["Autosaving editor (0.8 s debounce)", "Title field (the card's title, else Untitled), TODAY · 4:16 PM · EDITED, the prompt row, your caption",
                         "The first line becomes the card title when none is typed", "Closing an empty page discards it (B-16)",
                         "Gate and reading run when the editor closes", "Edit on the card: the second click on a selected page edits its title or body",
+                        "A typed title is gated with the words (a held title holds the day), never read or quoted",
                         "Reflect further after the gate: reflect_further on the ladder, Another question, Retry, the SafetyCard when held",
                         "Questions and gated answers are reflection_turn rows, never the body (DR-04)",
                         "Songs: 560 pt view with Open in … and Copy link; Edit details ⌘I for title and artist, which are gated, never read"],
@@ -131,7 +132,8 @@ struct DevNotes {
             DevNotes(
                 name: "Stack",
                 does: "A recording session's turns piled together. Opening it fans the turns out in place and dims the canvas behind.",
-                built: ["A session's turns stack automatically", "Fan out in place with the canvas dimmed", "Unstack", "Stack ⌘S from any selection"],
+                built: ["A session's turns stack automatically", "Fan out in place over the window, the bar and panel hidden", "Header at the top: Unstack, Play all ⌘↩, Done (Esc)",
+                        "Each turn under its question, with its words", "Stack ⌘S from any selection"],
                 stubbed: ["Turn numbers inside the opened detail"],
                 issues: [],
                 brd: ["FR-CAN-02", "FR-CAN-03"])
