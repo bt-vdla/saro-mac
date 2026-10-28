@@ -94,7 +94,7 @@ struct CardFace: View {
         content
             .frame(width: size.width, height: size.height)
             .overlay {
-                if selected {
+                if selected && entry.kind != .voice {
                     RoundedRectangle(cornerRadius: radius + 4).strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4)
                 }
             }
@@ -170,27 +170,29 @@ struct CardFace: View {
         .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3, hover: hover)
     }
 
+    /// The orb and a one-line "title · time · duration" pill that hugs its words; the selection ring hugs both.
     private var voice: some View {
         HStack(spacing: 12) {
-            EchoOrb(size: 80, hover: hover)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.title(for: entry)).font(Typo.ui(13, .medium)).foregroundStyle(Tok.ink).lineLimit(1)
-                HStack(spacing: 6) {
-                    if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
-                        Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond)))
-                    }
-                    Text(entry.capturedAt.formatted(date: .omitted, time: .shortened))
-                    if let s = model.status(for: entry) { Text("· \(s)") }
+            EchoOrb(size: 80)
+            HStack(spacing: 6) {
+                Text(model.title(for: entry)).font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink).lineLimit(1)
+                Text("·")
+                Text(entry.capturedAt.formatted(date: .omitted, time: .shortened)).fixedSize()
+                if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
+                    Text("·")
+                    Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond))).fixedSize()
                 }
-                .monoCaps(10)
-                .foregroundStyle(Tok.ink3)
+                if let s = model.status(for: entry) {
+                    Text(s).monoCaps(9.5, tracking: 0.06).foregroundStyle(Tok.ink3).lineLimit(1).fixedSize()
+                }
             }
-            .padding(.horizontal, 14).padding(.vertical, 9)
-            .frame(maxWidth: 200, alignment: .leading)
+            .font(Typo.ui(12)).foregroundStyle(Tok.ink2)
+            .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Tok.paper.opacity(0.8), in: .capsule)
-            .overlay(Capsule().strokeBorder(Tok.rim.opacity(0.5)))
+            .overlay(Capsule().strokeBorder(Tok.rim.opacity(0.6)))
             .elevation(.lift)
         }
+        .overlay { if selected { Capsule().strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4) } }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -237,7 +239,7 @@ struct StackFace: View {
                 if first.kind == .moment {
                     MediaThumb(url: model.mediaURL(for: first), kind: .moment, ready: model.media[first.mediaId ?? ""]?.state == "ready")
                 } else {
-                    EchoOrb(size: 92, hover: hover).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    EchoOrb(size: 92).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 LinearGradient(stops: [.init(color: .black.opacity(0.3), location: 0), .init(color: .black.opacity(0.2), location: 0.45),
                                        .init(color: .black.opacity(0.75), location: 1)], startPoint: .top, endPoint: .bottom)
@@ -265,10 +267,9 @@ struct StackFace: View {
     }
 }
 
-/// The voice note's orb (EchoOrb.tsx): a lit lavender sphere in a glass ring, with a small play chip.
+/// The voice note's orb (EchoOrb.tsx): a lit lavender sphere in a glass ring, with a small dark play chip.
 struct EchoOrb: View {
     let size: CGFloat
-    var hover = false
 
     var body: some View {
         ZStack {
@@ -280,9 +281,11 @@ struct EchoOrb: View {
                 .padding(size * 0.09)
             Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1)
             Circle().stroke(Color(0xB4AEEA, 0xB4AEEA).opacity(0.38), lineWidth: 1.5).padding(-2)
-            Circle().fill(.white.opacity(0.9)).frame(width: 28, height: 28)
-                .overlay(Image(systemName: "play.fill").font(.system(size: 10)).foregroundStyle(Tok.echoInk).offset(x: 1))
-                .scaleEffect(hover ? 1.08 : 1)
+            Circle().fill(Color(0x1A102A, 0x1A102A).opacity(0.2)).frame(width: 28, height: 28)
+                .overlay(Circle().strokeBorder(.white.opacity(0.1)))
+                .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
+                .overlay(Image(systemName: "play.fill").font(.system(size: 14)).foregroundStyle(Tok.paper)
+                    .shadow(color: .black.opacity(0.9), radius: 4).offset(x: 1))
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
