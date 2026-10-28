@@ -65,7 +65,12 @@ struct DayView: View {
         .onCommand(#selector(NSText.selectAll(_:))) {
             if cardsTakeKeys { model.selection = Set(model.entries.map(\.id)) }
         }
+        // Whatever held the focus over the canvas closed. A field that goes away leaves focus nowhere, and Space-drag, the
+        // arrows and Tab need it back.
         .onChange(of: model.lens == nil) { _, closed in if closed { focused = true } }
+        .onChange(of: model.openEntryID == nil) { _, closed in if closed { focused = true } }
+        .onChange(of: model.insight == .spine) { _, closed in if closed { focused = true } }
+        .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
         // With keyboard navigation on, focus goes back to the date button instead (BottomBar).
         .onChange(of: model.datePickerOpen) { _, open in if !open && !NSApp.isFullKeyboardAccessEnabled { focused = true } }
         .onDeleteCommand {
@@ -105,9 +110,12 @@ struct DayView: View {
         .onChange(of: model.replay.active) { _, on in if on { focused = true } }
         .onAppear { focused = true }
         .onChange(of: focused) { _, on in if !on { saveNudge() } }
-        // Leaving the journal ends the replay where it is.
-        .onDisappear { model.replay.exit(animated: false) }
-        .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
+        // Leaving the journal (another pane, or the window closed) ends the replay where it is and closes the open entry,
+        // which would otherwise hide the chrome of a day view that comes back without its detail.
+        .onDisappear {
+            model.replay.exit(animated: false)
+            model.openEntryID = nil
+        }
     }
 
     /// The canvas has the keys, with nothing over it that takes them: the arrows, Tab and ⌘A act on its cards.
