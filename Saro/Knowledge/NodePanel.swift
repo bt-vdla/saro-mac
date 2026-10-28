@@ -74,9 +74,7 @@ struct NodePanel: View {
                     }
                 }
             }
-            if held {
-                Text("Saro won’t keep that name.").font(Typo.ui(12)).foregroundStyle(Tok.ink3)
-            }
+            if held { HeldNote().padding(.top, 4) }
             Text("First seen \(MemoryList.day(node.first)) · Last seen \(MemoryList.day(node.last))")
                 .font(Typo.mono(11, .regular)).foregroundStyle(Tok.ink3)
         }

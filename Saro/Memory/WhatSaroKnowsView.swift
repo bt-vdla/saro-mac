@@ -396,15 +396,14 @@ private struct ForgetConfirm: View {
     }
 }
 
-/// A line the phrase gate held: nothing was kept, and the resources are one click away.
-private struct HeldNote: View {
-    @Environment(AppModel.self) private var model
-
+/// A line or name the SafetyGate held: nothing was kept, and the resources are right here, in whichever window it was
+/// typed (SR-20), as a held entry shows them.
+struct HeldNote: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Saro won’t keep that one. If any of it is weighing on you, there are people who’ll listen.")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Saro won’t keep that one. If any of it is weighing on you, these people will listen.")
                 .font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
-            Button("Talk to someone") { model.safetyCardRequested = true }.buttonStyle(.link).font(Typo.ui(12))
+            SafetyCardView(compact: true)
         }
     }
 }
