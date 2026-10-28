@@ -225,10 +225,15 @@ struct DayStage: View {
         let start: CGRect
         /// It had a height of its own when the drag began.
         let sized: Bool
+        /// Where the press landed, in the world; and the pointer now, on the stage.
+        let from: CGPoint
+        var pointer: CGPoint
         var rect: CGRect
         var follows = false
-        var translation = CGSize.zero
     }
+
+    /// The stage's own space, where a handle reports its pointer.
+    static let space = "DayStage"
 
     init(day: String, cards: [StageCard], size: CGSize) {
         self.day = day
@@ -262,6 +267,7 @@ struct DayStage: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        .coordinateSpace(.named(Self.space))
         .onChange(of: flying.map(\.id)) { _, ids in
             faces = faces.filter { ids.contains($0.key) }
             for c in flying where faces[c.id] == nil { faces[c.id] = c.face(model, scheme: colorScheme, scale: displayScale * camera.zoom) }
@@ -275,10 +281,20 @@ struct DayStage: View {
             guard case .active(let p) = phase else { return hover(nil) }
             hover(cards.last { underPointer($0, p) }.flatMap { resizable($0) ? $0.id : nil })
         }
-        // Shift and ⌥ change a resize without the pointer moving.
+        // Shift and ⌥ change a resize without the pointer moving; so does a pan or zoom, which keeps the edge under it.
         .onModifierKeysChanged(mask: [.shift, .option], initial: false) { _, keys in
-            guard let s = sizing, let c = cards.first(where: { $0.id == s.id }) else { return }
-            resize(c, s.handle, by: s.translation, shift: keys.contains(.shift), option: keys.contains(.option))
+            resize(shift: keys.contains(.shift), option: keys.contains(.option))
+        }
+        .onChange(of: camera) { _, _ in
+            let keys = NSEvent.modifierFlags
+            resize(shift: keys.contains(.shift), option: keys.contains(.option))
+        }
+        // A card trashed or stacked mid-resize takes the drag with it, unsaved, as the web's does when it unmounts.
+        .onChange(of: cards.map(\.id)) { _, ids in
+            if let s = sizing, !ids.contains(s.id) {
+                sizing = nil
+                retractGrid()
+            }
         }
         #if DOGFOOD
         .onReceive(NotificationCenter.default.publisher(for: Snapshots.hold)) { _ in
@@ -288,7 +304,9 @@ struct DayStage: View {
             guard isCurrent else { return }
             if n.object as? Bool == false { return endResize() }
             if let c = cards.first(where: { resizable($0) && $0.item.top.kind == .moment }) ?? cards.first(where: resizable) {
-                resize(c, .se, by: CGSize(width: 96, height: 30), shift: false, option: false)
+                let p = screen(c.center)
+                beginResize(c, .se, at: p)
+                resize(to: CGPoint(x: p.x + 96, y: p.y + 30), shift: false, option: false)
             }
         }
         #endif
@@ -395,9 +413,10 @@ struct DayStage: View {
         .overlay {
             if showsHandles(c) {
                 pose(ResizeHandles(size: c.size, zoom: camera.zoom, active: sizing?.id == c.id ? sizing?.handle : nil,
-                                   onDrag: { h, t in
+                                   onDrag: { h, from, to in
+                                       beginResize(c, h, at: from)
                                        let keys = NSEvent.modifierFlags
-                                       resize(c, h, by: t, shift: keys.contains(.shift), option: keys.contains(.option))
+                                       resize(to: to, shift: keys.contains(.shift), option: keys.contains(.option))
                                    },
                                    onEnd: endResize), c, moving: moving)
             }
@@ -535,36 +554,47 @@ struct DayStage: View {
         return StageCard(item: c.item, center: CGPoint(x: s.rect.midX, y: s.rect.midY), size: s.rect.size, radius: c.radius)
     }
 
+    /// A press on a handle selects the card and draws the grid out from it.
+    private func beginResize(_ c: StageCard, _ handle: CanvasMath.Handle, at press: CGPoint) {
+        guard sizing == nil else { return }
+        userMoved = true
+        model.selection = c.ids
+        let start = CGRect(center: c.center, size: c.size)
+        sizing = Sizing(id: c.id, handle: handle, start: start, sized: model.layouts[c.id]?.h != nil, from: world(press), pointer: press,
+                        rect: start)
+        grid = DragGrid(rect: start, others: cards.filter { $0.id != c.id }.map { CGRect(center: $0.center, size: $0.size) },
+                        zoom: camera.zoom)
+    }
+
     /// The opposite edge stays put and the moving one snaps as a dragged card's do (⌥ frees it); Shift frees a picture's
     /// proportions. A card with no height of its own sets only its width when it keeps them or is only widened.
-    private func resize(_ c: StageCard, _ handle: CanvasMath.Handle, by t: CGSize, shift: Bool, option: Bool) {
-        guard let spec = CanvasMath.resizeSpec(c.item.top.kind) else { return }
-        if sizing == nil {
-            userMoved = true
-            model.selection = c.ids
-            let start = CGRect(center: c.center, size: c.size)
-            sizing = Sizing(id: c.id, handle: handle, start: start, sized: model.layouts[c.id]?.h != nil, rect: start)
-            grid = DragGrid(rect: start, others: cards.filter { $0.id != c.id }.map { CGRect(center: $0.center, size: $0.size) },
-                            zoom: camera.zoom)
-        }
-        guard var s = sizing, var g = grid else { return }
-        let reach = 6 / camera.zoom, rhythm = 3 / camera.zoom
+    private func resize(to pointer: CGPoint? = nil, shift: Bool, option: Bool) {
+        guard var s = sizing, var g = grid, let c = cards.first(where: { $0.id == s.id }),
+              let spec = CanvasMath.resizeSpec(c.item.top.kind) else { return }
+        if let pointer { s.pointer = pointer }
+        let at = world(s.pointer)
+        let d = CGSize(width: at.x - s.from.x, height: at.y - s.from.y)
         var sx: CanvasMath.Snap?, sy: CanvasMath.Snap?
-        let next = CanvasMath.resize(s.start, s.handle, by: CGSize(width: t.width / camera.zoom, height: t.height / camera.zoom), spec: spec,
-                                     free: shift,
-                                     snapX: { x in
-                                         sx = option ? nil : CanvasMath.snap([x], cards: g.cardX, reach: reach, axis: 0, level: g.level, rhythmReach: rhythm)
-                                         return x + (sx?.delta ?? 0)
-                                     },
-                                     snapY: { y in
-                                         sy = option ? nil : CanvasMath.snap([y], cards: g.cardY, reach: reach, axis: 1, level: g.level, rhythmReach: rhythm)
-                                         return y + (sy?.delta ?? 0)
-                                     })
-        let side = s.handle.sides.y
-        s.follows = !s.sized && ((spec.keepsAspect && !shift) || side == 0)
-        let h = s.follows ? CanvasMath.size(c.item.top.kind, w: next.width, h: nil).height : next.height
-        s.rect = CGRect(x: next.minX, y: side < 0 ? s.start.maxY - h : next.minY, width: next.width, height: h)
-        s.translation = t
+        // Only a move resizes (useCardGesture.ts): with no distance an edge could still snap to a guide and a bare click would save it.
+        if d == .zero {
+            s.rect = s.start
+        } else {
+            let reach = 6 / camera.zoom, rhythm = 3 / camera.zoom
+            let next = CanvasMath.resize(s.start, s.handle, by: d, spec: spec,
+                                         free: shift,
+                                         snapX: { x in
+                                             sx = option ? nil : CanvasMath.snap([x], cards: g.cardX, reach: reach, axis: 0, level: g.level, rhythmReach: rhythm)
+                                             return x + (sx?.delta ?? 0)
+                                         },
+                                         snapY: { y in
+                                             sy = option ? nil : CanvasMath.snap([y], cards: g.cardY, reach: reach, axis: 1, level: g.level, rhythmReach: rhythm)
+                                             return y + (sy?.delta ?? 0)
+                                         })
+            let side = s.handle.sides.y
+            s.follows = !s.sized && ((spec.keepsAspect && !shift) || side == 0)
+            let h = s.follows ? CanvasMath.size(c.item.top.kind, w: next.width, h: nil).height : next.height
+            s.rect = CGRect(x: next.minX, y: side < 0 ? s.start.maxY - h : next.minY, width: next.width, height: h)
+        }
         g.move(to: s.rect, x: sx, y: sy)
         sizing = s
         grid = g
