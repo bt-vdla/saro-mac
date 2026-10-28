@@ -3,10 +3,9 @@
 The build is on `dogfood/v0` at github.com/bt-vdla/saro-mac. The app is signed with your Apple Development identity
 (team `P6SP5RHNLV`). It runs entirely on this Mac: no network entitlement, no accounts, no paid calls.
 
-**Where it stands at 07:30.** Everything through the five packages is pushed (`d241158`): parity F1–F9, stills, reflection,
-onboarding, Settings, and What Saro knows with the knowledge graph, after a five-lens review and two rounds of fixes.
-Capture, shell and navigation are built, merged on top and passing 519 tests; they are in a last independent check and go
-up as soon as it passes. This file is updated when they land.
+**Where it stands at 09:30.** Everything is pushed: parity F1–F9, stills, reflection, onboarding, Settings, What Saro
+knows with the knowledge graph, and then capture, shell and navigation, each reviewed and fixed before it went up. The
+merged build passes all 525 SaroKit tests and renders all 114 snapshot states.
 
 ## Run it
 
@@ -28,8 +27,8 @@ Desktop, whose Finder metadata breaks `codesign`.
 1. **Try it by hand.** The screen was locked all night, so nobody clicked, dragged, typed or recorded in this build. Every
    surface was checked through builds, about 500 unit tests and an off-screen snapshot harness that renders the real views
    (about 110 states, PNGs). Please try: onboarding end to end (including Find your light with the camera), a moment and a
-   voice note, dragging, resizing and throwing cards, ⌘K, What Saro knows and Settings; and, once phase C lands, the time
-   lens, the recorder's live captions, Trash and the Touch ID lock.
+   voice note, dragging, resizing and throwing cards, ⌘K, What Saro knows and Settings; and the time
+   lens, the recorder's live captions, Space for a voice note, Trash and the Touch ID lock.
 2. **A clinician review of the safety phrase changes.** Tonight's safety testing added 49 missed risk phrasings and spared
    7 idioms in the phrase gate, plus Hinglish and Devanagari lines. Every changed line is marked
    `DRAFT: clinician review (SR-32)` in `SaroKit/Sources/SaroKit/Safety/PhraseGate.swift`; the summary is in
@@ -122,13 +121,18 @@ the build), repaired when it objected, and checked again. Then:
   of fixes. The blocking ones were all safety: a day still in progress could show Saro's text while held, ⌘K showed AI
   titles on held days, commitments were never gated and appeared in What Saro knows, memory learned from Saro's own photo
   descriptions, and Import could bring back what a hold had deleted.
+- **Final check.** With capture, shell and navigation merged on top, six more independent checkers (one per package, plus
+  keyboard and focus, safety, and every snapshot) raised 53 findings; skeptics confirmed 48 (5 blocking, 17 major, 26
+  minor) and six fixers fixed them before the push. The blocking ones were again safety: captions, summaries and titles
+  typed in Edit Details or on failed recordings weren't gated, the ⌃⌘J panel judged a hold by the window's day instead of
+  today's, and a hold left follow-up questions stored for its entry.
 - **Bugs I found while merging,** fixed with tests: the model sometimes reports a context size of 0 while busy, which
   marked short entries "too long" for good; stubbed test models still waited on the real model service, stalling the
   test run for a minute; live-model tests now take turns; the snapshot harness now works while the screen is locked;
   migrations are pinned to the order dogfood journals ran them, and a journal newer than the app is refused.
-- **Snapshots.** An off-screen harness renders the real views to PNG (about 110 states across every surface, light and
+- **Snapshots.** An off-screen harness renders the real views to PNG (114 states across every surface, light and
   150% text). I looked at them after every merge. The Metal ground doesn't render there, so day surfaces sit on dark.
-- **Tests.** 519 SaroKit tests pass on the fully merged build (403 on what is pushed now), in about 80 seconds,
+- **Tests.** 525 SaroKit tests pass on the merged build, in under two minutes,
   including the live on-device model, Speech and Vision tests (synthetic text, audio and images only). The app target has no
   test target, so app-only logic (views, the queue, menus) is covered by the build, the snapshots and the reviewers.
 
@@ -148,9 +152,9 @@ the build), repaired when it objected, and checked again. Then:
   voice pill, hold pans), the recorder and camera, Find your light, live captions, Touch ID, drag-and-drop and Import
   Media need a first real try.
 - **Snapshots don't show the Metal ground**, so I judged the lit ground from earlier renders, not tonight's.
-- **Small open items** from the last re-check, being fixed now: tone preview keyed on the day on screen, some keyboard
-  actions still animating, an edge added by a graph rebuild drawing before its nodes settle, and import while onboarding
-  is half done.
+- **Left as is, knowingly:** a recording you give a typed title shows none of Saro's text in ⌘K or the time lens (it fails
+  closed); cards can't be dragged out as files (the moment detail's Export can); a stack opened with Return still fans out
+  with its animation; and "Reflecting…" at Pause & reflect waits for an entry being read to finish.
 - **Three idle demo processes** from a snapshot run (`Saro-pkg-memory`) were still running; I wasn't allowed to stop them.
   They use throwaway journals; quit them from Activity Monitor or ignore them.
 
@@ -164,11 +168,13 @@ model and cost. First step: the Lab-1 model bench, the same synthetic cases on A
 
 ## Commits
 
-341 commits on `dogfood/v0`. Last night's pushes, in order:
+498 commits on `dogfood/v0`. Last night's pushes, in order:
 
 - `3e978f8…6f8908d` foundation: profile, prefs, reminders, deep links, schema v3
 - `6f8908d…abfe86b` parity F4–F8, the snapshot harness fix, a recorder fix and ⌘K Copy text
 - `abfe86b…22f8aec` F9 resize handles, with its repair and a Stack/Unstack size fix
 - `22f8aec…d241158` the five packages, integrated, reviewed and fixed (one merge commit whose tree is the tested one)
+- `d241158…0de1f84` this report and the clinician summary
+- `0de1f84…e7a56b7` capture, shell and navigation, merged, checked and fixed
 
 `git log --first-parent dogfood/v0` reads as the story; `git log dogfood/v0` has every small commit.
