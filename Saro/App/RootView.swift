@@ -30,10 +30,27 @@ struct RootView: View {
         .sheet(isPresented: $model.safetyCardRequested) { SafetyCardView() }
         #if DOGFOOD
         .devMode()
+        .overlay(alignment: .top) {
+            if model.isDemo, model.pane == .decisions || model.devNotesVisible { DemoBanner() }
+        }
         #endif
         .searchPalette(isPresented: $model.searchOpen)
     }
 }
+
+#if DOGFOOD
+/// -SaroDemo opens a fresh temporary journal each launch, so decisions and notes recorded in it never reach an export.
+private struct DemoBanner: View {
+    var body: some View {
+        Label("Demo journal: decisions and notes recorded here are gone after this launch.", systemImage: "exclamationmark.triangle")
+            .font(Typo.ui(12, .medium))
+            .foregroundStyle(Tok.warning)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .saroSurface(radius: 999)
+            .padding(.top, 10)
+    }
+}
+#endif
 
 struct Sidebar: View {
     @Environment(AppModel.self) private var model
