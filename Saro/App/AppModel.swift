@@ -35,7 +35,7 @@ final class AppModel {
     var annotations: [String: EntryAnnotation] = [:]
     var verdicts: [String: SafetyVerdictRow] = [:]
     var selection: Set<String> = []
-    var openEntryID: String?
+    var openEntryID: String? { didSet { if openEntryID == nil { rollOver() } } }
     /// The stack fanned out in place, if any.
     var openStackID: String?
     var toast: Toast?
@@ -74,15 +74,45 @@ final class AppModel {
     private var working = false
     private var current: String?
     private var navigation = 0
+    /// The calendar day as of the last midnight, wake or activation.
+    private var today = LocalDay.today()
     private static var swept = false
 
     init(ledger: Ledger) {
         self.ledger = ledger
         pipeline = Pipeline(ledger: ledger, ai: ai)
+        let center = NotificationCenter.default
         // The menu bar and ⌘K post this, sometimes before the window they open has a RootView to receive it.
-        NotificationCenter.default.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
+        center.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.safetyCardRequested = true }
         }
+        for (c, name) in [(center, Notification.Name.NSCalendarDayChanged), (center, NSApplication.didBecomeActiveNotification),
+                          (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)] {
+            c.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.catchUp() } }
+        }
+    }
+
+    /// Midnight, wake or activation: the day on screen follows today, and entries that waited for the model re-gate.
+    private func catchUp() {
+        rollOver()
+        Task { await regateWaiting() }
+    }
+
+    /// When the day on screen was today, it moves on to the new today, so a morning capture isn't filed (as backdated)
+    /// under yesterday. An open entry stays open; the day moves on when it closes.
+    private func rollOver() {
+        let now = LocalDay.today()
+        guard now != today, openEntryID == nil else { return }
+        if day == today {
+            if pane == .day { goToday() } else { day = now; Task { await reload() } }
+        }
+        today = now
+    }
+
+    /// Entries gated while Apple Intelligence was off go back through the gate once it can run (SR-17).
+    private func regateWaiting() async {
+        guard ai.status == .available else { return }
+        for id in (try? await ledger.entryIDs(withLatestVerdictIn: ["unavailable_clear", "unavailable_caution"])) ?? [] { process(id) }
     }
 
     static func boot() -> Result<AppModel, Error> {
@@ -433,10 +463,7 @@ final class AppModel {
             if e.processingStatus == ProcessingStatus.recording { try? await ledger.setProcessingStatus(id: e.id, ProcessingStatus.pending) }
             process(e.id)
         }
-        // Entries gated while Apple Intelligence was off go back through the gate now that it can run (SR-17).
-        if ai.status == .available {
-            for id in (try? await ledger.entryIDs(withLatestVerdictIn: ["unavailable_clear", "unavailable_caution"])) ?? [] { process(id) }
-        }
+        await regateWaiting()
         await reload()
     }
 
