@@ -141,6 +141,8 @@ enum Snapshots {
                     model.goToday()
                     Task {
                         try? await Task.sleep(for: .seconds(0.8))
+                        // The still held above is read again, which restates its clear verdict, so today isn't held.
+                        if let s = model.entries.first(where: { $0.kind == .still }) { model.process(s.id) }
                         if let url = Music.link("https://music.apple.com/gb/album/a-night-at-the-opera/1440650428") { await model.newMusic(url: url, at: nil) }
                     }
                 }),
@@ -160,8 +162,36 @@ enum Snapshots {
                         model.openEntryID = e.id
                     }
                 }),
+                // A moment's two parts fanned out, each under the question it answered, with its words.
+                ("capture-fan", {
+                    guard model.isDemo else { return }
+                    model.openEntryID = nil
+                    Task {
+                        let sid = UUID().uuidString
+                        let parts = [("Which moment from today stands out?", "Walking home over the bridge after the rain. The river was loud and I stopped for a while."),
+                                     ("What did the bridge give you?", "The quiet. Nobody needed anything from me for ten minutes.")]
+                        for (i, (question, said)) in parts.enumerated() {
+                            var e = Entry(kind: .moment, sessionId: sid, turnNumber: i + 1, capturedAt: .now.addingTimeInterval(Double(i * 60 - 900)),
+                                          localDay: model.day, processingStatus: ProcessingStatus.done)
+                            let a = MediaAsset(fileName: "\(e.localDay)/\(sid)/part-\(i + 1).mov", kind: .video, origin: "recorded", state: "ready",
+                                               durationMs: [42_000, 28_000][i])
+                            e.mediaId = a.id
+                            try? await model.ledger.insertMedia(a)
+                            try? await model.ledger.insertEntry(e)
+                            try? await model.ledger.setTranscript(mediaId: a.id, words: said.split(separator: " ").enumerated().map {
+                                TranscriptWord(text: String($0.element), startMs: $0.offset * 400, durMs: 380, confidence: 0.95)
+                            }, extractorVersion: "snapshot")
+                            try? await model.ledger.insertTurn(ReflectionTurn(kind: .prompt, question: question, generator: i == 0 ? "curated" : "heuristic",
+                                                                              localDay: e.localDay, entryId: e.id, sessionId: sid, turnNumber: i + 1))
+                        }
+                        await model.reload()
+                        await CaptureUI.shared.loadPrompts(model)
+                        model.openStackID = sid
+                    }
+                }),
                 ("capture-cardedit", {
                     guard let e = model.entries.last(where: { $0.kind == .reflection }) else { return }
+                    model.openStackID = nil
                     model.openEntryID = nil
                     model.selection = [e.id]
                     Task {
@@ -169,8 +199,16 @@ enum Snapshots {
                         CaptureUI.shared.editing = (e.id, .body)
                     }
                 }),
+                // The music field, grown out of its button over the bar.
+                ("capture-music", {
+                    CaptureUI.shared.editing = nil
+                    model.selection = []
+                    CaptureUI.shared.musicGrows = true
+                    CaptureUI.shared.musicOpen = true
+                }),
                 // Three weeks of synthetic history, seeded here so the steps before see only the demo day.
                 ("knows", {
+                    CaptureUI.shared.musicOpen = false
                     CaptureUI.shared.editing = nil
                     UserDefaults.standard.set("graph", forKey: "saro.knows.mode")
                     Task {
@@ -203,6 +241,11 @@ enum Snapshots {
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery().environment(model)) }),
                 ("capture-pieces", { p.contentView = NSHostingView(rootView: CaptureGallery().environment(model)) }),
+                ("capture-failed", {
+                    p.contentView = NSHostingView(rootView: FinishDialog(day: LocalDay.today(), paused: false, interrupted: false, keptParts: false,
+                                                                         step: .constant(.failed), finish: {}, keepRecording: {}, discard: {}, reveal: {})
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(DevelopedFrame.gallery))
+                }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
                 // Onboarding, each step hosted on its own flow (the demo journal itself skips onboarding).
                 ("onboarding-welcome", { p.contentView = onboarding(.preview(step: .welcome), model) }),
