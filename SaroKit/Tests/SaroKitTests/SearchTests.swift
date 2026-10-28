@@ -203,3 +203,10 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
                                                verdict: "clear", reasonCode: "clear"))
     #expect(try await l.search("anniversary").map(\.entryId) == [e.id])
 }
+
+@Test func aSongIsNamedByItsLinkAsItsCardIs() async throws {
+    let l = try tempLedger()
+    let song = Entry(kind: .music, body: "https://music.apple.com/gb/album/a-night-at-the-opera/1440650428")
+    try await l.insertEntry(song)
+    #expect(try await l.search("opera").first?.title == "A Night at the Opera")
+}

@@ -109,7 +109,9 @@ extension Ledger {
                 doc.title = doc.title ?? caption ?? saro("ai_caption")
                 doc.extra = [caption, saro("ai_caption")].compactMap { $0 }.joined(separator: " · ")
             case .music:
-                doc.title = doc.title ?? saro("ai_title")
+                // A song is never read: named by its link, read offline, as its card is.
+                doc.title = doc.title ?? body.flatMap(Music.link).map { Music.resolve($0).title }
+                doc.summary = nil
                 doc.body = body
             }
             return doc
