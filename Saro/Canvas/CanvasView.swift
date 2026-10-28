@@ -452,7 +452,11 @@ struct DayStage: View {
     private func detailTarget(_ e: Entry) -> CGRect {
         let w: CGFloat, h: CGFloat
         switch e.kind {
-        case .moment: (w, h) = (min(1200, size.width - 96), min(780, size.height - 96))
+        case .moment:
+            // The video is a flush 16:9 column beside a min(420, 40%) side column, so size the sheet to the video.
+            let side = min(420, (size.width - 96) * 0.4)
+            w = min(1200, size.width - 96, (size.height - 96) * 16 / 9 + side)
+            h = min(size.height - 96, (w - side) * 9 / 16)
         case .voice: (w, h) = (min(720, size.width - 96), min(600, size.height - 96))
         case .still: (w, h) = (min(1000, size.width - 96), min(760, size.height - 96))
         case .reflection, .music: (w, h) = (min(820, size.width - 96), min(820, size.height - 96))
