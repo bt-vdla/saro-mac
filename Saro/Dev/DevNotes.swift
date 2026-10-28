@@ -29,12 +29,12 @@ struct DevNotes {
                         "The glass bar: History (days sidebar), date + 7-day mood ribbon, Moment ⌘N, Voice ⇧⌘N, Still, Write ⌥⌘W, Recenter",
                         "Lit ground: the web's WebGL shader ported to Metal, keyed to the hour; palette follows the clock (B-18)",
                         "Drop, paste or pick photos as stills; -SaroDemo YES opens a throwaway journal of synthetic entries",
-                        "Navigation: Space-drag and middle-drag pan with a glide, a faint pan grid, a wheel notch springs, fit down to 8%; arrows, Tab and ⌘A select, ⌥-arrow nudges and ⇧⌥-arrow resizes (saved on key-up); a held card pans the canvas at the edges",
+                        "Navigation: Space-drag and middle-drag pan with a glide, a faint pan grid, a wheel notch springs, fit down to 8%; arrows, Tab and ⌘A select (Tab goes on to the bar past the last card), ⌥-arrow nudges and ⇧⌥-arrow resizes (saved when the arrow comes up, whichever key is let go first); Space pans only while the canvas has focus; a held card pans the canvas at the edges",
                         "Day layout (dayLayout.ts): a new day is laid out by type and the window's shape, again when the width changes for cards nobody moved; new cards land in view (freeSpot, packBurst), dropped files on a grid",
                         "The bar: 'TODAY · 4:16 PM' on the Mac's clock, Yesterday, shorter forms when narrow, one or two rows; the date opens the date picker; the next chevron dims at today; mood ribbon tooltips, VoiceOver summary and click-to-day",
                         "Hovering a chevron reads its day ahead, and the days either side load once a day lands; at midnight today follows the clock with a slide once you're idle"],
                 stubbed: ["Collections / folders (FR-CAN-05)", "Notes pinned to an image (FR-CAN-04)",
-                          "Chained chevron presses are separate slides; the web's one strip offset that keeps their velocity isn't ported"],
+                          "Quick chevron presses count on from the day still loading, but each is its own slide; the web's one strip offset that keeps their velocity isn't ported"],
                 issues: ["Overnight, gestures and motion were checked from builds and off-screen snapshots only; nobody has clicked or flicked them on a trackpad yet",
                          "Zooming far in scales cards as layers, so text can look soft above 150%",
                          "A day sliding out re-reads titles from the new day for its last frames (cards keep their places)"],
@@ -252,8 +252,11 @@ struct DevNotes {
                         "Labels and count chips in mono 10.5 with kind dots, swapping detail at 128, 64 and 46 pt; month names; header with Date.IntervalFormatStyle, counts, 150 ms 'Reading your days…', Retry, the reach note",
                         "Keys: arrows, Page Up/Down, Home/End, + − = _, Return, Esc, ⌘1-3; footer hint; VoiceOver grid with a row per week, a Months rotor, no mood on a held day",
                         "Week replay: play/pause, day columns, the ring on the lit tile, dots at capture times, per-entry mood line at 1.6 s a day, the spoken summary",
-                        "Posters: 256 pt JPEG key frames beside their day, black-frame probes, made after recording and import and backfilled nearest-first"],
-                stubbed: ["The smear follows the focus tile's velocity for the whole grid; the web's shader gives each month its own"],
+                        "Posters: 256 pt JPEG key frames beside their day, black-frame probes, made after recording and import and backfilled nearest-first",
+                        "Modal: the days sidebar, its toggle and the day's commands wait while it's open, so Tab stays inside; leaving the day closes it"],
+                stubbed: ["The smear follows the focus tile's velocity for the whole grid; the web's shader gives each month its own",
+                          "Tiles are always drawn in a SwiftUI Canvas; the instanced Metal pass while moving isn't ported",
+                          "A picked tile flies by the lens's own hand-off; the general flight from any rect (search rows into cards) isn't built"],
                 issues: ["Checked from builds and off-screen snapshots; pinches and flicks haven't been felt on a trackpad yet"],
                 brd: ["FR-DAY-06", "FR-DAY-02", "§13.2"])
         case .datePicker:
@@ -261,10 +264,10 @@ struct DevNotes {
                 name: "Date picker",
                 does: "The month above the bar (the date button, ⌥⌘G, ⌘K): days with entries marked in their mood's colour, the day on screen selected, nothing after today.",
                 built: ["A 7-column month from the Mac's first weekday, month steps that stop at this month, Go to today",
-                        "Hovering a day reads it ahead, so the pick only slides; a key's pick is instant; arrows and Return work inside it; Esc or a click outside closes",
+                        "Resting on a day for 120 ms reads it ahead, so the pick only slides; a key's pick is instant; arrows and Return work inside it; Esc or a click outside closes",
                         "Each day reads 'Tuesday, October 27, today, has entries, selected'; a held day's mark has no mood"],
                 stubbed: [],
-                issues: ["Focus returns to the canvas, not to the date button itself (SwiftUI buttons only take focus with Keyboard Navigation on)"],
+                issues: ["A panel centred above the bar, as the web's is, not an NSPopover; focus goes back to the date button with Keyboard Navigation on, else to the canvas (SwiftUI buttons only take focus with it on)"],
                 brd: ["FR-DAY-02"])
         case .knows:
             DevNotes(
