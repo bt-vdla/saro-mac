@@ -255,7 +255,8 @@ final class ReflectionModel {
     /// Write a new letter: a new take on the day, which also replaces a kept letter.
     func rewriteLetter() async {
         guard let model, let day else { return }
-        guard await refresh(.letter, avoid: model.dayReading?.payload.narrative?.title, done: nil, failed: "Couldn’t write a new letter") else { return }
+        guard await refresh(.letter, avoid: model.dayReading?.payload.narrative?.title, done: nil,
+                            failed: "Couldn’t write a new letter. Your entries are safe. Try again in a moment.") else { return }
         try? await model.ledger.clearKept(day: day)
         kept = nil
     }
@@ -354,7 +355,7 @@ final class ReflectionModel {
             try await model.ledger.keepLetter(day: day, snapshot: snapshot)
             kept = letter
             if state.letterOpenedAt == nil { state.letterOpenedAt = .now }
-            model.show(Toast("Kept with this day. You’ll find it here when you come back to it."))
+            model.show(Toast("Kept with this day. You’ll find it here when you come back to this day."))
         } catch {
             model.show(Toast("Couldn’t keep the letter. Try again in a moment.", style: .error))
         }

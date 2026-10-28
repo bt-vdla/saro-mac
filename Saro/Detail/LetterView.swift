@@ -307,13 +307,9 @@ struct LetterView: View {
                 Label { Text("Kept with this day") } icon: { Image(systemName: "checkmark").foregroundStyle(Tok.sage) }
                     .font(Typo.ui(13)).foregroundStyle(Tok.ink2).padding(.horizontal, 8)
             } else {
-                Button {
-                    Task {
-                        await r.keep(letter)
-                        model.insight = .spine
-                    }
-                } label: { Label("Keep", systemImage: "bookmark") }
-                .buttonStyle(Pill(primary: true))
+                // Kept, the letter stays open as 'Kept letter', with the check here (EveningLetter.tsx).
+                Button { Task { await r.keep(letter) } } label: { Label("Keep", systemImage: "bookmark") }
+                    .buttonStyle(Pill(primary: true))
             }
         }
         .padding(.horizontal, 24).padding(.vertical, 12)

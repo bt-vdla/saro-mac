@@ -29,6 +29,13 @@ extension ReflectionModel {
         Self.copy(text)
         if let toast { model?.show(Toast(toast)) }
     }
+
+    /// The panel's summary as Markdown, while the day's reading may show; nil on a held day or with nothing read.
+    var summary: String? {
+        guard let model, model.dayStatus == .ready, let p = model.dayReading?.payload else { return nil }
+        let subtitle = p.reading.narrative ?? p.narrative?.subtitle ?? ""
+        return CopyText.summary(p.narrative, subtitle: Letter.typeset(subtitle), mood: mood(p.reading), question: p.reading.question, answer: answer)
+    }
 }
 
 /// Right-clicking anywhere on the panel (InsightBarContextMenu.tsx).
@@ -38,14 +45,12 @@ struct PanelMenu: View {
     var body: some View {
         let r = model.reflection
         Button("Refresh insights", systemImage: "arrow.clockwise") { Task { await r.refreshInsights() } }
-            .disabled(model.dayStatus != .ready || r.busy.contains(.insights))
+            .disabled(!r.canRefresh)
         Button("Collapse to spine", systemImage: "sidebar.right") { model.insight = .spine }
         Button("Copy summary", systemImage: "doc.on.doc") {
-            guard let p = model.dayReading?.payload else { return }
-            let subtitle = p.reading.narrative ?? p.narrative?.subtitle ?? ""
-            r.copy(CopyText.summary(p.narrative, subtitle: Letter.typeset(subtitle), mood: r.mood(p.reading), question: p.reading.question,
-                                    answer: r.answer), toast: "Copied to clipboard")
+            if let s = r.summary { r.copy(s, toast: "Copied to clipboard") }
         }
-        .disabled(model.dayStatus != .ready || model.dayReading == nil)
+        .keyboardShortcut("c")
+        .disabled(r.summary == nil)
     }
 }

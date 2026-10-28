@@ -26,8 +26,17 @@ struct NoticedView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.automatic)
+            // Clicked, the panel takes focus, so ⌘C copies its summary and the arrows scroll it.
+            .focusable()
+            .focusEffectDisabled()
         }
         .contextMenu { PanelMenu() }
+        .onCopyCommand(perform: model.reflection.summary.map { text in
+            {
+                model.show(Toast("Copied to clipboard"))
+                return [NSItemProvider(object: text as NSString)]
+            }
+        })
         .tourAnchor(.inspector)
         .onAppear {
             Task { await model.ai.prewarm() }
