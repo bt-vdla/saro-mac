@@ -181,14 +181,14 @@ struct KnowledgeGraphView: View {
     /// busiest, leaving out one that would overlap a label already placed. Hovering a node brings its label back.
     // ponytail: pairwise rectangle test, O(n²) a render; fine at 80 nodes.
     private func labelled(_ lit: Set<String>?) -> Set<String> {
-        let scale = max(camera.zoom, NodeDot.labelFloor)
+        let scale = max(camera.zoom, NodeDot.labelFloor), text = PrefsStore.shared.textScale
         let rank = { (n: KnowledgeGraph.Node) in n.id == (hovered ?? selected) ? 0 : lit?.contains(n.id) == true ? 1 : 2 }
         var placed: [CGRect] = []
         var out = Set<String>()
         for n in (0...2).flatMap({ r in graph.nodes.filter { rank($0) == r } }) {
             guard let p = layout[n.id] else { continue }
-            let c = screen(p), w = NodeDot.labelWidth(n) * scale
-            let r = CGRect(x: c.x - w / 2, y: c.y + (NodeDot.diameter(n) / 2 + 5) * camera.zoom, width: w, height: NodeDot.labelHeight * scale)
+            let c = screen(p), w = NodeDot.labelWidth(n, scale: text) * scale
+            let r = CGRect(x: c.x - w / 2, y: c.y + (NodeDot.diameter(n) / 2 + 5) * camera.zoom, width: w, height: NodeDot.labelHeight * text * scale)
             guard !placed.contains(where: { $0.intersects(r) }) else { continue }
             placed.append(r)
             out.insert(n.id)
