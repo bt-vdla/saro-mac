@@ -110,7 +110,7 @@ struct SaroCommands: Commands {
                         .disabled(model.lens == nil)
                 }
                 Divider()
-                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option])
+                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option]).disabled(model.lens != nil)
             }
             .disabled(model.showsOnboarding)
         }
@@ -133,7 +133,8 @@ struct SaroCommands: Commands {
                 Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
                     .disabled(!model.reflection.canRefresh)
             }
-            .disabled(model.showsOnboarding)
+            // The day's own commands wait while the time lens is over it.
+            .disabled(model.showsOnboarding || model.lens != nil)
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") {

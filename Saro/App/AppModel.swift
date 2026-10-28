@@ -29,7 +29,8 @@ final class AppModel {
     let pipeline: Pipeline
     /// What Saro knows (Saro/Memory).
     let memory: MemoryModel
-    var pane: Pane = .day
+    /// Leaving the day closes what sits over it: the lens and the date picker are the day's own.
+    var pane: Pane = .day { didSet { if pane != .day { (lens, datePickerOpen) = (nil, false) } } }
     /// Another day ends a replay where it is.
     var day: String = LocalDay.today() { didSet { if replay.day.map({ $0 != day }) ?? false { replay.exit(animated: false) } } }
     let replay = DayReplay()

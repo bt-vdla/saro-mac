@@ -391,7 +391,8 @@ final class LensState {
     }
 
     private func finish() {
-        guard !finished else { return }
+        // A lens closed by leaving the day may still have a watchdog running; it mustn't close the next one.
+        guard !finished, model.lens === self else { return }
         finished = true
         busy = false
         dayPose = nil
@@ -742,7 +743,9 @@ struct TimeLens: View {
         case .home: lens.move(.home)
         case .end: lens.move(.end)
         case .return: lens.pick(lens.focus, how: .instant)
-        case .tab: return .ignored
+        // Tab and ⇧Tab (backtab) move between the lens's own controls: with the sidebar disabled underneath, nothing
+        // outside the lens can take the focus.
+        case .tab, KeyEquivalent("\u{19}"): return .ignored
         default:
             switch press.characters {
             case "+", "=": lens.step(-1, how: .instant)
