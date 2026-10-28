@@ -33,63 +33,102 @@ struct OrbitNav: View {
     }
 }
 
-/// The bottom glass bar (BottomLeftStatus.tsx, one row): day and mood ribbon, capture, then History and Recenter. The day
-/// and the replay share one cell, so opening the replay never resizes the bar; its track grows out of the date.
+/// The bottom glass bar (BottomLeftStatus.tsx): day and mood ribbon, capture, then History and Recenter, in one row when
+/// it fits and two below that (the day over the captures), so large text never pushes a control off it. The day and the
+/// replay share one cell, so opening the replay never resizes the bar; its track grows out of the date. It publishes
+/// its frame for the surfaces that sit above it.
 struct BottomBar: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dateDirection: CGFloat = 0
     @Namespace private var cell
 
     var body: some View {
-        let replaying = model.replay.active
-        HStack(spacing: 2) {
-            day
-                .opacity(replaying ? 0 : 1)
-                .allowsHitTesting(!replaying)
-                .accessibilityHidden(replaying)
-                .overlay {
-                    ReplayBar(namespace: cell)
-                        .opacity(replaying ? 1 : 0)
-                        .allowsHitTesting(replaying)
-                        .accessibilityHidden(!replaying)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 2) {
+                replayCell { HStack(spacing: 2) { dayCell(.long); divider; captures } }
+                divider
+                trailing
+            }
+            VStack(spacing: 2) {
+                replayCell {
+                    VStack(spacing: 2) {
+                        HStack(spacing: 2) { dayCell(.short) }
+                        HStack(spacing: 2) { captures }
+                    }
                 }
-            Divider().frame(height: 26).padding(.horizontal, 4)
-            // History turns into Close in place; it and Recenter never move.
-            history
-                .tourAnchor(.history)
-            iconButton("scope", "Recenter") { model.camera = .fit(UUID()) }
-                .keyboardShortcut("0", modifiers: .command).help("Fit the day  ⌘0")
+                HStack(spacing: 2) { trailing }
+            }
         }
         .padding(6)
         .glassPanel(radius: Radius.sheet)
-        .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: replaying)
-        .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.day)
-        .onChange(of: model.day) { old, new in dateDirection = new > old ? 1 : -1 }
+        .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: model.replay.active)
+        .anchorPreference(key: BottomBarKey.self, value: .bounds) { $0 }
         .tourAnchor(.captureBar)
     }
 
-    private var day: some View {
-        HStack(spacing: 2) {
-            iconButton("chevron.left", "Previous day") { model.slide(-1) }.help("Previous day  ⌘[")
-            VStack(spacing: 4) {
-                Text(DayFormat.bar(model.day)).monoCaps(11.5, tracking: 0.04).foregroundStyle(Tok.sageDark)
-                    .id(model.day)
-                    .transition(reduceMotion ? .opacity : .asymmetric(insertion: .offset(x: 8 * dateDirection).combined(with: .opacity), removal: .opacity))
-                MoodRibbon()
+    private var divider: some View { Divider().frame(height: 26).padding(.horizontal, 4) }
+
+    private func replayCell(@ViewBuilder _ content: () -> some View) -> some View {
+        let replaying = model.replay.active
+        return content()
+            .opacity(replaying ? 0 : 1)
+            .allowsHitTesting(!replaying)
+            .accessibilityHidden(replaying)
+            .overlay {
+                ReplayBar(namespace: cell)
+                    .opacity(replaying ? 1 : 0)
+                    .allowsHitTesting(replaying)
+                    .accessibilityHidden(!replaying)
             }
-            .frame(minWidth: 132)
+    }
+
+    /// History turns into Close in place; it and Recenter never move.
+    @ViewBuilder private var trailing: some View {
+        history
+            .tourAnchor(.history)
+        iconButton("scope", "Recenter") { model.camera = .fit(UUID()) }
+            .keyboardShortcut("0", modifiers: .command).help("Fit the day  ⌘0")
+    }
+
+    private enum Width { case long, short }
+
+    /// ‹ the date and the week's moods › — the date opens the date picker. Hovering a chevron reads its day ahead.
+    private func dayCell(_ width: Width) -> some View {
+        let atToday = model.day >= LocalDay.today()
+        return Group {
+            iconButton("chevron.left", "Previous day") { model.slide(-1) }.help("Previous day  ⌘[")
+                .onHover { if $0 { model.arm(LocalDay.adding(-1, to: model.day)) } }
+            Button { toggleDatePicker() } label: {
+                VStack(spacing: 4) {
+                    DateLabel(width: width == .long ? 260 : 120)
+                    MoodRibbon()
+                }
+                .padding(.horizontal, 8)
+                .frame(minWidth: 132, minHeight: 44)
+                .contentShape(.rect(cornerRadius: 22))
+            }
+            .buttonStyle(PressStyle(hoverFill: true, radius: 22))
             .background {
                 if !model.replay.active { Color.clear.matchedGeometryEffect(id: reduceMotion ? "date" : "replayTrack", in: cell) }
             }
             .tourAnchor(.dayNav)
-            .contentShape(.rect)
-            .onTapGesture { if !model.isToday { model.slide(to: LocalDay.today()) } }
-            .help(model.isToday ? "Today" : "Back to today  ⌘T")
-            iconButton("chevron.right", "Next day") { model.slide(1) }.help("Next day  ⌘]")
-            Divider().frame(height: 26).padding(.horizontal, 4)
-            // Switching kind under a live recorder would keep the camera running behind the voice pill.
-            Group {
+            .accessibilityLabel("Open date picker")
+            .accessibilityValue(DayFormat.relative(model.day))
+            .help("Go to a day  ⌥⌘G")
+            iconButton("chevron.right", "Next day") { model.slide(1) }
+                .opacity(atToday ? 0.4 : 1)
+                .help(atToday ? "Nothing after today yet" : "Next day  ⌘]")
+                .onHover { if $0 { model.arm(LocalDay.adding(1, to: model.day)) } }
+        }
+    }
+
+    private func toggleDatePicker() {
+        withAnimation(Motion.byKey || reduceMotion ? nil : Motion.small) { model.datePickerOpen.toggle() }
+    }
+
+    @ViewBuilder private var captures: some View {
+        // Switching kind under a live recorder would keep the camera running behind the voice pill.
+        Group {
                 recorderTile(.moment)
                     .keyboardShortcut("n", modifiers: .command).help("Record a moment  ⌘N")
                     .tourAnchor(.recordButton)
@@ -103,7 +142,6 @@ struct BottomBar: View {
                 .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
             }
             .disabled(model.recorderKind != nil)
-        }
     }
 
     /// Moment and Voice: a click (not ⌘N) lets the recorder grow out of the button, which waits hidden under it until the
@@ -190,9 +228,11 @@ private struct CaptureTile: View {
     }
 }
 
-/// The last 7 days' moods as 14 × 4 bars over weekday initials (MoodRibbon.tsx). A held day shows no mood.
+/// The last 7 days' moods as 14 × 4 bars over weekday initials (MoodRibbon.tsx), each fading to its colour; a bar's
+/// tooltip reads "Tuesday · Calm" and a click goes to that day. A held day shows no mood.
 struct MoodRibbon: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 3) {
@@ -200,15 +240,53 @@ struct MoodRibbon: View {
                 VStack(spacing: 3) {
                     Capsule().fill(d.mood.map(MoodPalette.color) ?? Tok.ink.opacity(0.1))
                         .frame(width: 14, height: 4)
+                        .animation(Motion.easeOut(0.4), value: d.mood)
                     Text(LocalDay.date(d.day)?.formatted(.dateTime.weekday(.narrow)) ?? "")
                         .font(Typo.mono(10)).textCase(.uppercase)
                         .foregroundStyle(d.day == model.day ? Tok.ink : Tok.ink3)
                 }
                 .frame(width: 14)
-                .help("\(DayFormat.sidebar(d.day))\(d.mood.map { ": \($0.rawValue)" } ?? "")")
+                .contentShape(.rect)
+                .onTapGesture { if d.day != model.day { model.slide(to: d.day) } }
+                .help("\(Self.weekday(d.day)) · \(d.mood?.rawValue ?? "No mood")")
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Moods for the last 7 days. " + model.week.map { "\(Self.weekday($0.day)): \($0.mood?.rawValue.lowercased() ?? "no mood")" }
+            .joined(separator: ", "))
     }
+
+    private static func weekday(_ day: String) -> String { LocalDay.date(day)?.formatted(.dateTime.weekday(.wide)) ?? day }
+}
+
+/// The bar's day (BottomLeftStatus.tsx): "TODAY · 4:16 PM" on the Mac's own clock, updated every 30 s, "YESTERDAY", or
+/// "TUE 22 SEP" (with the year in another year); without the time when narrower, "THU 24" when tiny. A pointer's day
+/// change steps it in 8 pt from the side the day came from; a key's swaps it at once.
+private struct DateLabel: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let width: CGFloat
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { t in
+            ViewThatFits(in: .horizontal) {
+                ForEach(DayFormat.bar(model.day, now: t.date), id: \.self) { label in
+                    Text(label).monoCaps(11.5, tracking: 0.04).foregroundStyle(Tok.sageDark).monospacedDigit().lineLimit(1).fixedSize()
+                }
+            }
+            .frame(maxWidth: width)
+        }
+        .id(model.day)
+        .transition(reduceMotion ? .opacity : .asymmetric(insertion: .offset(x: 8 * model.slideDirection).combined(with: .opacity), removal: .identity))
+        // Only a change that came animated (a pointer's slide) steps in, on the small spring.
+        .transaction { if $0.animation != nil { $0.animation = Motion.pick(Motion.small, reduce: reduceMotion) } }
+    }
+}
+
+/// The bar's frame, for the surfaces that sit above it (the date picker; toasts and the spine can anchor on it too).
+struct BottomBarKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
 }
 
 enum MoodPalette {
@@ -238,10 +316,11 @@ struct PressStyle: ButtonStyle {
 }
 
 extension DayFormat {
-    /// "TUE 27 OCT" (mono caps in the bar).
-    static func bar(_ day: String) -> String {
-        guard let d = LocalDay.date(day) else { return day }
-        let prefix = day == LocalDay.today() ? "Today · " : ""
-        return prefix + d.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    /// The bar's day, longest form first: "Today · 4:16 PM", "Today", "Thu 24".
+    static func bar(_ day: String, now: Date = .now) -> [String] {
+        let label = relative(day)
+        let short = LocalDay.date(day)?.formatted(.dateTime.weekday(.abbreviated).day()) ?? day
+        let full = day == LocalDay.today() ? "\(label) · \(now.formatted(date: .omitted, time: .shortened))" : label
+        return [full, label, short].reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
     }
 }
