@@ -80,6 +80,8 @@ final class AppModel {
     var stageSize = CGSize(width: 1320, height: 860)
     /// Days loaded ahead of a click (a hovered chevron, a picker day, the days either side), newest last.
     private var neighbours: [(day: String, data: DayData)] = []
+    /// Bumped by every reload, so a day read ahead before a write can't land in the cache after it.
+    private var neighboursVersion = 0
     var screen: ScreenID = .canvas
     /// Non-nil while the in-window recorder is up.
     var recorderKind: EntryKind? {
@@ -322,6 +324,7 @@ final class AppModel {
         let edits = layoutEdits
         // Something was written: a day read ahead may no longer be what the ledger says (a new hold hides its readings).
         neighbours = []
+        neighboursVersion += 1
         do {
             days = try await ledger.days()
             var data = try await load(target)
@@ -400,8 +403,9 @@ final class AppModel {
     // ponytail: a small LRU instead of the web's 800 ms disarm; local rows are cheap to keep, and a reload drops them all.
     func arm(_ target: String) {
         guard target <= LocalDay.today(), target != day, !neighbours.contains(where: { $0.day == target }) else { return }
+        let version = neighboursVersion
         Task {
-            guard let data = try? await load(target), !neighbours.contains(where: { $0.day == target }) else { return }
+            guard let data = try? await load(target), version == neighboursVersion, !neighbours.contains(where: { $0.day == target }) else { return }
             neighbours.append((target, data))
             if neighbours.count > 6 { neighbours.removeFirst() }
             for e in data.entries where e.kind == .moment || e.kind == .still {
