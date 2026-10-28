@@ -16,11 +16,13 @@ extension Heuristics {
 
         let sourceWords = tag(source)
         let known = Set(sourceWords.flatMap { [$0.lower, $0.lemma].compactMap { $0 } } + tokenize(src).map(\.lower))
-        for w in tag(generated) where !w.lower.hasPrefix("'") {
+        let words = tag(generated)
+        for (i, w) in words.enumerated() where !w.lower.hasPrefix("'") {
             if known.contains(w.lower) || w.lemma.map(known.contains) == true { continue }
             if w.isName || (w.capitalisedMidSentence && !Lexicon.notNames.contains(w.lower)) { return false }
             if w.lexicalClass == .number || w.lower.first?.isNumber == true || Lexicon.numberWords.contains(w.lower) { return false }
-            if Lexicon.stop.contains(w.lower) { continue }
+            // NLTagger splits "can't" into "ca" + "n't" and can't lemmatise the "ca".
+            if Lexicon.stop.contains(w.lower) || words.dropFirst(i + 1).first?.lower == "n't" { continue }
             guard let lemma = w.lemma else { return false }
             switch w.lexicalClass {
             case .verb, .adjective, .adverb, .pronoun, .determiner, .particle, .preposition, .conjunction, .interjection: continue

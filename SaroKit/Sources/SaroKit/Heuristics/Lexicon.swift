@@ -178,7 +178,7 @@ enum Lexicon {
     surprise wonder curiosity clarity focus attention presence awareness meaning purpose direction intention
     change progress growth effort struggle challenge strain release space breath
     day today tonight morning afternoon evening night week moment moments while time times hour hours beginning
-    part bit kind sort way ways thing things something nothing everything anything lot
+    part bit kind sort way ways thing things something nothing everything anything lot look
     reason reasons question questions answer answers choice choices decision decisions plan plans
     memory memories experience experiences reflection reflections words word entry entries mix contrast
     bittersweetness nostalgia inspiration overwhelm excitement satisfaction accomplishment
