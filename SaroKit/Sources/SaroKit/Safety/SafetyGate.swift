@@ -27,7 +27,7 @@ public struct GateResult: Sendable, Hashable {
     public let verdict: String
     public let layer: Int
     /// `phrase_hit`, `classifier_active`, `classifier_passive`, `classifier_uncertain`, `low_confidence`, `caution_hit`,
-    /// `model_unavailable` or `clear`.
+    /// `model_unavailable`, `unsupported_language` or `clear`.
     public let reasonCode: String
     public var state: EntryState { EntryState(verdict: verdict) }
 
@@ -46,6 +46,8 @@ public actor SafetyGate {
     public static let confidenceFloor = 0.35
     /// About 3,000 tokens at 4.1 characters per token (§11.5).
     public static let chunkLimit = 12_000
+    /// The classifier's reason when the model runs but not in this text's language.
+    public static let unsupportedLanguage = "unsupportedLanguageOrLocale"
 
     private let classify: (@Sendable (String) async -> ClassifierOutcome)?
     private let timeout: Duration
@@ -67,6 +69,10 @@ public actor SafetyGate {
         case .label(.active): return GateResult(verdict: "safety_hold", layer: 2, reasonCode: "classifier_active")
         case .label(.passive): return GateResult(verdict: "safety_hold", layer: 2, reasonCode: "classifier_passive")
         case .uncertain: return GateResult(verdict: "safety_hold", layer: 2, reasonCode: "classifier_uncertain")
+        case .unavailable(Self.unsupportedLanguage):
+            // The model runs but can't read this text, so the model coming back can't change it (SR-17).
+            return GateResult(verdict: Self.cautionHit(text) ? "unavailable_caution" : "unavailable_clear", layer: 1,
+                              reasonCode: "unsupported_language")
         case .unavailable:
             return Self.cautionHit(text)
                 ? GateResult(verdict: "unavailable_caution", layer: 1, reasonCode: "caution_hit")

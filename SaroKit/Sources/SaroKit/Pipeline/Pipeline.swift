@@ -102,8 +102,9 @@ public actor Pipeline {
         // 2. SafetyGate, cached by text hash and gate version (SR-17, SR-18).
         let hash = sha256(source.text)
         var verdict = try? await ledger.cachedVerdict(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version)
-        // A verdict made while the model couldn't run is re-gated once it can (SR-17).
-        if let v = verdict?.verdict, v.hasPrefix("unavailable"), ai.status == .available { verdict = nil }
+        // A verdict made while the model couldn't run is re-gated once it can (SR-17); one it couldn't read stands.
+        // ponytail: an OS update that adds the language re-gates only with a SAFETY_VERSION bump (SR-18).
+        if let v = verdict, v.verdict.hasPrefix("unavailable"), v.reasonCode != "unsupported_language", ai.status == .available { verdict = nil }
         if verdict == nil {
             await status(ProcessingStatus.gating)
             guard let r = await gate.gate(text: source.text, transcriptConfidence: source.confidence) else {

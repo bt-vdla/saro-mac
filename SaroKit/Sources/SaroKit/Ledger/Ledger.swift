@@ -135,13 +135,14 @@ public actor Ledger {
             .map(Entry.init)
     }
 
-    /// Live entries whose newest verdict is one of `verdicts`.
-    public func entryIDs(withLatestVerdictIn verdicts: [String]) throws -> [String] {
+    /// Live entries whose newest verdict is one of `verdicts`, given for any reason but `except`.
+    public func entryIDs(withLatestVerdictIn verdicts: [String], except reasonCode: String = "") throws -> [String] {
         let marks = verdicts.map { _ in "?" }.joined(separator: ",")
         return try db.run("""
             SELECT v.entry_id FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
             WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict IN (\(marks))
-            """, verdicts.map { .text($0) }).compactMap { $0.str("entry_id") }
+              AND v.reason_code != ?
+            """, verdicts.map { .text($0) } + [.text(reasonCode)]).compactMap { $0.str("entry_id") }
     }
 
     /// Live entries whose newest verdict another gate version made: a SAFETY_VERSION bump re-gates them (SR-18).

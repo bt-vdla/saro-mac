@@ -148,12 +148,18 @@ final class AppModel {
         today = now
     }
 
-    /// Entries an older gate checked go back through this one (SR-18), and entries gated while Apple Intelligence was off
-    /// go back once it can run (SR-17).
+    /// Entries an older gate checked go back through this one (SR-18), entries gated while Apple Intelligence was off
+    /// go back once it can run (SR-17), and work a rate limit deferred is tried again (§11.7).
     private func regateWaiting() async {
         for id in (try? await ledger.entryIDs(withLatestVerdictNotAt: SafetyGate.version)) ?? [] { process(id) }
+        // The page open in the editor goes when it closes.
+        for e in (try? await ledger.unfinishedEntries()) ?? []
+        where e.processingStatus == ProcessingStatus.pending && !isQueued(e.id) && e.id != openEntryID {
+            process(e.id)
+        }
         guard ai.status == .available else { return }
-        for id in (try? await ledger.entryIDs(withLatestVerdictIn: ["unavailable_clear", "unavailable_caution"])) ?? [] { process(id) }
+        let waiting = ["unavailable_clear", "unavailable_caution"]
+        for id in (try? await ledger.entryIDs(withLatestVerdictIn: waiting, except: "unsupported_language")) ?? [] { process(id) }
     }
 
     static func boot() -> Result<AppModel, Error> {

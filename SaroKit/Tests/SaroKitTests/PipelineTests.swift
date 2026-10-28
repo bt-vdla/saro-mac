@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import Testing
 @testable import SaroKit
 
@@ -188,6 +189,8 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(try await l.run("SELECT COUNT(*) AS n FROM safety_verdict").first?["n"]?.int == 0)
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
     #expect(await p.dayStatus(e.localDay) == .working)
+    // What the app's activation, wake and midnight pass picks up again (it has no verdict to re-gate by).
+    #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     // The reading: the clear verdict stays, nothing generated is stored, and the model is asked once.
     let asked = CallLog()
     await Pipeline(ledger: l, ai: stubAI { ask in
@@ -197,6 +200,7 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "clear")
     #expect(try await l.annotations(day: e.localDay).isEmpty)
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
+    #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     #expect(await asked.permissive == 1)
     // Once the limit lifts, the next pass reads it.
     await Pipeline(ledger: l, ai: answers()).process(entryId: e.id) {}
@@ -224,6 +228,31 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     await Pipeline(ledger: l, ai: answers()).process(entryId: e.id) {}
     #expect(await p.readDay(e.localDay) == nil)
     #expect(try await l.latestSnapshot(kind: "day_reading", day: e.localDay) == nil)
+}
+
+/// Text the model runs but can't read (its language) is gated once: the model being available can't change that, so no
+/// later pass or activation asks again or adds a verdict (SR-17); only a new gate does (SR-18).
+@Test func textInAnUnsupportedLanguageIsGatedOnce() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    let asked = CallLog()
+    let p = Pipeline(ledger: l, ai: stubAI { ask in
+        guard ask == .classify else { return cleanEntry }
+        await asked.hitPermissive()
+        throw LanguageModelError.unsupportedLanguageOrLocale(.init(languageCode: .init("xx"), debugDescription: "test"))
+    })
+    for _ in 0..<3 { await p.process(entryId: e.id) {} }
+    #expect(await asked.permissive == 1)
+    #expect(try await l.run("SELECT COUNT(*) AS n FROM safety_verdict").first?["n"]?.int == 1)
+    let v = try await l.verdicts(day: e.localDay)[e.id]
+    #expect(v?.verdict == "unavailable_clear" && v?.reasonCode == "unsupported_language")
+    #expect(try await l.entryIDs(withLatestVerdictIn: ["unavailable_clear"]) == [e.id])
+    #expect(try await l.entryIDs(withLatestVerdictIn: ["unavailable_clear"], except: "unsupported_language").isEmpty)
+    // A caution hit still waits for a check, for the same reason.
+    let r = await SafetyGate(classify: { _ in .unavailable(reason: SafetyGate.unsupportedLanguage) })
+        .gate(text: "Some days everything feels hopeless and I just want to sleep.", transcriptConfidence: nil)
+    #expect(r?.verdict == "unavailable_caution" && r?.reasonCode == "unsupported_language")
 }
 
 @Test func heuristicReadingGivesWayOnceTheModelCanRun() async throws {
