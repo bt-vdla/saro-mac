@@ -46,6 +46,7 @@ struct SaroApp: App {
 
 struct SaroCommands: Commands {
     let model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandMenu("Go") {
@@ -61,7 +62,11 @@ struct SaroCommands: Commands {
             Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
         }
         CommandGroup(before: .help) {
-            Button("If You're Struggling…") { NotificationCenter.default.post(name: .showSafetyCard, object: nil) }
+            Button("If You're Struggling…") {
+                // The main window may be closed (Saro runs from the menu bar); the card shows once it opens.
+                openWindow(id: "main")
+                model.safetyCardRequested = true
+            }
         }
         CommandGroup(after: .importExport) {
             Button("Export Everything…") { Task { await model.exportEverything() } }

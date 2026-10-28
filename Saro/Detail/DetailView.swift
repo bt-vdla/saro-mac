@@ -437,7 +437,7 @@ struct ReadingSection: View {
             Button("Try again") { model.retranscribe(entry) }.font(Typo.ui(12, .medium))
         case "unavailable_caution":
             Text("Saro will read this when Apple Intelligence is ready.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
-            Button("Talk to someone") { NotificationCenter.default.post(name: .showSafetyCard, object: nil) }
+            Button("Talk to someone") { model.safetyCardRequested = true }
                 .buttonStyle(.link).font(Typo.ui(12))
         case "clear", "unavailable_clear":
             // A safety hold anywhere that day hides every entry's reading, mood, quote and 'In your words' (SR-13).

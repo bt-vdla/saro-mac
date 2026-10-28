@@ -62,6 +62,9 @@ final class AppModel {
     var screen: ScreenID = .canvas
     /// Non-nil while the in-window recorder is up.
     var recorderKind: EntryKind?
+    /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
+    /// same click opens still presents it.
+    var safetyCardRequested = false
 
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
@@ -76,6 +79,10 @@ final class AppModel {
     init(ledger: Ledger) {
         self.ledger = ledger
         pipeline = Pipeline(ledger: ledger, ai: ai)
+        // The menu bar and ⌘K post this, sometimes before the window they open has a RootView to receive it.
+        NotificationCenter.default.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.safetyCardRequested = true }
+        }
     }
 
     static func boot() -> Result<AppModel, Error> {
