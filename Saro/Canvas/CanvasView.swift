@@ -797,7 +797,9 @@ struct MorphFlight: View, @MainActor Animatable {
         let box = crossfadeOnly ? to : CanvasMath.flightBox(from: safeFrom, to: to, v: t)
         let (w, h, cx, cy) = (box.width, box.height, box.midX, box.midY)
         let r = fromRadius + (toRadius - fromRadius) * t
-        let cardSize = model.size(of: entry)
+        // A turn opened from the fanned set flies from its tile, which is drawn at the default size.
+        let fanned = model.openStackID != nil && model.layouts[entry.id]?.stackId == model.openStackID
+        let cardSize = fanned ? CanvasMath.size(entry.kind) : model.size(of: entry)
         let fades = CanvasMath.flightFades(v)
         let source = fades.leaving
         let dest = crossfadeOnly ? v : fades.arriving
@@ -810,7 +812,7 @@ struct MorphFlight: View, @MainActor Animatable {
                 .scaleEffect(min(w / to.width, h / to.height))
                 .opacity(dest)
             if source > 0 && !crossfadeOnly {
-                CardFace(entry: entry)
+                CardFace(entry: entry, size: cardSize)
                     .scaleEffect(min(w / cardSize.width, h / cardSize.height))
                     .opacity(source)
                     .allowsHitTesting(false)

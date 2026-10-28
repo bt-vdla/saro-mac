@@ -657,7 +657,9 @@ final class AppModel {
         var changed: [CardLayout] = []
         for e in members {
             top += 1
-            let l = CardLayout(entryId: e.id, x: anchor.x, y: anchor.y, z: top, stackId: sid, userPlaced: true)
+            // A card keeps the size it was given, so Unstack brings it back as it was.
+            let l = CardLayout(entryId: e.id, x: anchor.x, y: anchor.y, z: top, stackId: sid, userPlaced: true,
+                               w: layouts[e.id]?.w, h: layouts[e.id]?.h)
             layouts[e.id] = l
             changed.append(l)
         }
@@ -668,8 +670,9 @@ final class AppModel {
 
     func unstack(_ stackID: String) {
         let members = entries.filter { layouts[$0.id]?.stackId == stackID }
-        let points = CanvasMath.fan(count: members.count, size: CanvasMath.size(.moment),
-                                    around: members.first.map { position(of: $0.id) } ?? .zero)
+        let sizes = members.map(size(of:))
+        let room = CGSize(width: sizes.map(\.width).max() ?? 0, height: sizes.map(\.height).max() ?? 0)
+        let points = CanvasMath.fan(count: members.count, size: room, around: members.first.map { position(of: $0.id) } ?? .zero)
         var changed: [CardLayout] = []
         for (e, p) in zip(members, points) {
             guard var l = layouts[e.id] else { continue }
