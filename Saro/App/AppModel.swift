@@ -708,7 +708,8 @@ final class AppModel {
 
     // MARK: Stills
 
-    /// Saves a dropped or pasted image as HEIC with no metadata but its orientation (DR-11: stills lose GPS).
+    /// Saves a dropped or pasted image as HEIC, at most 4096 px (FR-CAP-07), with no metadata but its orientation (DR-11:
+    /// stills lose GPS).
     func importStill(_ data: Data, origin: String, at world: CGPoint?) async {
         var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.pending)
         let asset = MediaAsset(fileName: "\(entry.localDay)/stills/\(entry.id).heic", kind: .image, origin: origin, state: "ready")
@@ -735,7 +736,7 @@ final class AppModel {
 
     /// False when `data` isn't an image ImageIO can read.
     private nonisolated static func writeHEIC(_ data: Data, to url: URL) throws -> Bool {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return false }
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = StillVision.keepable(src) else { return false }
         let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
         let orientation = props?[kCGImagePropertyOrientation] ?? 1
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
