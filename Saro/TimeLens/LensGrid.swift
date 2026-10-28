@@ -187,10 +187,6 @@ private struct LensAccessibilityGrid: View {
     let lens: LensState
     let rotor: Namespace.ID
 
-    private static let nouns: [EntryKind: (String, String)] = [.moment: ("moment", "moments"), .voice: ("voice note", "voice notes"),
-                                                               .still: ("still", "stills"), .reflection: ("reflection", "reflections"),
-                                                               .music: ("song", "songs")]
-
     var body: some View {
         VStack {
             ForEach(lens.cal.blocks.indices, id: \.self) { m in
@@ -225,9 +221,9 @@ private struct LensAccessibilityGrid: View {
         let d = lens.cal.days[i]
         let head = d.date.formatted(.dateTime.weekday(.wide).day().month(.wide).year()) + (i == lens.todayIndex ? ", today" : "")
         guard let s = lens.summaries[i], s.total > 0 else { return "\(head). No entries." }
-        let plural = { (n: Int, w: (String, String)) in "\(n) \(n == 1 ? w.0 : w.1)" }
-        let parts = LensGrid.kinds.compactMap { k in s.counts[k].flatMap { $0 > 0 ? plural($0, Self.nouns[k] ?? ("entry", "entries")) : nil } }
+        // The canvas's own nouns: "1 moment, 2 writings".
+        let parts = LensGrid.kinds.compactMap { k in s.counts[k].flatMap { $0 > 0 ? "\($0) \(k.noun.lowercased())\($0 == 1 ? "" : "s")" : nil } }
         let mood = s.mood.map { " Mood: \($0.rawValue.lowercased())." } ?? ""
-        return "\(head). \(plural(s.total, ("entry", "entries"))): \(parts.joined(separator: ", ")).\(mood)"
+        return "\(head). \(s.total) \(s.total == 1 ? "entry" : "entries"): \(parts.joined(separator: ", ")).\(mood)"
     }
 }
