@@ -50,17 +50,21 @@ struct BottomBar: View {
             .help(model.isToday ? "Today" : "Back to today  ⌘T")
             iconButton("chevron.right", "Next day") { model.slide(1) }.help("Next day  ⌘]")
             Divider().frame(height: 26).padding(.horizontal, 4)
-            CaptureTile(title: "Moment", symbol: "video", tint: Tok.momentInk) { model.recorderKind = .moment }
-                .keyboardShortcut("n", modifiers: .command).help("Record a moment  ⌘N")
-                .tourAnchor(.recordButton)
-            CaptureTile(title: "Voice", symbol: "waveform", tint: Tok.echoInk) { model.recorderKind = .voice }
-                .keyboardShortcut("n", modifiers: [.command, .shift]).help("Leave a voice note  ⇧⌘N")
-            CaptureTile(title: "Still", symbol: "photo", tint: Tok.stillInk) { model.pickStill() }
-                .help("Add a photo (or drop or paste one onto the canvas)")
-            CaptureTile(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk) {
-                Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
+            // Switching kind under a live recorder would keep the camera running behind the voice pill.
+            Group {
+                CaptureTile(title: "Moment", symbol: "video", tint: Tok.momentInk) { model.recorderKind = .moment }
+                    .keyboardShortcut("n", modifiers: .command).help("Record a moment  ⌘N")
+                    .tourAnchor(.recordButton)
+                CaptureTile(title: "Voice", symbol: "waveform", tint: Tok.echoInk) { model.recorderKind = .voice }
+                    .keyboardShortcut("n", modifiers: [.command, .shift]).help("Leave a voice note  ⇧⌘N")
+                CaptureTile(title: "Still", symbol: "photo", tint: Tok.stillInk) { model.pickStill() }
+                    .help("Add a photo (or drop or paste one onto the canvas)")
+                CaptureTile(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk) {
+                    Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
+                }
+                .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
             }
-            .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
+            .disabled(model.recorderKind != nil)
             Divider().frame(height: 26).padding(.horizontal, 4)
             iconButton("clock.arrow.circlepath", "History") { model.sidebarVisible.toggle() }
                 .help("Days, Trash and Decisions")
@@ -92,6 +96,7 @@ private struct CaptureTile: View {
     let symbol: String
     let tint: Color
     let action: () -> Void
+    @Environment(\.isEnabled) private var enabled
     @State private var hover = false
 
     var body: some View {
@@ -104,6 +109,7 @@ private struct CaptureTile: View {
             .contentShape(.rect(cornerRadius: Radius.panel))
         }
         .buttonStyle(PressStyle(hoverFill: true, radius: Radius.panel))
+        .opacity(enabled ? 1 : 0.4)
         .onHover { hover = $0 }
     }
 }
