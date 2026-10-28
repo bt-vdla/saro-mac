@@ -97,3 +97,19 @@ import Testing
     #expect(CanvasMath.absorbed(0.9) == 0)
     #expect(CanvasMath.absorbed(1) == 0)
 }
+
+@Test func shimmerSweepsAsTheWebKeyframesDo() {
+    let w: CGFloat = 220
+    let period = 2 * w
+    for p in stride(from: 0.0, through: 1, by: 0.05) {
+        let start = CanvasMath.shimmerOffset(width: w, progress: p)
+        // CSS puts the repeating image's origin at -2w + 4w·p; each point of the block must show the same place in it.
+        let css = -2 * w + 4 * w * p
+        for x in stride(from: 0, through: w, by: w / 4) {
+            #expect(x - start >= 0 && x - start <= 2 * period)
+            let drawn = (x - start).truncatingRemainder(dividingBy: period)
+            let web = ((x - css).truncatingRemainder(dividingBy: period) + period).truncatingRemainder(dividingBy: period)
+            #expect(min(abs(drawn - web), period - abs(drawn - web)) < 1e-6)
+        }
+    }
+}

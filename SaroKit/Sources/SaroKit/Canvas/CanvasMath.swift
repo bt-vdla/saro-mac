@@ -185,6 +185,13 @@ public enum CanvasMath {
     /// A flight into something that stays as it is (a card into the Undo toast) is absorbed from 30% to 90% of the way.
     public static func absorbed(_ v: Double) -> Double { 1 - min(max((v - 0.3) / 0.6, 0), 1) }
 
+    /// Where a skeleton block's shimmer gradient starts, `progress` (eased, 0…1) through the web's `shimmer` keyframes,
+    /// which slide a gradient repeating every 2 widths from background-position 200% to -200%: 4 widths in all. Drawn as
+    /// two of its periods (4 widths) from here, in [-2w, 0), it covers the block at every step.
+    public static func shimmerOffset(width w: CGFloat, progress: Double) -> CGFloat {
+        (4 * w * progress).truncatingRemainder(dividingBy: 2 * w) - 2 * w
+    }
+
     /// Deterministic ±12 pt jitter from an id.
     static func jitter(_ id: String) -> CGPoint {
         let h = id.utf8.reduce(UInt64(1469598103934665603)) { ($0 ^ UInt64($1)) &* 1099511628211 }
