@@ -547,7 +547,9 @@ struct DayStage: View {
             w = min(1200, size.width - 96, (size.height - 96) * 16 / 9 + side)
             h = min(size.height - 96, (w - side) * 9 / 16)
         case .voice: (w, h) = (min(720, size.width - 96), min(600, size.height - 96))
-        case .still: (w, h) = (min(1000, size.width - 96), min(760, size.height - 96))
+        case .still:
+            return CanvasMath.stillFrame(in: size, aspect: ThumbCache.aspect(model.mediaURL(for: e)),
+                                         below: StillBelow.room(held: model.verdicts[e.id]?.verdict == "safety_hold"))
         case .reflection, .music: (w, h) = (min(820, size.width - 96), min(820, size.height - 96))
         }
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
@@ -582,6 +584,17 @@ struct DayStage: View {
                 .onTapGesture { model.openEntryID = nil }
             MorphFlight(entry: entry, from: flightFrom.rect, fromRadius: flightFrom.radius, to: detailTarget(entry),
                         toRadius: Radius.sheet, viewport: size, v: flight, crossfadeOnly: reduceMotion)
+            // A still's caption sits under the photo, outside the flight, and fades on its own (Lightbox.tsx `below`).
+            if entry.kind == .still {
+                let to = detailTarget(entry), w = max(to.width, min(420, size.width - 32))
+                StillBelow(entry: entry)
+                    .frame(width: w)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .offset(x: to.midX - w / 2, y: to.maxY + 18)
+                    .frame(width: size.width, height: size.height, alignment: .topLeading)
+                    .opacity(scrim ? 1 : 0)
+                    .animation(scrim ? Motion.easeOut(0.24).delay(0.16) : Motion.easeOut(0.12), value: scrim)
+            }
         }
     }
 }

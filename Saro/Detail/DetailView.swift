@@ -38,13 +38,14 @@ struct Eyebrow: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     var noun = true
+    var ink = Tok.ink3
 
     var body: some View {
         let day = entry.localDay == LocalDay.today() ? "Today" : DayFormat.sidebar(entry.localDay)
         let parts = [day, entry.capturedAt.formatted(date: .omitted, time: .shortened),
                      model.media[entry.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) },
                      entry.sessionId != nil ? entry.turnNumber.map { "Turn \($0)" } : nil, noun ? entry.kind.noun : nil]
-        Text(parts.compactMap { $0 }.joined(separator: " · ")).monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+        Text(parts.compactMap { $0 }.joined(separator: " · ")).monoCaps(10.5, tracking: 0.12).foregroundStyle(ink)
     }
 }
 
@@ -369,87 +370,75 @@ private struct WritingEditor: View {
 
 // MARK: Stills
 
-/// The photo, and beside it what Saro sees (P-STILLS): its description, tags and provenance, editable in place. An edit is
-/// the user's caption, gated like any typed text, and outranks Saro's (DR-04); clearing it brings Saro's back.
+/// The opened still is the photo alone, in its own shape (EntryViews.tsx StillView): the flight lands on it, and what
+/// Saro sees sits under it on the scrim (`StillBelow`).
 private struct StillDetail: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     @State private var image: NSImage?
+    @State private var missing = false
+
+    var body: some View {
+        ZStack {
+            Tok.still.opacity(0.15)
+            if let image {
+                Image(nsImage: image).resizable().scaledToFit()
+                    .accessibilityLabel(model.caption(for: entry) ?? "Still")
+            } else if missing {
+                ContentUnavailableView("Photo not found", systemImage: "photo", description: Text("The file for this still is missing."))
+            }
+        }
+        .task(id: entry.id) {
+            guard let url = model.mediaURL(for: entry), FileManager.default.fileExists(atPath: url.path) else {
+                missing = true
+                return
+            }
+            // The card's thumbnail first, so the flight lands on the photo, then a sharp one decoded off the main actor.
+            image = await ThumbCache.image(for: url, kind: .still)
+            if let sharp = await Task.detached(operation: { ThumbCache.thumbnail(url, max: 2400) }).value {
+                image = NSImage(cgImage: sharp, size: NSSize(width: sharp.width, height: sharp.height))
+            }
+        }
+    }
+}
+
+/// Under the opened photo (P-STILLS): what Saro sees, its tags and provenance, editable in place, the date and the
+/// photo's details. An edit is the user's caption, gated like any typed text, and outranks Saro's (DR-04); clearing it
+/// brings Saro's back.
+struct StillBelow: View {
+    @Environment(AppModel.self) private var model
+    let entry: Entry
     @State private var caption = ""
     @State private var described: StillCaption?
-    /// The run that stood when Describe again was pressed; the spinner shows until a newer one lands.
+    @State private var loaded = false
+    @State private var pixels: CGSize?
+    /// The run that stood when Describe again was pressed; the spinner shows while that pass is queued or under way.
     @State private var asked: String??
     @FocusState private var editing: Bool
 
-    private var held: Bool { model.verdicts[entry.id]?.verdict == "safety_hold" }
+    /// The room `CanvasMath.stillFrame` leaves under the photo: a hold shows the helplines.
+    static func room(held: Bool) -> CGFloat { held ? 400 : 172 }
+
+    private var verdict: String? { model.verdicts[entry.id]?.verdict }
+    private var held: Bool { verdict == "safety_hold" }
     private var yours: String? { entry.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } }
-    /// Saro's description, only while the still's newest check is a clear (a hold deletes it, SR-15).
+    /// Saro's description, only while the still's newest check is a clear and nothing since has held the description or
+    /// left it waiting (a hold deletes it, SR-15).
     private var saros: String? {
-        guard let v = model.verdicts[entry.id]?.verdict, v == "clear" || v == "unavailable_clear" else { return nil }
-        return described?.caption
+        guard verdict == "clear" || verdict == "unavailable_clear", let d = described, !d.standsHeld else { return nil }
+        return d.caption
     }
     private var showingSaros: Bool { yours == nil && saros != nil && caption.trimmingCharacters(in: .whitespaces) == saros }
-    private var working: Bool {
-        asked != nil || described == nil && [ProcessingStatus.pending, ProcessingStatus.reading].contains(entry.processingStatus)
-    }
+    private var working: Bool { model.isQueued(entry.id) && (asked != nil || described == nil) }
 
     var body: some View {
-        HStack(spacing: 0) {
-            ZStack {
-                Tok.bg
-                Tok.still.opacity(0.06)
-                if let image {
-                    Image(nsImage: image).resizable().scaledToFit().padding(24)
-                        .accessibilityLabel(yours ?? saros ?? "Still")
-                } else if model.mediaURL(for: entry).map({ !FileManager.default.fileExists(atPath: $0.path) }) ?? true {
-                    ContentUnavailableView("Photo not found", systemImage: "photo", description: Text("The file for this still is missing."))
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: 18) {
-                Eyebrow(entry: entry).padding(.trailing, 44)
-                captionBlock
-                Divider()
-                VStack(spacing: 10) {
-                    if let image { meta("Size", "\(Int(image.size.width)) × \(Int(image.size.height))") }
-                    meta("Saved", entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                    meta("From", model.media[entry.mediaId ?? ""]?.origin ?? "—")
-                    meta("Location", "Removed")
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 20)
-            .frame(width: 300)
-        }
-        .onDisappear { save() }
-        .task(id: entry.id) {
-            guard let url = model.mediaURL(for: entry) else { return }
-            image = NSImage(contentsOf: url)
-        }
-        .task(id: "\(entry.processingStatus)\(entry.captionUser ?? "")\(model.verdicts[entry.id]?.id ?? "")\(model.annotations[entry.id]?.id ?? "")") {
-            described = try? await model.ledger.stillCaption(entryId: entry.id)
-            if let a = asked, described?.runId != a { asked = nil }
-            if !editing { caption = yours ?? saros ?? "" }
-        }
-    }
-
-    private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(showingSaros || working && yours == nil ? "Saro sees" : "Your caption")
-                    .monoCaps(10.5, tracking: 0.12).foregroundStyle(showingSaros ? Tok.voice : Tok.ink3)
-                Spacer()
-                if !held, image != nil {
-                    Button(action: describeAgain) {
-                        Label(described == nil ? "Describe" : "Describe again", systemImage: "arrow.clockwise")
-                            .font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink2)
-                            .padding(.horizontal, 10).frame(height: 26).background(Tok.ink.opacity(0.06), in: .capsule)
-                    }
-                    .buttonStyle(PressStyle())
-                    .disabled(working)
-                    .keyboardShortcut("r", modifiers: .command)
-                    .help("Describe this photo again on this Mac  ⌘R")
-                }
+                    .monoCaps(10.5, tracking: 0.12).foregroundStyle(showingSaros ? Tok.voice : Tok.ink2)
+                Spacer(minLength: 16)
+                // ink-2, not ink-3: this line sits on the see-through scrim, not a surface.
+                Eyebrow(entry: entry, noun: false, ink: Tok.ink2)
             }
             // Saro's words in Newsreader, the user's in Geist: typing over Saro's description makes it yours.
             TextField("Caption", text: $caption, prompt: Text(saros ?? "Add a caption…").foregroundStyle(Tok.ink4), axis: .vertical)
@@ -457,16 +446,46 @@ private struct StillDetail: View {
                 .font(showingSaros ? Typo.serif(18) : Typo.ui(15, .medium))
                 .lineSpacing(3)
                 .foregroundStyle(Tok.ink)
-                .lineLimit(1...8)
+                .lineLimit(1...4)
                 .writingToolsBehavior(.disabled)
                 .focused($editing)
                 .onSubmit(save)
                 .onChange(of: editing) { _, now in if !now { save() } }
                 .accessibilityLabel(showingSaros ? "Saro's description" : "Your caption")
             below
+            HStack(alignment: .center, spacing: 16) {
+                Text(details).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink3).lineLimit(1)
+                Spacer(minLength: 0)
+                if !held, model.mediaURL(for: entry) != nil { describeButton }
+            }
+            .padding(.top, 2)
         }
+        .contentShape(.rect)
         .animation(Motion.fade, value: described?.runId)
         .animation(Motion.fade, value: working)
+        .onDisappear { save() }
+        .task(id: entry.id) {
+            guard let url = model.mediaURL(for: entry) else { return }
+            pixels = await Task.detached { StillVision.pixelSize(at: url) }.value
+        }
+        .task(id: "\(entry.processingStatus)\(entry.captionUser ?? "")\(verdict ?? "")\(model.verdicts[entry.id]?.id ?? "")\(model.annotations[entry.id]?.id ?? "")") {
+            described = try? await model.ledger.stillCaption(entryId: entry.id)
+            loaded = true
+            if let a = asked, described?.runId != a { asked = nil }
+            if !editing { caption = yours ?? saros ?? "" }
+        }
+    }
+
+    private var describeButton: some View {
+        Button(action: describeAgain) {
+            Label(described == nil ? "Describe" : "Describe again", systemImage: "arrow.clockwise")
+                .font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink2)
+                .padding(.horizontal, 10).frame(height: 26).background(Tok.ink.opacity(0.06), in: .capsule)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(working)
+        .keyboardShortcut("r", modifiers: .command)
+        .help("Describe this photo again on this Mac  ⌘R")
     }
 
     @ViewBuilder private var below: some View {
@@ -475,20 +494,29 @@ private struct StillDetail: View {
         } else if working {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Saro is looking at this photo…").font(Typo.ui(13)).foregroundStyle(Tok.ink3)
+                Text("Saro is looking at this photo…").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
             }
             .accessibilityElement(children: .combine)
+        } else if yours != nil, verdict == "unavailable_caution" {
+            // The user's own caption waits for a check (SR-14): nothing of Saro's shows until it is checked.
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Saro will read this when Apple Intelligence is ready.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
+                Button("Talk to someone") { model.safetyCardRequested = true }.buttonStyle(.link).font(Typo.ui(12))
+            }
         } else if let saros, let d = described {
             if yours != nil {
-                Text("Saro sees “\(saros)”").font(Typo.serif(14, italic: true)).foregroundStyle(Tok.ink3)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text("Saro sees “\(saros)”").font(Typo.serif(14, italic: true)).foregroundStyle(Tok.ink2)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
-            if !d.tags.isEmpty {
-                Text(d.tags.joined(separator: "  ·  ")).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.stillInk)
-                    .accessibilityLabel("Tags: \(d.tags.joined(separator: ", "))")
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                if !d.tags.isEmpty {
+                    Text(d.tags.joined(separator: "  ·  ")).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.stillInk).lineLimit(1)
+                        .accessibilityLabel("Tags: \(d.tags.joined(separator: ", "))")
+                }
+                Spacer(minLength: 0)
+                Text(provenance(d)).font(Typo.mono(9)).foregroundStyle(Tok.ink3).lineLimit(1)
+                    .accessibilityLabel(d.executor == "heuristic" ? "Described on this Mac by Vision" : "Described on this Mac by Apple Intelligence")
             }
-            Text(provenance(d)).font(Typo.mono(9)).foregroundStyle(Tok.ink4)
-                .accessibilityLabel(d.executor == "heuristic" ? "Described on this Mac by Vision" : "Described on this Mac by Apple Intelligence")
         } else if yours == nil, let line = statusLine {
             Text(line).font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
         }
@@ -500,22 +528,21 @@ private struct StillDetail: View {
         case "guardrail", "refusal": "Saro didn't describe this photo. A caption of your own is always welcome."
         case "unreadable": "Saro couldn't open this photo to describe it."
         case StillCaption.caution: "Saro will describe this when Apple Intelligence is ready."
+        case nil where loaded: "Saro hasn't described this photo yet."
         default: nil
         }
+    }
+
+    /// "4032 × 3024 · FROM DROPPED · LOCATION REMOVED".
+    private var details: String {
+        let size = pixels.map { "\(Int($0.width)) × \(Int($0.height))" }
+        return [size, model.media[entry.mediaId ?? ""].map { "From \($0.origin)" }, "Location removed"].compactMap { $0 }.joined(separator: " · ")
     }
 
     /// "ON DEVICE · AFM 3 CORE ADVANCED · GUIDED · 940 MS", or Vision's.
     private func provenance(_ d: StillCaption) -> String {
         let parts = d.executor == "heuristic" ? ["Vision", "on this Mac"] : ["On device", d.variant, d.rung]
         return (parts + [d.latencyMs.map { "\($0) ms" }]).compactMap { $0 }.joined(separator: " · ").uppercased()
-    }
-
-    private func meta(_ k: String, _ v: String) -> some View {
-        HStack {
-            Text(k).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink3)
-            Spacer()
-            Text(v).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink2)
-        }
     }
 
     private func describeAgain() {

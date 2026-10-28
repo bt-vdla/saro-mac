@@ -439,6 +439,9 @@ final class AppModel {
         drain()
     }
 
+    /// Whether a pass for this entry is waiting or under way.
+    func isQueued(_ entryId: String) -> Bool { current == entryId || queue.contains(entryId) }
+
     /// An autosave changed an entry's text, which is unchecked until gated. Pending lets the launch sweep gate it if Saro
     /// quits before the editor closes; a pass already reading the old text runs again.
     func edited(_ entryId: String) async {
