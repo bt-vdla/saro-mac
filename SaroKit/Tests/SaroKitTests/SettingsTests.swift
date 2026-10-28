@@ -651,6 +651,25 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(try await rows(b) == expected)
     }
 
+    /// Settings → Import on a fresh Mac's welcome door: the export's profile row is older than the blank one read at
+    /// launch, so Saro reads it without the newer-wins check; its created_at is a new identity for onboarding, and a
+    /// new pass starts past the export's starter versions.
+    @Test func importIntoABlankJournalBringsAnOlderProfile() async throws {
+        let a = try freshLedger()
+        _ = try await seed(a)
+        try await a.saveStarter(StarterContext(version: 1))
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        try await a.exportEverything(to: dir, prefs: nil)
+        try await Task.sleep(for: .milliseconds(20))
+        let b = try freshLedger()
+        let blank = try await b.profile()
+        _ = try await b.importExport(from: dir)
+        let imported = try await b.profile()
+        #expect(imported.name == "Alex Rivers")
+        #expect(imported.updatedAt < blank.updatedAt && imported.createdAt != blank.createdAt)
+        #expect(try await b.newStarterVersion() == 2)
+    }
+
     /// The media copy runs off the actor: a ledger call made while it copies answers before the copy finishes.
     @Test func exportLeavesTheLedgerFreeWhileMediaCopies() async throws {
         final class Seen: Sendable {
