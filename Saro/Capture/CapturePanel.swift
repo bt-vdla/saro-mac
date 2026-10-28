@@ -106,9 +106,10 @@ final class CapturePanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
 
-    /// Esc closes from anywhere in the panel, including the text editor (which would otherwise offer completions).
+    /// Esc closes from anywhere in the panel, including the text editor (which would otherwise offer completions). Once a
+    /// recording is under way it goes to the recorder, which asks before anything is thrown away.
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 53 {
+        if event.type == .keyDown, event.keyCode == 53, !CaptureController.shared.hasSession(.panel) {
             CapturePanelController.shared.dismiss()
         } else {
             super.sendEvent(event)
