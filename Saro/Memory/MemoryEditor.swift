@@ -1,8 +1,9 @@
+import AppKit
 import SaroKit
 import SwiftUI
 
-/// MemorySection.tsx MemoryEditor: inline and autosizing. Return saves, Shift-Return is a space (a memory is one
-/// line), Esc cancels. "↵ save · esc cancel", and a counter in the last 20 of 90 characters.
+/// MemorySection.tsx MemoryEditor: inline and autosizing. Return saves, Shift-Return is a space at the caret (a memory is
+/// one line), Esc cancels. "↵ save · esc cancel", and a counter in the last 20 of 90 characters.
 struct MemoryEditor: View {
     let initial: String
     let label: String
@@ -38,7 +39,16 @@ struct MemoryEditor: View {
                 .background(Tok.surfaceAlt, in: .rect(cornerRadius: Radius.field))
                 .overlay(RoundedRectangle(cornerRadius: Radius.field).strokeBorder(focused ? Tok.sage : Tok.borderStrong, lineWidth: focused ? 1.5 : 1))
                 .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) { text += " " } else { submit() }
+                    // A Return that confirms an input method's composition is the field's (IME composition is respected).
+                    let field = NSApp.keyWindow?.firstResponder as? NSTextView
+                    if field?.hasMarkedText() == true { return .ignored }
+                    if !press.modifiers.contains(.shift) {
+                        submit()
+                    } else if let field {
+                        field.insertText(" ", replacementRange: field.selectedRange())
+                    } else {
+                        text += " "
+                    }
                     return .handled
                 }
                 .onExitCommand(perform: onCancel)
