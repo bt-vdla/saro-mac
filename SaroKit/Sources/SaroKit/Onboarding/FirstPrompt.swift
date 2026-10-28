@@ -12,6 +12,11 @@ public enum FirstPrompt {
 
         public var text: String
         public var slot: Slot?
+
+        public init(text: String, slot: Slot? = nil) {
+            self.text = text
+            self.slot = slot
+        }
     }
 
     static let maxChars = 90

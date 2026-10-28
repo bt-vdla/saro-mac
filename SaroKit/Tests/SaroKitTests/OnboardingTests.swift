@@ -231,6 +231,17 @@ private let answers: [Int: String] = [
     #expect(await pipeline.gate(answer: "I want to kill myself")?.verdict == "safety_hold")
 }
 
+@Test func anEmptyFirstPageWithItsPromptStillDiscards() async throws {
+    let ledger = try Ledger(rootURL: URL.temporaryDirectory.appending(path: "onb-\(UUID().uuidString)"))
+    let page = Entry(kind: .reflection, body: "")
+    try await ledger.insertEntry(page)
+    try await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: "Bee, what moment still lingers?", generator: "curated",
+                                               localDay: page.localDay, entryId: page.id))
+    try await ledger.discardIfEmpty(page.id)
+    #expect(try await ledger.entry(page.id) == nil)
+    #expect(try await ledger.turns(entryId: page.id).isEmpty)
+}
+
 // MARK: firstWeek.test.ts
 
 private let allOn = [Bool](repeating: true, count: 7)

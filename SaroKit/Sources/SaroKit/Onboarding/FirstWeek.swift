@@ -24,6 +24,12 @@ public enum FirstWeek {
         public var source: Prefs.RitualSource
         /// The words the time came from, to show back.
         public var span: Pick?
+
+        public init(minutes: Int, source: Prefs.RitualSource, span: Pick? = nil) {
+            self.minutes = minutes
+            self.source = source
+            self.span = span
+        }
     }
 
     public static let defaultMinutes = 21 * 60 + 30
