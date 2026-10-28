@@ -15,6 +15,13 @@ struct SaroApp: App {
         if case .success(let model) = boot {
             CapturePanelController.shared.install(model)
             Task { await model.sweep() }
+            #if DOGFOOD
+            // Here rather than on the window, which macOS never opens while the screen is locked.
+            if UserDefaults.standard.string(forKey: "SaroSnapshot") != nil {
+                Task { await model.loadProfile() }
+                Snapshots.runIfRequested(model)
+            }
+            #endif
         }
     }
 
@@ -29,7 +36,6 @@ struct SaroApp: App {
                     .task { await model.loadProfile() }
                     .task { await model.sweep() }
                     #if DOGFOOD
-                    .task { Snapshots.runIfRequested(model) }
                     .task { Scenarios.runIfRequested(model) }
                     #endif
             case .failure(let error):
