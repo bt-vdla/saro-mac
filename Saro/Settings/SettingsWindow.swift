@@ -163,7 +163,7 @@ struct SettingsWindow: View {
         case .rhythm: RhythmSection()
         case .appearance: AppearanceSection(previewHour: $previewHour)
         case .comfort: ComfortSection()
-        case .knows: MemorySlot()
+        case .knows: WhatSaroKnowsView(embedded: true)
         case .intelligence: IntelligenceSection()
         case .data: DataSection()
         }

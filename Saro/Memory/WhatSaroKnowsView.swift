@@ -16,41 +16,51 @@ struct WhatSaroKnowsView: View {
 
     var body: some View {
         let memory = model.memory
-        ZStack {
-            if !embedded { LitGround().ignoresSafeArea() }
-            VStack(alignment: .leading, spacing: 0) {
-                header(memory)
-                    .padding(.horizontal, embedded ? 0 : 32)
-                    .padding(.top, embedded ? 0 : 40)
-                if mode == .graph && !embedded {
-                    KnowledgeGraphView(focus: $focus)
-                        .padding(.top, 12)
-                } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            MemoryListView(focus: $focus)
-                                .frame(maxWidth: 680, alignment: .leading)
-                                .padding(.horizontal, embedded ? 0 : 22)
-                                .padding(.top, 12).padding(.bottom, 40)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .scrollIndicators(.automatic)
-                        // A line picked in ⌘K: shown and focused, with the search cleared so it can't be filtered out.
-                        .task(id: memory.reveal) {
-                            guard let key = memory.reveal else { return }
-                            if memory.status != .ready { await memory.load() }
-                            memory.query = ""
-                            try? await Task.sleep(for: .milliseconds(80))
-                            proxy.scrollTo(key, anchor: .center)
-                            focus = .row(key)
-                            memory.reveal = nil
+        Group {
+            if embedded {
+                // Settings scrolls the page, so here the list sits unscrolled in a card like every other section.
+                SettingsCard(label: "Memory", title: "What Saro knows about you") {
+                    header(memory)
+                    MemoryListView(focus: $focus).padding(.top, 12)
+                }
+            } else {
+                ZStack {
+                    LitGround().ignoresSafeArea()
+                    VStack(alignment: .leading, spacing: 0) {
+                        header(memory)
+                            .padding(.horizontal, 32)
+                            .padding(.top, 40)
+                        if mode == .graph {
+                            KnowledgeGraphView(focus: $focus)
+                                .padding(.top, 12)
+                        } else {
+                            ScrollViewReader { proxy in
+                                ScrollView {
+                                    MemoryListView(focus: $focus)
+                                        .frame(maxWidth: 680, alignment: .leading)
+                                        .padding(.horizontal, 22)
+                                        .padding(.top, 12).padding(.bottom, 40)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .scrollIndicators(.automatic)
+                                // A line picked in ⌘K: shown and focused, with the search cleared so it can't be filtered out.
+                                .task(id: memory.reveal) {
+                                    guard let key = memory.reveal else { return }
+                                    if memory.status != .ready { await memory.load() }
+                                    memory.query = ""
+                                    try? await Task.sleep(for: .milliseconds(80))
+                                    proxy.scrollTo(key, anchor: .center)
+                                    focus = .row(key)
+                                    memory.reveal = nil
+                                }
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Tok.bg)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Tok.bg)
         .background {
             // ⌘F finds; the field owns Esc while it holds a query.
             Button("Find") { focus = .search }.keyboardShortcut("f").opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
@@ -75,11 +85,13 @@ struct WhatSaroKnowsView: View {
 
     private func header(_ memory: MemoryModel) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Memory").monoCaps(11, tracking: 0.12).foregroundStyle(Tok.ink3)
-            Text("What Saro knows about you").font(Typo.serif(embedded ? 22 : 28, .medium)).foregroundStyle(Tok.ink).padding(.top, 6)
-                .accessibilityAddTraits(.isHeader)
+            if !embedded {
+                Text("Memory").monoCaps(11, tracking: 0.12).foregroundStyle(Tok.ink3)
+                Text("What Saro knows about you").font(Typo.serif(28, .medium)).foregroundStyle(Tok.ink).padding(.top, 6)
+                    .accessibilityAddTraits(.isHeader)
+            }
             Text("Short things Saro has picked up from your entries. Change or delete any of them.")
-                .font(Typo.ui(14)).foregroundStyle(Tok.ink2).padding(.top, 6)
+                .font(Typo.ui(14)).foregroundStyle(Tok.ink2).padding(.top, embedded ? 0 : 6)
             HStack(spacing: 16) {
                 SearchField(text: Bindable(memory).query, focus: $focus)
                     .frame(minWidth: 180, maxWidth: 320)
