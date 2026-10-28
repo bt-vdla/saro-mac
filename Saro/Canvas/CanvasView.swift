@@ -557,14 +557,13 @@ struct MorphFlight: View, @MainActor Animatable {
     var body: some View {
         let t = CGFloat(v)
         let safeFrom = from.width > 1 && from.height > 1 ? from : CGRect(center: CGPoint(x: to.midX, y: to.midY), size: CGSize(width: to.width * 0.92, height: to.height * 0.92))
-        let w = crossfadeOnly ? to.width : safeFrom.width * pow(to.width / safeFrom.width, t)
-        let h = crossfadeOnly ? to.height : safeFrom.height * pow(to.height / safeFrom.height, t)
-        let cx = crossfadeOnly ? to.midX : safeFrom.midX + (to.midX - safeFrom.midX) * t
-        let cy = crossfadeOnly ? to.midY : safeFrom.midY + (to.midY - safeFrom.midY) * t
+        let box = crossfadeOnly ? to : CanvasMath.flightBox(from: safeFrom, to: to, v: t)
+        let (w, h, cx, cy) = (box.width, box.height, box.midX, box.midY)
         let r = fromRadius + (toRadius - fromRadius) * t
         let cardSize = CanvasMath.size(entry.kind)
-        let source = 1 - ((v - 0.05) / 0.5).clamped(to: 0...1)
-        let dest = crossfadeOnly ? v : (v / 0.35).clamped(to: 0...1)
+        let fades = CanvasMath.flightFades(v)
+        let source = fades.leaving
+        let dest = crossfadeOnly ? v : fades.arriving
         let sigma = crossfadeOnly || v == 0 || v == 1 ? blur.reset()
             : blur.track(CGPoint(x: cx, y: cy), coverage: w * h / (viewport.width * viewport.height))
         ZStack {
