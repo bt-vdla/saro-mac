@@ -8,7 +8,10 @@ struct DayView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
+    /// True while focus is anywhere inside the day view, a panel's scroller or a field included.
     @FocusState private var focused: Bool
+    /// The canvas itself has focus: SwiftUI hands a key up from whatever inside has it, so the canvas's keys check this.
+    @State private var canvasFocused = false
     /// An ⌥-arrow nudge or ⇧⌥-arrow resize moved something not yet saved; the arrow's release saves it, whichever
     /// modifier was let go first.
     @State private var nudged: Nudge?
@@ -45,6 +48,7 @@ struct DayView: View {
             }
             .animation(Motion.pick(Motion.easeOut(0.3), reduce: reduceMotion), value: model.recorderKind)
             .coordinateSpace(.named(Self.space))
+            .background(OwnFocus(focused: $canvasFocused))
         }
         .clipped()
         .focusable(model.lens == nil)
@@ -55,16 +59,17 @@ struct DayView: View {
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow], phases: [.down, .repeat, .up]) { canvasKey($0) }
         // ⇧Tab arrives as backtab (U+0019). Past the last card (or before the first) Tab goes on to the bar.
         .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
-            guard model.lens == nil, model.openEntryID == nil, !model.replay.active else { return .ignored }
+            guard cardsTakeKeys, !model.replay.active else { return .ignored }
             return walk(press.key == .tab && !press.modifiers.contains(.shift) ? 1 : -1)
         }
         .onCommand(#selector(NSText.selectAll(_:))) {
-            if model.openEntryID == nil, model.lens == nil { model.selection = Set(model.entries.map(\.id)) }
+            if cardsTakeKeys { model.selection = Set(model.entries.map(\.id)) }
         }
         .onChange(of: model.lens == nil) { _, closed in if closed { focused = true } }
         // With keyboard navigation on, focus goes back to the date button instead (BottomBar).
         .onChange(of: model.datePickerOpen) { _, open in if !open && !NSApp.isFullKeyboardAccessEnabled { focused = true } }
         .onDeleteCommand {
+            guard canvasFocused else { return }
             let flies = !Motion.byKey && !reduceMotion
             Task { await model.trash(model.selection, undoManager: undoManager, flies: flies) }
         }
@@ -78,14 +83,14 @@ struct DayView: View {
             else { model.selection = [] }
         }
         .onKeyPress(.return) {
-            guard model.openEntryID == nil, model.selection.count == 1, let id = model.selection.first else { return .ignored }
+            guard canvasFocused, model.openEntryID == nil, model.selection.count == 1, let id = model.selection.first else { return .ignored }
             if model.entry(id)?.kind == .voice { model.openVoiceID = id } else { model.openEntryID = id }
             return .handled
         }
         // While the day replays (DayReplay.tsx): ← → step entry to entry, Home and End go to the ends of the day, Space plays.
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end, .space]) { press in
             let replay = model.replay
-            guard replay.active, model.openEntryID == nil, press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return .ignored }
+            guard canvasFocused, replay.active, model.openEntryID == nil, press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return .ignored }
             switch press.key {
             case .rightArrow, .upArrow: replay.step(1)
             case .leftArrow, .downArrow: replay.step(-1)
@@ -103,6 +108,11 @@ struct DayView: View {
         // Leaving the journal ends the replay where it is.
         .onDisappear { model.replay.exit(animated: false) }
         .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
+    }
+
+    /// The canvas has the keys, with nothing over it that takes them: the arrows, Tab and ⌘A act on its cards.
+    private var cardsTakeKeys: Bool {
+        canvasFocused && model.lens == nil && model.openEntryID == nil && !model.datePickerOpen && model.insight == .spine
     }
 
     private var screenID: ScreenID {
@@ -129,7 +139,7 @@ struct DayView: View {
             saveNudge()
             return .handled
         }
-        guard model.lens == nil, model.openEntryID == nil, !model.replay.active, model.recorderKind == nil, model.openStackID == nil else { return .ignored }
+        guard cardsTakeKeys, !model.replay.active, model.recorderKind == nil, model.openStackID == nil else { return .ignored }
         let dir: CGVector = switch press.key {
         case .leftArrow: CGVector(dx: -1, dy: 0)
         case .rightArrow: CGVector(dx: 1, dy: 0)
