@@ -16,6 +16,11 @@ final class CapturePanelController {
     var draft = UserDefaults.standard.string(forKey: "captureDraft") ?? "" {
         didSet { UserDefaults.standard.set(draft, forKey: "captureDraft") }
     }
+    /// Under the lock the writer starts blank, so nothing already written shows (PKG-shell 7). What's typed there is kept
+    /// as safely as the draft, and joins it at the next open or at Unlock.
+    var lockedDraft = UserDefaults.standard.string(forKey: "captureLockedDraft") ?? "" {
+        didSet { UserDefaults.standard.set(lockedDraft, forKey: "captureLockedDraft") }
+    }
     private(set) var saved = false
     @ObservationIgnored private var panel: CapturePanel?
     @ObservationIgnored private var model: AppModel?
@@ -33,6 +38,7 @@ final class CapturePanelController {
         guard let model, !model.showsOnboarding else { return }
         let panel = panel ?? makePanel()
         if !panel.isVisible {
+            keepLockedDraft()
             saved = false
             let host = NSHostingView(rootView: CapturePanelView().environment(model).comfortEnvironment())
             host.safeAreaRegions = []
@@ -40,6 +46,12 @@ final class CapturePanelController {
         }
         if !CaptureController.shared.hasSession(.panel) { self.tab = tab }
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    func keepLockedDraft() {
+        guard !lockedDraft.isEmpty else { return }
+        draft = [draft, lockedDraft].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        lockedDraft = ""
     }
 
     func close() {
@@ -150,8 +162,10 @@ struct CapturePanelView: View {
             }
         }
         .animation(Motion.easeOut(0.16), value: dropping)
-        // Capture errors arrive as toasts, and the window's host is out of sight when the panel is in use.
-        .overlay { ToastHost() }
+        // Capture errors arrive as toasts, and the window's host is out of sight when the panel is in use. Not under the
+        // lock: a toast's Undo would change the journal behind it.
+        .overlay { if !Locker.shared.locked { ToastHost() } }
+        .onChange(of: Locker.shared.locked) { _, locked in if !locked { CapturePanelController.shared.keepLockedDraft() } }
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 14)
@@ -192,11 +206,17 @@ struct CapturePanelView: View {
         .opacity(locked ? 0.5 : 1)
     }
 
-    private var writer: some View {
+    /// The draft, or under the lock a blank page of its own.
+    private var text: Binding<String> {
         @Bindable var panel = CapturePanelController.shared
-        let empty = panel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return Locker.shared.locked ? $panel.lockedDraft : $panel.draft
+    }
+
+    private var writer: some View {
+        let text = self.text
+        let empty = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: 10) {
-            TextEditor(text: $panel.draft)
+            TextEditor(text: text)
                 .font(Typo.ui(14))
                 .foregroundStyle(Tok.ink)
                 .scrollContentBackground(.hidden)
@@ -205,7 +225,7 @@ struct CapturePanelView: View {
                 .padding(10)
                 .background(Tok.surfaceAlt, in: .rect(cornerRadius: 10))
                 .overlay(alignment: .topLeading) {
-                    if panel.draft.isEmpty {
+                    if text.wrappedValue.isEmpty {
                         Text("Write anything. It goes to Today.")
                             .font(Typo.ui(14))
                             .foregroundStyle(Tok.ink3)
@@ -229,12 +249,13 @@ struct CapturePanelView: View {
     }
 
     private func save() {
-        let body = CapturePanelController.shared.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = self.text
+        let body = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
         Task {
             guard let entry = await model.newWriting(body: body, day: LocalDay.today()) else { return }
             model.process(entry.id)
-            CapturePanelController.shared.draft = ""
+            text.wrappedValue = ""
             CapturePanelController.shared.confirmSaved()
         }
     }

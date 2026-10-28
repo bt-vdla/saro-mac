@@ -155,8 +155,10 @@ final class CaptureController {
         self.kind = kind
         heldElsewhere = true
         Task { await refreshHeld() }
-        // The first reflection's question, from the onboarding hand-off, before today's.
-        prompt = (surface == .window ? model.handoffPrompt : nil) ?? model.todaysPrompt
+        // The first reflection's question, from the onboarding hand-off, before today's. Under the lock nothing already
+        // written shows in the panel, nor a question made from it (PKG-shell 7).
+        prompt = Locker.shared.locked ? FirstPrompt.opening(nil, tone: model.profile?.tone, name: model.profile?.address)
+            : (surface == .window ? model.handoffPrompt : nil) ?? model.todaysPrompt
         let reading = model.dayReading
         promptRow = prompt == model.starter?.firstPrompt ? ("heuristic", nil)
             : prompt == reading?.payload.reading.question ? (reading?.generator ?? "heuristic", reading?.runId) : ("curated", nil)

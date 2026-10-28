@@ -129,6 +129,7 @@ extension AppModel {
         PrefsStore.shared.eraseAll()
         // The quick-capture panel's half-written note is journal text too.
         CapturePanelController.shared.draft = ""
+        CapturePanelController.shared.lockedDraft = ""
         memory.query = ""
         Daylight.shared.mode = .clock
         // After the light, whose setter writes its key back. Onboarding's place goes too, so the next pass opens on the door.
@@ -147,7 +148,7 @@ extension AppModel {
 
     /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, the capture devices, and What Saro
     /// knows' graph or list.
-    static let erasedDefaults = ["captureDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID", "saro.knows.mode"]
+    static let erasedDefaults = ["captureDraft", "captureLockedDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID", "saro.knows.mode"]
 
     /// The Book of `year`, as HTML or PDF, saved where the person picks.
     func exportBook(year: Int, pdf: Bool) async throws -> Bool {

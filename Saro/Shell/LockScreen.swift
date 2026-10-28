@@ -37,6 +37,8 @@ final class Locker {
         for w in NSApp.windows where !(w is NSPanel) { w.makeFirstResponder(nil) }
         ShellPanels.shared.sheet = nil
         ShellPanels.shared.panel = nil
+        // An open capture panel shows the draft, or the prompt it read from today, so it closes too, unless it's recording.
+        CapturePanelController.shared.dismiss()
         NotificationCenter.default.post(name: Self.didLock, object: nil)
         AccessibilityNotification.Announcement("Saro is locked").post()
     }
