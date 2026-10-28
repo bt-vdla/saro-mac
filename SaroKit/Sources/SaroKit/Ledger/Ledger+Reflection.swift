@@ -140,6 +140,15 @@ extension Ledger {
             """, [.text(day)])
     }
 
+    /// Days with an answer or a mood note, archived answers included; when `waiting`, only those gated without the model.
+    public func reflectionDays(waiting: Bool) throws -> [String] {
+        try db.run("""
+            SELECT local_day FROM reflection_turn WHERE answer IS NOT NULL AND (? = 0 OR answer_verdict LIKE 'unavailable%')
+            UNION SELECT local_day FROM day_state WHERE mood_note IS NOT NULL AND (? = 0 OR mood_note_verdict LIKE 'unavailable%')
+            ORDER BY local_day
+            """, [.int(waiting ? 1 : 0), .int(waiting ? 1 : 0)]).compactMap { $0.str("local_day") }
+    }
+
     // MARK: Daily question
 
     /// Refresh question (CONTRACT §4): the answered pair stays, archived, and a new question starts unanswered.

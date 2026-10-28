@@ -141,12 +141,13 @@ final class ReflectionModel {
         }
     }
 
-    /// An answer or note checked while the model couldn't run is checked again once it can, once a session per day.
+    /// An answer or note checked while the model couldn't run sends every such one, on every day, back through the gate
+    /// once it can; once a session per day.
     private func regateIfWaiting(_ day: String, turns: [ReflectionTurn], model: AppModel) {
         let waiting = (turns.compactMap(\.answerVerdict) + [state.moodNoteVerdict].compactMap { $0 }).contains { $0.hasPrefix("unavailable") }
         guard waiting, model.ai.status == .available, regated.insert(day).inserted else { return }
         Task {
-            await model.exclusive { await model.pipeline.regateReflections(day) }
+            await model.regateOwnWords()
             await model.reload()
         }
     }

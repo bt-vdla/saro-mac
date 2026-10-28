@@ -1,3 +1,4 @@
+import Foundation
 import SaroKit
 
 extension AppModel {
@@ -25,14 +26,50 @@ extension AppModel {
     }
 
     /// Saves this onboarding pass's starter context. `starter` becomes what was stored, so nothing derived from a held
-    /// answer (its picks, or a personal first prompt) stays in memory either.
-    func saveStarter(_ s: StarterContext) async {
+    /// answer (its picks, or a personal first prompt) stays in memory either. Answers saved while the model is off go
+    /// back through the gate once it can run.
+    @discardableResult
+    func saveStarter(_ s: StarterContext) async -> Bool {
+        if ai.status != .available { UserDefaults.standard.removeObject(forKey: Self.gatedKey) }
         do {
             try await ledger.saveStarter(s)
             starter = try await ledger.latestStarter()
+            return true
         } catch {
             starter = s.storable
             show(Toast("Couldn't save your answers on this Mac. They hold for this visit.", style: .error))
+            return false
+        }
+    }
+
+    /// The SAFETY_VERSION every answer, mood note and About you answer was last checked under, marked when that pass
+    /// ran without the model.
+    static let gatedKey = "reflectionsGatedAt"
+
+    /// The person's own words outside entries go back through the gate (SR-17, SR-18): every one under a new
+    /// SAFETY_VERSION, or once the model can run after a pass without it; otherwise just the answers and mood notes
+    /// gated without the model, once it can. The pass is remembered once every one has its verdict.
+    func regateOwnWords() async {
+        let mark = ai.status == .available ? SafetyGate.version : SafetyGate.version + "|unavailable"
+        func due() async -> Bool? {
+            if ![SafetyGate.version, mark].contains(UserDefaults.standard.string(forKey: Self.gatedKey)) { return true }
+            guard ai.status == .available, !((try? await ledger.reflectionDays(waiting: true)) ?? []).isEmpty else { return nil }
+            return false
+        }
+        guard await due() != nil else { return }
+        await exclusive { [self] in
+            guard let all = await due() else { return }
+            var done = await pipeline.regateReflections(all: all)
+            // Onboarding gates its own answers while it's open.
+            if all, profile?.onboardingDoneAt != nil, let old = try? await ledger.latestStarter() {
+                let s = await pipeline.regate(starter: old, knownName: profile?.address ?? "")
+                if let s, s != old, await saveStarter(s) {
+                    await saveProfile { $0.follow(picks: old.storable.picks, to: s.storable.picks) }
+                } else if s != old {
+                    done = false
+                }
+            }
+            if all, done { UserDefaults.standard.set(mark, forKey: Self.gatedKey) }
         }
     }
 

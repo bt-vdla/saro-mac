@@ -145,16 +145,22 @@ extension Pipeline {
         return status
     }
 
-    /// Answers and mood notes checked while the model couldn't run are checked again once it can (SR-17).
-    public func regateReflections(_ day: String) async {
-        guard ai.status == .available else { return }
-        for t in (try? await ledger.turns(day: day, includeArchived: true)) ?? [] where t.answerVerdict?.hasPrefix("unavailable") == true {
-            guard let answer = t.answer, let r = await check(answer) else { continue }
-            try? await ledger.setTurnAnswer(id: t.id, answer: answer, verdict: r.verdict)
+    /// Every day's answers and mood notes back through the gate: all of them when `all` (an older SAFETY_VERSION checked
+    /// them, SR-18), else those checked while the model couldn't run, once it can (SR-17). False when one got no verdict yet.
+    public func regateReflections(all: Bool) async -> Bool {
+        guard all || ai.status == .available else { return true }
+        var done = true
+        for day in (try? await ledger.reflectionDays(waiting: !all)) ?? [] {
+            for t in (try? await ledger.turns(day: day, includeArchived: true)) ?? [] where all || t.answerVerdict?.hasPrefix("unavailable") == true {
+                guard let answer = t.answer else { continue }
+                guard let r = await check(answer) else { done = false; continue }
+                if r.verdict != t.answerVerdict { try? await ledger.setTurnAnswer(id: t.id, answer: answer, verdict: r.verdict) }
+            }
+            guard let s = try? await ledger.dayState(day), let note = s.moodNote, let mood = s.moodUser,
+                  all || s.moodNoteVerdict?.hasPrefix("unavailable") == true else { continue }
+            guard let r = await check(note) else { done = false; continue }
+            if r.verdict != s.moodNoteVerdict { try? await ledger.setUserMood(day: day, label: mood, note: note, verdict: r.verdict) }
         }
-        if let s = try? await ledger.dayState(day), s.moodNoteVerdict?.hasPrefix("unavailable") == true, let note = s.moodNote,
-           let mood = s.moodUser, let r = await check(note) {
-            try? await ledger.setUserMood(day: day, label: mood, note: note, verdict: r.verdict)
-        }
+        return done
     }
 }

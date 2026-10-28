@@ -154,8 +154,10 @@ final class AppModel {
     }
 
     /// Entries an older gate checked go back through this one (SR-18), entries gated while Apple Intelligence was off
-    /// go back once it can run (SR-17), and work a rate limit deferred is tried again (§11.7).
+    /// go back once it can run (SR-17), and work a rate limit deferred is tried again (§11.7). The person's other words go
+    /// first, so no day is read past one they'd hold.
     private func regateWaiting() async {
+        await regateOwnWords()
         for id in (try? await ledger.entryIDs(withLatestVerdictNotAt: SafetyGate.version)) ?? [] { process(id) }
         // The page open in the editor goes when it closes.
         for e in (try? await ledger.unfinishedEntries()) ?? []

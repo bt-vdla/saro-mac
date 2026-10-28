@@ -550,3 +550,32 @@ private let work = [
     try await l.setUserMood(day: today, label: .tender, note: "x", verdict: "safety_hold")
     #expect(try await open().isEmpty)
 }
+
+// MARK: Re-gating
+
+@Test func aNewGateChecksEveryAnswerAndMoodNoteAgain() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let e = Entry(kind: .reflection, body: "Walked home through the park.")
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    let past = LocalDay.adding(-3, to: e.localDay)
+    // Cleared by an older gate, as though its phrase list didn't have these words yet; refreshed away, it still counts.
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: "What stayed with you?", generator: "heuristic", localDay: e.localDay)
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: "Some nights I just want to die.", verdict: "clear")
+    try await l.archiveTurn(id: turn.id)
+    try await l.setUserMood(day: past, label: .tender, note: "Some nights I just want to die.", verdict: "unavailable_clear")
+    #expect(await p.dayStatus(e.localDay) == .ready)
+    #expect(try await l.reflectionDays(waiting: true) == [past])
+    #expect(try await l.reflectionDays(waiting: false) == [past, e.localDay])
+
+    // Without the model, only a new version's pass runs.
+    #expect(await p.regateReflections(all: false))
+    #expect(try await l.dayState(past).moodNoteVerdict == "unavailable_clear")
+    #expect(await p.regateReflections(all: true))
+    #expect(await p.dayStatus(e.localDay) == .held)
+    #expect(try await l.dayState(past).moodNoteVerdict == "safety_hold")
+    #expect(try await l.dayState(past).lockedMood == .tender)
+    #expect(try await l.reflectionDays(waiting: true).isEmpty)
+}

@@ -287,6 +287,31 @@ private let answers: [Int: String] = [
     #expect(await pipeline.gate(answer: "I want to kill myself")?.verdict == "safety_hold")
 }
 
+@Test func aStoredStarterIsGatedAgainAndTheProfileFollows() async throws {
+    let ledger = try Ledger(rootURL: URL.temporaryDirectory.appending(path: "onb-\(UUID().uuidString)"))
+    let pipeline = Pipeline(ledger: ledger, ai: SaroAI(stub: { _ in "" }, status: .unavailable(reason: "test")))
+    var s = StarterContext(version: 1)
+    // Cleared under an older gate, as though its phrase list didn't have Q5's words yet.
+    s.answers = [1: "Bee", 4: "More sleep", 5: "Straight to it. Some nights I just want to die."]
+    s.picks = Onboarding.picks(answers: s.answers, knownName: "Bee")
+    s.firstPrompt = "Bee, what moment still lingers?"
+    #expect(Onboarding.tone(s.picks) == .direct)
+    let gated = try #require(await pipeline.regate(starter: s, knownName: "Bee"))
+    #expect(gated.held == [5] && gated.firstPrompt == nil)
+    #expect(!gated.storable.picks.contains { $0.q == 5 } && gated.storable.picks.contains { $0.q == 4 })
+    #expect(await pipeline.regate(starter: gated, knownName: "Bee") == gated)
+
+    var p = Profile(name: "Bee", called: "Bee", tone: .direct)
+    p.focusAreas = Onboarding.focusAreas(s.picks)
+    let focus = p.focusAreas
+    p.follow(picks: s.storable.picks, to: gated.storable.picks)
+    #expect(p.name == "Bee" && p.called == "Bee" && p.tone == .neutral && p.focusAreas == focus)
+    // A tone chosen since in Settings stays.
+    var chosen = Profile(name: "Bee", called: "Bee", tone: .gentle)
+    chosen.follow(picks: s.storable.picks, to: gated.storable.picks)
+    #expect(chosen.tone == .gentle)
+}
+
 @Test func anEmptyFirstPageWithItsPromptStillDiscards() async throws {
     let ledger = try Ledger(rootURL: URL.temporaryDirectory.appending(path: "onb-\(UUID().uuidString)"))
     let page = Entry(kind: .reflection, body: "")
