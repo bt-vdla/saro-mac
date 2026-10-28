@@ -2,6 +2,7 @@ import Foundation
 
 /// One moment of the first week, as stored after its gate cleared it (FR-REF-10): never raw text.
 public struct WeekEntry: Sendable, Hashable {
+    public var id: String
     public var at: Date
     /// The stored reading's words (its quote, title and summary), for what the moment was about.
     public var words: String
@@ -9,7 +10,8 @@ public struct WeekEntry: Sendable, Hashable {
     public var quote: String?
     public var mood: Mood?
 
-    public init(at: Date, words: String, quote: String? = nil, mood: Mood? = nil) {
+    public init(id: String = UUID().uuidString, at: Date, words: String, quote: String? = nil, mood: Mood? = nil) {
+        self.id = id
         self.at = at
         self.words = words
         self.quote = quote
@@ -23,6 +25,8 @@ public struct WeekNote: Sendable, Hashable, Codable {
     public var kind: Kind
     public var title: String
     public var lines: [String]
+    /// The entries it was read from, so a note that drew on an entry since held is dropped (SR-15).
+    public var sources: [String] = []
 }
 
 /// The first week's promises, kept offline (weekMilestones.ts): "a first pattern" once there are three moments, the
@@ -43,7 +47,7 @@ public enum WeekMilestones {
         if let said = common.flatMap({ quote($0.from) }) { lines.append("You said “\(said)”.") }
         if let at = usualTime(three, calendar) { lines.append("All three came around \(clockLabel(at)).") }
         if lines.isEmpty { lines.append("Three moments, each about something different. I’ll keep watching.") }
-        return WeekNote(kind: .pattern, title: "A first pattern", lines: lines)
+        return WeekNote(kind: .pattern, title: "A first pattern", lines: lines, sources: three.map(\.id))
     }
 
     /// "Your first weekly letter", from the week's moments; with `carriesPattern` it brings the first pattern too.
@@ -61,7 +65,10 @@ public enum WeekMilestones {
         let on = days.count > 4 ? "on \(count(days.count)) different days"
             : "on \(days.dropLast().joined(separator: ", "))\(days.count > 1 ? " and " : "")\(days.last!)"
         var lines = ["You came back \(times(week.count)) this week, \(on)."]
-        if flagged(week) { return WeekNote(kind: .letter, title: title, lines: lines + ["I’ve kept this letter short. The rest can wait until you want it."]) }
+        if flagged(week) {
+            return WeekNote(kind: .letter, title: title, lines: lines + ["I’ve kept this letter short. The rest can wait until you want it."],
+                            sources: week.map(\.id))
+        }
         if let at = usualTime(week, calendar) { lines.append("Most came around \(clockLabel(at)).") }
         let common = shared(week)
         if let theme = common?.theme { lines.append("\(DayNarrative.cap(theme.rawValue)) came up most, in \(count(common!.n)) of them.") }
@@ -71,7 +78,7 @@ public enum WeekMilestones {
         if carriesPattern, let first = firstPattern(week, calendar: calendar)?.lines.first, first != lines.last {
             lines.append("And a first pattern: \(first.prefix(1).lowercased())\(first.dropFirst())")
         }
-        return WeekNote(kind: .letter, title: title, lines: lines)
+        return WeekNote(kind: .letter, title: title, lines: lines, sources: week.map(\.id))
     }
 
     /// The check-in on days 4–5: their goal, when it's short, else a plain question (firstWeek.ts checkInNote).

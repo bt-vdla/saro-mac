@@ -106,7 +106,7 @@ extension Pipeline {
                 guard let v = verdicts[e.id], v.verdict == "clear" || v.verdict == "unavailable_clear", let a = annotations[e.id],
                       let src = try? await text(for: e), sha256(src.text) == v.textSha256,
                       (try? await ledger.hasAnnotation(entryId: e.id, inputHash: v.textSha256)) == true else { continue }
-                out.append(WeekEntry(at: e.capturedAt, words: [a.quote, a.title, a.summary].compactMap { $0 }.joined(separator: "\n"),
+                out.append(WeekEntry(id: e.id, at: e.capturedAt, words: [a.quote, a.title, a.summary].compactMap { $0 }.joined(separator: "\n"),
                                      quote: a.quote, mood: a.moodLabel.flatMap(Mood.init(rawValue:))))
             }
         }

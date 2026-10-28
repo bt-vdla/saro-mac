@@ -164,7 +164,7 @@ public enum DayNarrative {
     }
 
     /// "Tue 22 Sep" (formatDayLabel), in English like the rest of the copy.
-    static func label(_ day: String) -> String {
+    public static func label(_ day: String) -> String {
         guard let d = LocalDay.date(day) else { return day }
         let c = Calendar(identifier: .gregorian).dateComponents([.weekday, .day, .month], from: d)
         let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
