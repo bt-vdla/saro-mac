@@ -85,6 +85,18 @@ private func people(_ entries: [String]) -> [String] { texts(derived(entries).fi
     #expect(try await l.run("SELECT 1 FROM observation WHERE key='theme:nature'").isEmpty)
 }
 
+@Test func knownLabelsComeOnlyFromWhatActiveObservationShows() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let a = try await write(l, p, "Dinner with my sister Maya was lovely.", at: ago(2))
+    try await write(l, p, "I miss Maya's laugh already.", at: ago(1))
+    let known = { MemoryList.knownLabels(try await memories(l), called: "Sam") }
+    #expect(try await known() == ["Sam", "Maya"])
+    // One of the days held (here by its mood note): Maya is in one entry that counts, so she is no longer known.
+    try await l.setUserMood(day: a.localDay, label: .calm, note: "x", verdict: "safety_hold")
+    #expect(try await known() == ["Sam"])
+}
+
 @Test func aHoldAfterLearningDropsWhatWasLearnedAndClearingAgainLearnsAgain() async throws {
     let l = try tempLedger()
     let p = offline(l)

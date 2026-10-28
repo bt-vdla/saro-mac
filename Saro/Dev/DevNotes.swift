@@ -247,9 +247,10 @@ struct DevNotes {
                         "Edit (↵ save · esc cancel, 90 chars), Add, Delete with in-row Undo for 6 s and ⌘Z, Forget everything with its inline confirm, Memory switch (pause)",
                         "Graph: force-directed, sized by mentions, coloured by kind, kind and time filters, hover lights neighbours, side panel with mentions, 12-week bars, related, Forget and Rename",
                         "SR-15: a verdict that doesn't clear an entry deletes what was learned from it; Delete and Forget delete the words, keeping only key hashes",
-                        "Export everything carries a readable memories array; ⌘K lists matching memories and jumps to the line"],
+                        "Export everything carries a readable memories array; ⌘K lists matching memories and jumps to the line",
+                        "Feeding Saro: knownLabels (the called name, people, top themes; never a held day's) reach setPersonalization as the drift check's known words, read fresh on every day load"],
                 stubbed: ["About you lines (goals said back by onboarding's SayBack) are read from the starter context, so the graph doesn't show them",
-                          "Feeding prompts: knownLabels is ready; reflection's setPersonalization reads it"],
+                          "What Saro read's 'also read N things Saro knows': no prompt line carries the labels yet"],
                 issues: ["Pausing is recorded per window; text gated while paused is learned once memory is back on only if it was written outside the pause",
                          "Forget everything removes memories only; readings and letters stay (decision flagged)"],
                 brd: ["FR-MEM-01", "FR-MEM-02", "FR-MEM-03", "FR-MEM-04", "FR-MEM-05", "FR-MEM-06", "FR-MEM-09", "DR-06", "DR-09", "DR-13", "DR-17"])

@@ -111,7 +111,13 @@ final class ReflectionModel {
             self.note = note
             flashIfNewReading(model)
             if let p = model.profile {
-                await model.ai.setPersonalization(name: p.address, tone: p.tone, focus: p.focusAreas, known: [p.name, p.called].compactMap { $0 })
+                // What Saro knows read again first, so a day held since its last read (an entry, an answer, a mood
+                // note) has already left knownLabels and the pane (SR-16).
+                await model.memory.load()
+                // ponytail: memory's labels only widen what the drift check takes as known; no prompt line reads them, so
+                // What Saro read has no "also read N things Saro knows" yet. Add both, with the count in personalTag, together.
+                await model.ai.setPersonalization(name: p.address, tone: p.tone, focus: p.focusAreas,
+                                                  known: [p.name, p.called].compactMap { $0 } + model.memory.knownLabels)
             }
             await scheduleNotice(model)
             regateIfWaiting(day, turns: turns, model: model)
