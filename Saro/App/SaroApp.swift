@@ -146,7 +146,8 @@ struct SaroCommands: Commands {
                 Divider()
                 Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut(KeyboardShortcut(.whatSaroKnows)).disabled(model.lens != nil)
             }
-            .disabled(model.showsOnboarding || Locker.shared.locked)
+            // The moment frame holds the day it records to: no day change, lens or search under it.
+            .disabled(model.showsOnboarding || Locker.shared.locked || model.recorderKind == .moment)
         }
         CommandGroup(after: .toolbar) {
             Group {

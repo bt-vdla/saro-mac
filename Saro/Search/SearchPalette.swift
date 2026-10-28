@@ -150,11 +150,14 @@ struct SearchPalette: View {
             PaletteCommand(id: "replay", title: "Replay today", symbol: "clock.arrow.circlepath", keywords: "play timelapse rewind history") {
                 $0.requestReplay(LocalDay.today())
             },
-            PaletteCommand(id: "moment", title: "Record a moment", symbol: "video", keywords: "video camera capture new", shortcut: Shortcut.recordMoment.keys) {
+            // Switching kind under a live recorder would keep the camera running behind the voice pill, as the bar knows.
+            PaletteCommand(id: "moment", title: "Record a moment", symbol: "video", keywords: "video camera capture new", shortcut: Shortcut.recordMoment.keys,
+                           available: { $0.recorderKind == nil }) {
                 $0.pane = .day
                 $0.recorderKind = .moment
             },
-            PaletteCommand(id: "voice", title: "Voice note", symbol: "waveform", keywords: "audio record speak microphone new", shortcut: Shortcut.voiceNote.keys) {
+            PaletteCommand(id: "voice", title: "Voice note", symbol: "waveform", keywords: "audio record speak microphone new", shortcut: Shortcut.voiceNote.keys,
+                           available: { $0.recorderKind == nil }) {
                 $0.pane = .day
                 $0.recorderKind = .voice
             },
