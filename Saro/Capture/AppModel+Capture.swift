@@ -13,6 +13,8 @@ final class CaptureUI {
     /// The music field is up; `musicGrows` when a click opened it, so it grows out of its button.
     var musicOpen = false
     var musicGrows = false
+    /// The voice pill's height in the window, measured, so the toasts sit above it.
+    var pillHeight: CGFloat = 98
     /// The reflection card whose title or body is being typed into, and which.
     var editing: (id: String, field: CardField)?
     /// A developed frame flying from the recorder into its card.

@@ -137,7 +137,10 @@ struct RecorderView: View {
         let width = max(0, min(380, size.width - 32))
         return voicePill(compact: false)
             .frame(width: width)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pillHeight = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                pillHeight = $0
+                CaptureUI.shared.pillHeight = $0
+            }
             .modifier(flight(from: button, to: CGRect(x: (size.width - width) / 2, y: size.height - 8 - pillHeight, width: width, height: pillHeight)))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, 8)

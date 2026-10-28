@@ -13,6 +13,7 @@ struct ToastHost: View {
     @State private var frames: [UUID: CGRect] = [:]
 
     private nonisolated static let space = "toasts"
+    private var capture: CaptureUI { .shared }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -25,11 +26,13 @@ struct ToastHost: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 8 pt above the bar, one row or two, and above the voice pill while it's up.
-        // ponytail: the pill's resting height (98) as a constant; a preference from the recorder if it starts to vary.
-        .padding(.leading, 24).padding(.bottom, model.barClear + 8 + (model.recorderKind == .voice ? 106 : 0))
+        // 8 pt above the bar, one row or two, and above the voice pill (as tall as its prompt and step make it) or the
+        // music field (48) while one is up.
+        .padding(.leading, 24).padding(.bottom, model.barClear + 8 + (model.recorderKind == .voice ? capture.pillHeight + 8 : 0)
+            + (capture.musicOpen ? 56 : 0))
         .animation(Motion.pick(Motion.easeOut(0.24), reduce: reduceMotion), value: model.toasts.map(\.id))
         .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.recorderKind == .voice)
+        .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: capture.musicOpen)
         .onChange(of: model.toasts.map(\.id)) { _, ids in frames = frames.filter { ids.contains($0.key) } }
         .onGeometryChange(for: CGPoint.self) { $0.frame(in: .global).origin } action: { if flying != nil { ShellPanels.shared.toastOrigin = $0 } }
         .overlay {
