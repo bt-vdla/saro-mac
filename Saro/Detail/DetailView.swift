@@ -223,7 +223,7 @@ private struct MediaDetail: View {
         .onChange(of: entry.processingStatus) { _, _ in Task { await loadTranscript() } }
         .onDisappear { player?.stop() }
         .background {
-            if turns.count > 1, !titleFocused {
+            if turns.count > 1, !titleFocused, !model.searchOpen {
                 Group {
                     Button("Previous turn") { step(-1) }.keyboardShortcut(.leftArrow, modifiers: [])
                     Button("Next turn") { step(1) }.keyboardShortcut(.rightArrow, modifiers: [])
