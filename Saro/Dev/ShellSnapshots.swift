@@ -9,6 +9,8 @@ import SwiftUI
 enum ShellSnapshots {
     /// Edit Details' fields where they show: the voice note's own summary open in place, and a page's caption.
     static func details(_ model: AppModel) {
+        // ⌘K's Recent list, the state before, would cover every live state here.
+        model.searchOpen = false
         model.pane = .day
         model.openEntryID = nil
         guard let voice = model.entries.first(where: { $0.kind == .voice }) else { return }

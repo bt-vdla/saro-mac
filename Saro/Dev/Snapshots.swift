@@ -140,6 +140,9 @@ enum Snapshots {
                 // started from a prompt with a question Saro asked under it, then that page edited on its card.
                 ("capture-song", {
                     guard model.isDemo else { return }
+                    // The still held above is read again, which restates its clear verdict, so today isn't held for the
+                    // states after these; until the queue gets to it today is, so these run on a day of their own.
+                    if let s = model.entries.first(where: { $0.kind == .still }) { model.process(s.id) }
                     model.openEntryID = nil
                     // The panel left open above would cover the song and the page edited on its card.
                     model.insight = .spine
@@ -301,7 +304,17 @@ enum Snapshots {
                 ("shell-toasts", { ShellSnapshots.toasts(model) }),
                 ("shell-account", { ShellSnapshots.accountMenu(model) }),
                 ("shell-trash", { ShellSnapshots.trash(model) }),
+                // As narrow as nav-bar-narrow: Trash still sits 8 pt above the bar's two rows, and a toast clears the music field.
+                ("shell-trash-narrow", { p.setContentSize(NSSize(width: 570, height: 860)) }),
+                ("shell-toast-music", {
+                    ShellPanels.shared.panel = nil
+                    CaptureUI.shared.musicOpen = true
+                    model.toasts = [Toast(title: "Voice note moved to Trash", detail: "You can undo this", action: Toast.Action(label: "Undo", run: {}))]
+                }),
                 ("shell-trash-pane", {
+                    p.setContentSize(NSSize(width: 1320, height: 860))
+                    CaptureUI.shared.musicOpen = false
+                    model.toasts = []
                     ShellPanels.shared.panel = nil
                     model.pane = .trash
                 }),
