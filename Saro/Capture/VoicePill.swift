@@ -6,12 +6,15 @@ import SwiftUI
 struct VoicePill: View {
     let notice: RecorderNotice?
     let inSession: Bool
+    /// Growing out of the Voice button, which is its entrance.
+    var grows = false
     let toggle: () -> Void
     let done: () -> Void
     let close: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
+    /// A key brings the pill up at once (the frequency rule).
+    @State private var appeared = Motion.byKey
 
     private var capture: CaptureController { .shared }
     /// A notice with an icon replaces the recorder; a spinner notice keeps it, as the web pill's "starting" step does.
@@ -30,9 +33,9 @@ struct VoicePill: View {
         .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
         .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
         .environment(\.colorScheme, .dark)
-        .offset(y: appeared || reduceMotion ? 0 : 16)
-        .scaleEffect(appeared || reduceMotion ? 1 : 0.96, anchor: .bottom)
-        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared || grows || reduceMotion ? 0 : 16)
+        .scaleEffect(appeared || grows || reduceMotion ? 1 : 0.96, anchor: .bottom)
+        .opacity(appeared || grows ? 1 : 0)
         .animation(reduceMotion ? Motion.fade : CaptureMotion.surface, value: appeared)
         .onAppear { appeared = true }
         .accessibilityElement(children: .contain)

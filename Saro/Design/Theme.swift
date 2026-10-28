@@ -131,6 +131,9 @@ enum Motion {
     static let fan = surface
 
     static func pick(_ animation: Animation, reduce: Bool) -> Animation { reduce ? fade : animation }
+
+    /// The frequency rule: what a key started doesn't animate. Read it inside the action (or the update) the input caused.
+    @MainActor static var byKey: Bool { NSApp.currentEvent?.type == .keyDown }
 }
 
 /// Radii (`tailwind.config.js`): control 8, field 10, card 14, panel 20, sheet 28.

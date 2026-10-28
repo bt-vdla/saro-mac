@@ -9,13 +9,25 @@ import SwiftUI
 struct RecorderView: View {
     let kind: EntryKind
     var surface: CaptureController.Surface = .window
+    /// The bar button a click opened it from: the surface grows out of it and closes back into it (morph.ts).
+    var origin: Anchor<CGRect>?
     /// Called instead of `onClose` when Done ends a session that saved at least one turn.
     var onSaved: (() -> Void)?
     let onClose: () -> Void
 
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
+    /// A key brings the recorder up at once (the frequency rule).
+    @State private var appeared = Motion.byKey
+    /// 0 on the bar button, 1 where the surface rests.
+    @State private var grown = 0.0
+    /// The flight out landed before any close, so going back crossfades the other way (mid-flight it just turns round).
+    @State private var landed = false
+    @State private var leaving = false
+    /// Hidden at once: closed by a key, or back in its button.
+    @State private var gone = false
+    /// The pill's height, measured (its recording step until then).
+    @State private var pillHeight: CGFloat = 98
     @State private var countdown: Int?
     @State private var developing = false
     /// Done in the panel, waiting for the last turn to save.
@@ -34,49 +46,74 @@ struct RecorderView: View {
                 stage(radius: 20)
             } else {
                 GeometryReader { geo in
-                    if kind == .moment { momentFrame(geo.size) } else { voicePill(geo.size) }
+                    let button = from.map { geo[$0] }
+                    if kind == .moment { momentFrame(geo.size, from: button) } else { voicePill(geo.size, from: button) }
                 }
             }
         }
         .task(id: available && !ending ? kind : nil) {
             if available, !ending { await capture.prepare(kind, for: surface, model: model) }
         }
-        .onAppear { appeared = true }
+        .onAppear {
+            appeared = true
+            guard from != nil else { return }
+            withAnimation(flightSpring) { grown = 1 } completion: { if !leaving { landed = true } }
+        }
         // A moment's 3-2-1 must not go on to start whatever kind replaced it.
         .onChange(of: kind) { if countdown != nil { cancelCountdown() } }
         .onDisappear {
             ritual?.cancel()
             capture.finish(surface)
         }
-        .transition(.opacity.animation(CaptureMotion.out(0.2)))
+        .allowsHitTesting(!leaving)
+        .opacity(gone ? 0 : 1)
+        .animation(nil, value: gone)
+        // In the window the surface brings itself in (or, for a key, doesn't).
+        .transition(compact ? .opacity.animation(CaptureMotion.out(0.2))
+            : .asymmetric(insertion: .identity, removal: .opacity.animation(CaptureMotion.out(0.2))))
+    }
+
+    private var from: Anchor<CGRect>? { reduceMotion ? nil : origin }
+
+    /// MorphLayer.tsx: a flight over a big share of the window takes the surface spring, a small one the small spring.
+    private var flightSpring: Animation { kind == .moment ? Motion.surface : Motion.small }
+
+    private func flight(from button: CGRect?, to rest: CGRect) -> GrowFlight {
+        GrowFlight(v: button == nil ? 1 : grown, from: button ?? rest, to: rest, outbound: !(leaving && landed), face: .of(kind))
     }
 
     // MARK: Layouts
 
     /// Inset 16 (24 on wide canvases), radius 28, over black/45 and a blur.
-    private func momentFrame(_ size: CGSize) -> some View {
-        ZStack {
+    private func momentFrame(_ size: CGSize, from button: CGRect?) -> some View {
+        let inset: CGFloat = size.width >= 1024 ? 24 : 16
+        let lit = appeared && !leaving
+        return ZStack {
             Rectangle().fill(.ultraThinMaterial)
                 .overlay(Color.black.opacity(0.45))
                 .environment(\.colorScheme, .dark)
                 .contentShape(.rect)
                 .onTapGesture {}
-                .opacity(appeared ? 1 : 0)
-                .animation(CaptureMotion.out(0.3), value: appeared)
+                .opacity(lit ? 1 : 0)
+                .animation(CaptureMotion.out(0.3), value: lit)
             stage(radius: 28)
                 .background(RoundedRectangle(cornerRadius: 28).fill(.black).shadow(color: .black.opacity(0.24), radius: 40, y: 32))
                 .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
-                .padding(size.width >= 1024 ? 24 : 16)
-                .scaleEffect(appeared || reduceMotion ? 1 : 0.96, anchor: .bottom)
-                .opacity(appeared ? 1 : 0)
+                .modifier(flight(from: button, to: CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)))
+                .padding(inset)
+                .scaleEffect(appeared || reduceMotion || button != nil ? 1 : 0.96, anchor: .bottom)
+                .opacity(appeared || button != nil ? 1 : 0)
                 .animation(reduceMotion ? Motion.fade : CaptureMotion.surface, value: appeared)
         }
     }
 
     /// min(380, width − 32) wide, 8 pt above the bottom of the canvas.
-    private func voicePill(_ size: CGSize) -> some View {
-        VoicePill(notice: notice, inSession: inSession, toggle: { capture.toggle() }, done: done, close: close)
-            .frame(width: max(0, min(380, size.width - 32)))
+    private func voicePill(_ size: CGSize, from button: CGRect?) -> some View {
+        let width = max(0, min(380, size.width - 32))
+        return VoicePill(notice: notice, inSession: inSession, grows: button != nil, toggle: primary, done: done, close: close)
+            .frame(width: width)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pillHeight = $0 }
+            .modifier(flight(from: button, to: CGRect(x: (size.width - width) / 2, y: size.height - 8 - pillHeight, width: width, height: pillHeight)))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, 8)
     }
@@ -312,6 +349,8 @@ struct RecorderView: View {
 
     /// The record button: a moment's first turn waits for a 3-2-1, which the button (or Space) skips.
     private func primary() {
+        // Space while it flies back into its button must not start a turn.
+        guard !leaving else { return }
         if countdown != nil { return startNow() }
         if kind == .moment, capture.state == .previewing, !inSession { return startCountdown() }
         capture.toggle()
@@ -367,7 +406,31 @@ struct RecorderView: View {
     }
 
     private func close() {
+        guard !leaving else { return }
         ritual?.cancel()
+        let key = Motion.byKey
+        guard from != nil, !key else {
+            if key { gone = true }
+            return shut()
+        }
+        // Back into the button as the scrim lifts; the camera stops once it's there, so its last frames go back with it.
+        leaving = true
+        withAnimation(flightSpring) { grown = 0 } completion: { land() }
+        // If frames stall (a minimised window), it lands anyway, as MorphLayer's watchdog does.
+        ritual = Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            if !Task.isCancelled { land() }
+        }
+    }
+
+    /// In its button: the button shows again as the surface goes, with nothing left to fade.
+    private func land() {
+        guard !gone else { return }
+        gone = true
+        shut()
+    }
+
+    private func shut() {
         capture.finish(surface)
         onClose()
     }
@@ -381,6 +444,54 @@ struct RecorderNotice: Equatable {
     var voiceInstead = false
     /// Permission and failure states get the danger disc; a busy hand-off doesn't.
     var alarm = true
+}
+
+/// The flight between a bar button and the recorder surface it opened (morph.ts, MorphLayer.tsx): a box flying from the
+/// button to where the surface rests, holding the surface and a copy of the button's face, each scaled uniformly to cover
+/// it (centred across, from the top) as they crossfade. The surface keeps its layout; once landed nothing is clipped.
+struct GrowFlight: ViewModifier, @MainActor Animatable {
+    var v: Double
+    let from: CGRect
+    let to: CGRect
+    /// Out of the button; false on the way back from rest.
+    let outbound: Bool
+    let face: CaptureFace
+
+    var animatableData: Double {
+        get { v }
+        set { v = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let box = CanvasMath.flightBox(from: from, to: to, v: v).offsetBy(dx: -to.minX, dy: -to.minY)
+        let fades = CanvasMath.flightFades(outbound ? v : 1 - v)
+        ZStack(alignment: .topLeading) {
+            content
+                .opacity(outbound ? fades.arriving : fades.leaving)
+                .scaleEffect(max(box.width / max(to.width, 1), box.height / max(to.height, 1)), anchor: .top)
+                .offset(x: box.midX - to.width / 2, y: box.minY)
+            face.frame(width: from.width, height: from.height)
+                .scaleEffect(max(box.width / from.width, box.height / from.height), anchor: .top)
+                .offset(x: box.midX - from.width / 2, y: box.minY)
+                .opacity(outbound ? fades.leaving : fades.arriving)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .clipShape(FlightClip(box: v < 1 ? box : nil, radius: Radius.panel + (Radius.sheet - Radius.panel) * v))
+    }
+}
+
+/// The flight's box, rounded from the button's 20 to the surface's 28.
+private struct FlightClip: Shape {
+    let box: CGRect?
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        // ponytail: landed, it clips to well past the surface's shadow (≤ 80 pt) rather than not at all, so the surface
+        // keeps one structure and its camera view isn't rebuilt.
+        guard let box else { return Path(rect.insetBy(dx: -200, dy: -200)) }
+        return RoundedRectangle(cornerRadius: min(radius, box.width / 2, box.height / 2)).path(in: box)
+    }
 }
 
 /// The web build's motion tokens (lib/motion.ts).

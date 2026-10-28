@@ -70,11 +70,15 @@ final class AppModel {
     /// Non-nil while the in-window recorder is up.
     var recorderKind: EntryKind? {
         didSet {
+            // Only the bar button that opens it sets this, just after.
+            if recorderKind != oldValue { recorderGrows = false }
             guard recorderKind != nil else { return }
             openVoiceID = nil
             replay.exit(animated: false)
         }
     }
+    /// A click on the recorder's bar button opened it: it grows out of that button and closes back into it (morph.ts).
+    var recorderGrows = false
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false

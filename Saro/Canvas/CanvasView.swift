@@ -24,9 +24,11 @@ struct DayView: View {
                     .scaleEffect(model.recorderKind == .moment && !reduceMotion ? 0.98 : 1)
                     .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.4), value: model.recorderKind)
                 if model.openEntryID.flatMap(model.entry) == nil { chrome(geo.size) }
-                if let kind = model.recorderKind {
+            }
+            .overlayPreferenceValue(CaptureOriginKey.self) { [kind = model.recorderKind, grows = model.recorderGrows] origins in
+                if let kind {
                     // The voice pill sits 8 pt above the bar; the moment frame fills the canvas.
-                    RecorderView(kind: kind) { model.recorderKind = nil }
+                    RecorderView(kind: kind, origin: grows ? origins[kind] : nil) { model.recorderKind = nil }
                         .padding(.bottom, kind == .voice ? 92 : 0)
                         // A window close or pane switch ends the session too; left set, the camera would come back on its own.
                         .onDisappear { model.recorderKind = nil }

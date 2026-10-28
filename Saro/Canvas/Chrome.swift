@@ -90,20 +90,33 @@ struct BottomBar: View {
             Divider().frame(height: 26).padding(.horizontal, 4)
             // Switching kind under a live recorder would keep the camera running behind the voice pill.
             Group {
-                CaptureTile(title: "Moment", symbol: "video", tint: Tok.momentInk) { model.recorderKind = .moment }
+                recorderTile(.moment)
                     .keyboardShortcut("n", modifiers: .command).help("Record a moment  ⌘N")
                     .tourAnchor(.recordButton)
-                CaptureTile(title: "Voice", symbol: "waveform", tint: Tok.echoInk) { model.recorderKind = .voice }
+                recorderTile(.voice)
                     .keyboardShortcut("n", modifiers: [.command, .shift]).help("Leave a voice note  ⇧⌘N")
-                CaptureTile(title: "Still", symbol: "photo", tint: Tok.stillInk) { model.pickStill() }
+                CaptureTile(face: CaptureFace(title: "Still", symbol: "photo", tint: Tok.stillInk)) { model.pickStill() }
                     .help("Add a photo (or drop or paste one onto the canvas)")
-                CaptureTile(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk) {
+                CaptureTile(face: CaptureFace(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk)) {
                     Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
                 }
                 .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
             }
             .disabled(model.recorderKind != nil)
         }
+    }
+
+    /// Moment and Voice: a click (not ⌘N) lets the recorder grow out of the button, which waits hidden under it until the
+    /// recorder closes (captureMorph with `hide`).
+    private func recorderTile(_ kind: EntryKind) -> some View {
+        let hidden = model.recorderGrows && model.recorderKind == kind
+        return CaptureTile(face: .of(kind)) {
+            model.recorderKind = kind
+            model.recorderGrows = !Motion.byKey
+        }
+        .opacity(hidden ? 0 : 1)
+        .animation(nil, value: hidden)
+        .anchorPreference(key: CaptureOriginKey.self, value: .bounds) { [kind: $0] }
     }
 
     private var history: some View {
@@ -130,23 +143,46 @@ struct BottomBar: View {
     }
 }
 
-/// A capture (CaptureDock.tsx): the type's ink glyph over an 11 pt label that turns ink on hover.
-private struct CaptureTile: View {
+/// Where the bar's Moment and Voice buttons are, so the recorder can grow out of the one that opened it.
+struct CaptureOriginKey: PreferenceKey {
+    static let defaultValue: [EntryKind: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [EntryKind: Anchor<CGRect>], nextValue: () -> [EntryKind: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// A capture's face: the type's ink glyph over an 11 pt label, ink when lit. The recorder's flight starts as a copy of it.
+struct CaptureFace: View {
     let title: String
     let symbol: String
     let tint: Color
+    var lit = false
+
+    static func of(_ kind: EntryKind) -> CaptureFace {
+        kind == .voice ? CaptureFace(title: "Voice", symbol: "waveform", tint: Tok.echoInk)
+            : CaptureFace(title: "Moment", symbol: "video", tint: Tok.momentInk)
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(tint).frame(height: 20)
+            Text(title).font(Typo.ui(11, .medium)).foregroundStyle(lit ? Tok.ink : Tok.ink2)
+        }
+        .frame(width: 68, height: 52)
+    }
+}
+
+/// A capture (CaptureDock.tsx): its face, whose label turns ink on hover.
+private struct CaptureTile: View {
+    let face: CaptureFace
     let action: () -> Void
     @Environment(\.isEnabled) private var enabled
     @State private var hover = false
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(tint).frame(height: 20)
-                Text(title).font(Typo.ui(11, .medium)).foregroundStyle(hover ? Tok.ink : Tok.ink2)
-            }
-            .frame(width: 68, height: 52)
-            .contentShape(.rect(cornerRadius: Radius.panel))
+            CaptureFace(title: face.title, symbol: face.symbol, tint: face.tint, lit: hover)
+                .contentShape(.rect(cornerRadius: Radius.panel))
         }
         .buttonStyle(PressStyle(hoverFill: true, radius: Radius.panel))
         .opacity(enabled ? 1 : 0.4)
