@@ -289,12 +289,20 @@ public actor Ledger {
         return Dictionary(rows.map(EntryAnnotation.init).map { ($0.entryId, $0) }, uniquingKeysWith: { $1 })
     }
 
+    /// A safety hold also drops what was generated from the entry: its readings and its day's readings (SR-15).
+    // ponytail: a kept letter stays, since the user chose to keep it; the whole-day rule hides it while the day is held.
     public func insertVerdict(_ v: SafetyVerdictRow) throws {
-        try db.run("""
-            INSERT INTO safety_verdict (id, entry_id, text_sha256, safety_version, layer, verdict, reason_code, created_at)
-            VALUES (?,?,?,?,?,?,?,?)
-            """, [.text(v.id), .text(v.entryId), .text(v.textSha256), .text(v.safetyVersion), .int(Int64(v.layer)),
-                  .text(v.verdict), .text(v.reasonCode), .text(v.createdAt.iso)])
+        try db.transaction {
+            try db.run("""
+                INSERT INTO safety_verdict (id, entry_id, text_sha256, safety_version, layer, verdict, reason_code, created_at)
+                VALUES (?,?,?,?,?,?,?,?)
+                """, [.text(v.id), .text(v.entryId), .text(v.textSha256), .text(v.safetyVersion), .int(Int64(v.layer)),
+                      .text(v.verdict), .text(v.reasonCode), .text(v.createdAt.iso)])
+            guard v.verdict == "safety_hold" else { return }
+            try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(v.entryId)])
+            try db.run("DELETE FROM insight_snapshot WHERE kind='day_reading' AND from_day=(SELECT local_day FROM entry WHERE id=?)",
+                       [.text(v.entryId)])
+        }
     }
 
     /// The newest verdict per entry for a day.

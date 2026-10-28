@@ -53,10 +53,27 @@ func tempLedger() throws -> Ledger {
         var a = EntryAnnotation(entryId: e.id, aiRunId: run.id, generator: "heuristic")
         a.title = t
         try await l.insertAnnotation(a)
-        try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: "h", safetyVersion: "1", layer: 1, verdict: t == "first" ? "clear" : "safety_hold", reasonCode: t))
+        try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: "h", safetyVersion: "1", layer: 1, verdict: t == "first" ? "clear" : "technical_hold", reasonCode: t))
     }
     #expect(try await l.annotations(day: e.localDay)[e.id]?.title == "second")
-    #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "safety_hold")
+    #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "technical_hold")
+}
+
+@Test func safetyHoldDropsWhatWasGenerated() async throws {
+    let l = try tempLedger()
+    let held = Entry(kind: .reflection, body: "x"), other = Entry(kind: .reflection, body: "y")
+    try await l.insertEntry(held)
+    try await l.insertEntry(other)
+    let run = AIRun(feature: "entry", executor: "heuristic", status: "ok")
+    try await l.insertRun(run)
+    for e in [held, other] { try await l.insertAnnotation(EntryAnnotation(entryId: e.id, aiRunId: run.id, generator: "heuristic")) }
+    for kind in ["day_reading", "letter"] {
+        try await l.insertSnapshot(InsightSnapshot(kind: kind, day: held.localDay, aiRunId: nil, generator: "heuristic", inputHash: nil, payload: "{}"))
+    }
+    try await l.insertVerdict(SafetyVerdictRow(entryId: held.id, textSha256: "h", safetyVersion: "1", layer: 2, verdict: "safety_hold", reasonCode: "t"))
+    #expect(try await Set(l.annotations(day: held.localDay).keys) == [other.id])
+    #expect(try await l.latestSnapshot(kind: "day_reading", day: held.localDay) == nil)
+    #expect(try await l.latestSnapshot(kind: "letter", day: held.localDay) != nil)
 }
 
 @Test func trashAndRestoreByBatch() async throws {
