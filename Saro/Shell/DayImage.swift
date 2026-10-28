@@ -32,10 +32,8 @@ extension AppModel {
             slow.cancel()
             DayImageProgress.shared.preparing = false
         }
-        // The HUD gets a frame to show in before the render holds the main actor.
-        try? await Task.sleep(for: .milliseconds(16))
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        guard let image = DayImage.render(self, dark: dark) else {
+        guard let image = await DayImage.render(self, dark: dark) else {
             return show(Toast(title: "Couldn't export this day", detail: "Try again in a moment.", style: .destructive))
         }
         do {
@@ -48,31 +46,41 @@ extension AppModel {
 }
 
 enum DayImage {
-    /// The day's cards on a still stage at the fitted camera. The Metal ground can't be drawn offscreen, so a gradient
-    /// from the same hour's colours with grain stands in for it.
-    @MainActor static func render(_ model: AppModel, dark: Bool) -> CGImage? {
+    /// The day's cards on a still stage at the fitted camera, card by card in z order, so "Preparing your day…" can show
+    /// between them. The Metal ground can't be drawn offscreen, so a gradient from the same hour's colours with grain
+    /// stands in for it.
+    @MainActor static func render(_ model: AppModel, dark: Bool) async -> CGImage? {
         let cards = model.stageCards
         guard let b = CanvasMath.bounds(cards.map { CGRect(center: $0.center, size: $0.size) }) else { return nil }
         let pad = DayImageMath.pad
-        let size = CGSize(width: b.width + 2 * pad, height: b.height + 2 * pad)
-        let hour = model.isToday ? Sky.localHour(.now) : 13
-        let stage = ZStack(alignment: .topLeading) {
-            StillGround(ground: Sky.ground(at: hour, dark: dark, followsDay: Daylight.shared.mode == .clock))
-            ForEach(cards) { c in
-                Group {
-                    if c.item.isStack { StackFace(entries: c.item.entries) } else { CardFace(entry: c.item.top, size: c.size) }
-                }
-                .frame(width: c.size.width, height: c.size.height, alignment: .topLeading)
-                .position(x: c.center.x - b.minX + pad, y: c.center.y - b.minY + pad)
-            }
+        let size = DayImageMath.stage(CGSize(width: b.width + 2 * pad, height: b.height + 2 * pad))
+        let scale = DayImageMath.scale(for: size)
+        let px = DayImageMath.pixels(for: size)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: px.width, height: px.height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        /// Draws a view with its top-left at `origin`, in the stage's points.
+        func draw(_ view: some View, at origin: CGPoint) {
+            let r = ImageRenderer(content: view.environment(model).environment(\.colorScheme, dark ? .dark : .light))
+            r.scale = scale
+            guard let image = r.cgImage else { return }
+            ctx.draw(image, in: CGRect(x: origin.x * scale, y: CGFloat(px.height) - origin.y * scale - CGFloat(image.height),
+                                       width: CGFloat(image.width), height: CGFloat(image.height)))
         }
-        .frame(width: size.width, height: size.height)
-        .allowsHitTesting(false)
-        .environment(model)
-        .environment(\.colorScheme, dark ? .dark : .light)
-        let r = ImageRenderer(content: stage)
-        r.scale = DayImageMath.scale(for: size)
-        return r.cgImage
+        let hour = model.isToday ? Daylight.shared.hour(at: .now) : 13
+        draw(StillGround(ground: Sky.ground(at: hour, dark: dark, followsDay: Daylight.shared.mode == .clock)).frame(width: size.width, height: size.height),
+             at: .zero)
+        for c in cards {
+            draw(Group {
+                if c.item.isStack { StackFace(entries: c.item.entries) } else { CardFace(entry: c.item.top, size: c.size) }
+            }
+            .frame(width: c.size.width, height: c.size.height, alignment: .topLeading)
+            .allowsHitTesting(false),
+                 at: CGPoint(x: c.center.x - c.size.width / 2 - b.minX + pad, y: c.center.y - c.size.height / 2 - b.minY + pad))
+            // The main actor breathes between cards, so the 150 ms HUD can come up while a big day draws.
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return ctx.makeImage()
     }
 
     nonisolated static func writePNG(_ image: CGImage, to url: URL) throws {

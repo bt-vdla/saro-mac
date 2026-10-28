@@ -56,8 +56,10 @@ enum ShellSnapshots {
     static func dayImage(_ model: AppModel, dir: String) {
         PrefsStore.shared.lockEnabled = false
         model.pane = .day
-        if let image = DayImage.render(model, dark: false) {
-            try? DayImage.writePNG(image, to: URL(fileURLWithPath: "\(dir)/shell-dayimage-export.png"))
+        Task {
+            if let image = await DayImage.render(model, dark: false) {
+                try? DayImage.writePNG(image, to: URL(fileURLWithPath: "\(dir)/shell-dayimage-export.png"))
+            }
         }
     }
 

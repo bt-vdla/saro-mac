@@ -118,6 +118,15 @@ public enum DayImageMath {
     public static func scale(for size: CGSize) -> Double {
         min(2, maxSide / max(1, max(size.width, size.height)))
     }
+
+    /// The stage in whole points, so the ground reaches its last pixel row.
+    public static func stage(_ size: CGSize) -> CGSize { CGSize(width: size.width.rounded(.up), height: size.height.rounded(.up)) }
+
+    /// The picture's whole pixels for a stage: never a row or column the ground only partly covers.
+    public static func pixels(for stage: CGSize) -> (width: Int, height: Int) {
+        let s = scale(for: stage)
+        return (Int((stage.width * s + 1e-6).rounded(.down)), Int((stage.height * s + 1e-6).rounded(.down)))
+    }
 }
 
 extension Prefs.LockAfter {

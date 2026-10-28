@@ -292,6 +292,16 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         #expect(DayImageMath.scale(for: .zero) == 2)
     }
 
+    @Test func theDayImageHasNoHalfCoveredRow() {
+        let stage = DayImageMath.stage(CGSize(width: 1226.4, height: 627.6))
+        #expect(stage == CGSize(width: 1227, height: 628))
+        #expect(DayImageMath.pixels(for: stage).width == 2454 && DayImageMath.pixels(for: stage).height == 1256)
+        let wide = DayImageMath.stage(CGSize(width: 5000.5, height: 1000.3))
+        let px = DayImageMath.pixels(for: wide)
+        #expect(px.width == 4096)
+        #expect(Double(px.height) <= wide.height * DayImageMath.scale(for: wide))
+    }
+
     @Test func lockWaitsAsLongAsChosen() {
         #expect(Prefs.LockAfter.immediately.seconds == 0)
         #expect(Prefs.LockAfter.fiveMinutes.seconds == 300)
