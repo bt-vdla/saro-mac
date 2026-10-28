@@ -69,6 +69,6 @@ let normaliserSamples = flagged + notFlagged + [
     #expect(SafetyGate.normalise("one, two; three: four") == "one , two , three , four")
     #expect(SafetyGate.normalise("one... two… three.. four") == "one , two , three , four")
     #expect(SafetyGate.normalise("one...\nTwo") == "one . two")
-    #expect(SafetyGate.normalise("don‛t don＇t don’t don't") == "dont dont dont dont")
+    #expect(SafetyGate.normalise("don‛t don＇t don’t don't don´t donʼt don`t") == "dont dont dont dont dont dont dont")
     #expect(SafetyGate.normalise("Nooooo, I'm sooo tired. Kill, skill, all") == "no , im so tired . kill , skill , all")
 }

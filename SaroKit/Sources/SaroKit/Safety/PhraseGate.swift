@@ -8,32 +8,41 @@ extension SafetyGate {
     /// across a sentence; " , " for a clause break (comma, semicolon, colon, ellipsis), which a phrase reads through but a
     /// guard word doesn't; else one space. Letters, marks and digits of every script survive.
     public static func normalise(_ text: String) -> String {
-        var view = String.UnicodeScalarView()
-        view.append(contentsOf: text.unicodeScalars.filter { !apostrophes.contains($0) })
-        let folded = String(view).precomposedStringWithCompatibilityMapping.lowercased()
+        // NFKC would turn an acute accent used as an apostrophe ("don´t") into a space, so it goes first.
+        let text = text.unicodeScalars.contains("\u{00B4}") ? text.replacingOccurrences(of: "\u{00B4}", with: "") : text
+        let folded = text.precomposedStringWithCompatibilityMapping.lowercased()
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
         var out = String.UnicodeScalarView()
         out.reserveCapacity(folded.utf8.count)
         var gap = 0, dots = 0, run = 0, last: Unicode.Scalar = " "
         for s in folded.unicodeScalars {
-            // ASCII by hand: the property lookup is most of the normaliser's time on English text (the <1 ms budget, SR-04).
-            let category = !s.isASCII ? s.properties.generalCategory
-                : ("a"..."z").contains(s) ? .lowercaseLetter : ("0"..."9").contains(s) ? .decimalNumber : .otherPunctuation
+            // ASCII and Devanagari by hand: the property lookup is most of the normaliser's time (the <1 ms budget, SR-04).
+            let v = s.value
+            let category: Unicode.GeneralCategory
+            switch v {
+            // Apostrophes, fullwidth included after NFKC: "don't" -> "dont".
+            case 0x27, 0x60, 0x02BC, 0x2018, 0x2019, 0x201B, 0x2032: continue
+            case 0x61...0x7A: category = .lowercaseLetter
+            case 0x30...0x39: category = .decimalNumber
+            case 0...0x7F, 0x0964, 0x0965, 0x0970: category = .otherPunctuation
+            case 0x0900...0x097F: category = .otherLetter
+            default: category = s.properties.generalCategory
+            }
             switch category {
             case .format: continue
             case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
                  .nonspacingMark, .spacingMark, .decimalNumber, .letterNumber, .otherNumber:
                 // Emoji presentation selectors are marks too; dropped so "kill ☠️ myself" still reads as two words.
-                if s == "\u{093C}" || s.value >= 0xFE00 && s.properties.isVariationSelector { continue }
+                if v == 0x093C || v >= 0xFE00 && s.properties.isVariationSelector { continue }
                 // NFKC turns "…" into "...": one dot ends a sentence, two or more are a pause.
                 let level = dots > 1 ? max(gap, 2) : dots == 1 ? 3 : gap
                 if level > 0, !out.isEmpty { out.append(contentsOf: (level == 3 ? " . " : level == 2 ? " , " : " ").unicodeScalars) }
-                run = level == 0 && s.isASCII && category == .lowercaseLetter && s == last ? run + 1 : 1
+                run = level == 0 && v < 0x80 && category == .lowercaseLetter && s == last ? run + 1 : 1
                 (gap, dots, last) = (0, 0, s)
                 if run == 3 { out.removeLast() }
                 if run < 3 { out.append(devanagariFold(s)) }
             default:
-                if s == "." { dots += 1 } else { gap = max(gap, sentenceEnds.contains(s) ? 3 : clauseBreaks.contains(s) ? 2 : 1) }
+                if v == 0x2E { dots += 1 } else { gap = max(gap, sentenceEnds.contains(s) ? 3 : clauseBreaks.contains(s) ? 2 : 1) }
             }
         }
         return String(out)
@@ -48,19 +57,18 @@ extension SafetyGate {
     /// SR-06: the broader caution lexicon, consulted only when layer 2 can't run. Never shows the SafetyCard by itself.
     public static func cautionHit(_ text: String) -> Bool { hit(cautionIndex, normalise(text)) }
 
-    private static let apostrophes: Set<Unicode.Scalar> = ["'", "\u{2018}", "\u{2019}", "\u{201B}", "\u{02BC}", "`", "\u{00B4}",
-                                                           "\u{2032}", "\u{FF07}"]
     private static let sentenceEnds: Set<Unicode.Scalar> = ["!", "?", "\n", "\r", "\u{0964}", "\u{0965}"]
     private static let clauseBreaks: Set<Unicode.Scalar> = [",", ";", ":"]
 
     /// Diacritic folding leaves Devanagari alone, so its spelling variants fold by hand: chandrabindu to anusvara, and the
     /// three nukta letters NFKC keeps precomposed (the rest decompose, and the nukta itself is dropped).
     private static func devanagariFold(_ s: Unicode.Scalar) -> Unicode.Scalar {
-        switch s {
-        case "\u{0901}": "\u{0902}"
-        case "\u{0929}": "\u{0928}"
-        case "\u{0931}": "\u{0930}"
-        case "\u{0934}": "\u{0933}"
+        // On the value, not the scalar: this runs for every letter, and integer cases stay cheap unoptimised.
+        switch s.value {
+        case 0x0901: "\u{0902}"
+        case 0x0929: "\u{0928}"
+        case 0x0931: "\u{0930}"
+        case 0x0934: "\u{0933}"
         default: s
         }
     }
@@ -92,12 +100,24 @@ extension SafetyGate {
         parts.reduce([""]) { acc, part in acc.flatMap { a in part.map { [a, $0].filter { !$0.isEmpty }.joined(separator: " ") } } }
     }
 
-    /// Phrases keyed by first word, so matching is one dictionary lookup per word of text (the <1 ms budget, SR-04).
-    private static func index(_ groups: [[Phrase]]) -> [String: [Phrase]] {
-        Dictionary(grouping: groups.joined(), by: { $0.words[0] })
+    /// A word trie of the phrases, so matching costs one dictionary lookup per word walked, however many phrases share a
+    /// start like "want to" (the <1 ms budget, SR-04). `ends` holds every phrase that ends at this node.
+    private struct Node: Sendable {
+        var next: [String: Node] = [:]
+        var ends: [Phrase] = []
+
+        mutating func insert(_ p: Phrase, from k: Int = 0) {
+            if k == p.words.count { ends.append(p) } else { next[p.words[k], default: Node()].insert(p, from: k + 1) }
+        }
     }
 
-    private static func hit(_ index: [String: [Phrase]], _ normalised: String) -> Bool {
+    private static func index(_ groups: [[Phrase]]) -> Node {
+        var root = Node()
+        for p in groups.joined() { root.insert(p) }
+        return root
+    }
+
+    private static func hit(_ trie: Node, _ normalised: String) -> Bool {
         // Clause breaks drop out of the words; `paused[i]` says one stood just before word i, which blocks a guard there.
         var words: [String] = [], paused: [Bool] = [], pause = false
         for w in normalised.split(separator: " ") {
@@ -107,15 +127,14 @@ extension SafetyGate {
             pause = false
         }
         for i in words.indices {
-            for p in index[words[i]] ?? [] where i + p.words.count <= words.count {
-                let end = i + p.words.count
-                // By hand rather than `elementsEqual`, which is the gate's hot loop and slow unoptimised.
-                var k = 1
-                while k < p.words.count, words[i + k] == p.words[k] { k += 1 }
-                if k < p.words.count { continue }
-                if i > 0, !paused[i], p.notBefore.contains(words[i - 1]) { continue }
-                if end < words.count, !paused[end], p.notAfter.contains(words[end]) { continue }
-                return true
+            var node = trie, end = i
+            while end < words.count, let child = node.next[words[end]] {
+                (node, end) = (child, end + 1)
+                for p in node.ends {
+                    if i > 0, !paused[i], p.notBefore.contains(words[i - 1]) { continue }
+                    if end < words.count, !paused[end], p.notAfter.contains(words[end]) { continue }
+                    return true
+                }
             }
         }
         return false
