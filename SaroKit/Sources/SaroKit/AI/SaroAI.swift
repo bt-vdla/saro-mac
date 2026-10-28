@@ -58,15 +58,18 @@ public actor SaroAI {
     private let base = SystemLanguageModel.default
     private let permissive = SystemLanguageModel(guardrails: .permissiveContentTransformations)
     private var warm: LanguageModelSession?
-    /// Tests only: answers every prompt (classifier and both rungs) in the model's place.
+    /// Tests only: answers every prompt (classifier and both rungs) in the model's place, with the model's status.
     private let stub: (@Sendable (String) async throws -> String)?
+    private let stubStatus: Status?
 
-    public init() { stub = nil }
+    public init() { (stub, stubStatus) = (nil, nil) }
 
-    init(stub: @escaping @Sendable (String) async throws -> String) { self.stub = stub }
+    init(stub: @escaping @Sendable (String) async throws -> String, status: Status = .available) {
+        (self.stub, stubStatus) = (stub, status)
+    }
 
     public nonisolated var status: Status {
-        if stub != nil { return .available }
+        if let stubStatus { return stubStatus }
         return switch base.availability {
         case .available: .available
         case .unavailable(let reason): .unavailable(reason: "\(reason)")

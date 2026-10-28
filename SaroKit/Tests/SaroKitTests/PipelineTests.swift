@@ -228,6 +228,21 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(await p.latestDayReading(e.localDay)?.generator == "on_device")
 }
 
+@Test func theModelsDayReadingStandsWhileItCantRun() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    await p.readDay(e.localDay)
+    // Apple Intelligence goes off for a while: the cached clear verdict keeps the day ready, and the model's reading stands.
+    let off = Pipeline(ledger: l, ai: SaroAI(stub: { _ in "" }, status: .unavailable(reason: "test")))
+    #expect(await off.dayStatus(e.localDay) == .ready)
+    #expect(await off.readDay(e.localDay)?.reading.question == "What did Ravi say?")
+    await p.readDay(e.localDay)
+    #expect(try await l.run("SELECT COUNT(*) AS n FROM insight_snapshot").first?["n"]?.int == 1)
+}
+
 @Test func refusedEntryNeverReachesThePermissiveDayRung() async throws {
     let l = try tempLedger()
     let permissiveDay = CallLog()

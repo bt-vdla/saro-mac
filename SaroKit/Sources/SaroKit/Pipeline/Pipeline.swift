@@ -238,10 +238,12 @@ public actor Pipeline {
             sources.append(src.text)
         }
         guard !digests.isEmpty else { return nil }
-        // The model's mark keeps a reading made without the model from standing in once the model can run.
-        let inputHash = sha256(digests.map { "\($0.entryId)|\($0.title)|\($0.summary)|\($0.mood?.rawValue ?? "")" }.joined(separator: "\n")
-                               + candidates.map(\.text).joined(separator: "\n") + (modelOK ? "\nmodel" : ""))
-        if let last = try? await ledger.latestSnapshot(kind: "day_reading", day: day), last.inputHash == inputHash,
+        // The model's mark is one-way: a reading made without the model gives way once it can run, but the model's own
+        // reading still stands while it briefly can't.
+        let key = digests.map { "\($0.entryId)|\($0.title)|\($0.summary)|\($0.mood?.rawValue ?? "")" }.joined(separator: "\n")
+            + candidates.map(\.text).joined(separator: "\n")
+        let (marked, unmarked) = (sha256(key + "\nmodel"), sha256(key))
+        if let last = try? await ledger.latestSnapshot(kind: "day_reading", day: day), last.inputHash == marked || !modelOK && last.inputHash == unmarked,
            let payload = try? JSONDecoder().decode(DayPayload.self, from: Data(last.payload.utf8)) {
             return payload
         }
@@ -273,6 +275,7 @@ public actor Pipeline {
             return nil
         }
 
+        let inputHash = modelOK ? marked : unmarked
         let picked = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
         let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId))
         var run = AIRun(feature: "day_reading", executor: prov.executor, status: prov.status)
