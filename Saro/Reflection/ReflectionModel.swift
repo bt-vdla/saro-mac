@@ -152,6 +152,15 @@ final class ReflectionModel {
         }
     }
 
+    /// Erase everything: what this session remembered of the old journal goes too, so a new one schedules its letter.
+    func reset() {
+        lastRun = nil
+        arrivedFor = nil
+        scheduled = nil
+        regated = []
+        delivered = []
+    }
+
     // MARK: Insight surface
 
     /// Called as `model.insight` changes: how it moves, the letter's read mark, and where focus goes.

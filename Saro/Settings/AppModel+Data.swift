@@ -118,6 +118,7 @@ extension AppModel {
     func eraseEverything() async throws {
         try await ledger.eraseAll()
         Reminders.shared.removeAll()
+        reflection.reset()
         PrefsStore.shared.eraseAll()
         // The quick-capture panel's half-written note is journal text too.
         CapturePanelController.shared.draft = ""
