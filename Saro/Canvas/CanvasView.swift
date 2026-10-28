@@ -34,7 +34,8 @@ struct DayView: View {
                     .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.4), value: model.recorderKind)
                     // The live day is the surface that shrinks into its lens tile and comes back out of it.
                     .modifier(LensPose(pose: model.lens?.dayPose))
-                if model.openEntryID.flatMap(model.entry) == nil && model.lens == nil { chrome(geo.size) }
+                // An open entry or set takes the window, as the web's dialogs do: its controls sit clear of the bar and the panel.
+                if model.openEntryID.flatMap(model.entry) == nil && model.openStackID == nil && model.lens == nil { chrome(geo.size) }
                 if let lens = model.lens { TimeLens(lens: lens).transition(.identity) }
             }
             .overlayPreferenceValue(CaptureOriginKey.self) { [kind = model.recorderKind, grows = model.recorderGrows] origins in
@@ -47,6 +48,12 @@ struct DayView: View {
                 }
             }
             .animation(Motion.pick(Motion.easeOut(0.3), reduce: reduceMotion), value: model.recorderKind)
+            .overlayPreferenceValue(CaptureOriginKey.self) { origins in
+                if CaptureUI.shared.musicOpen {
+                    MusicField(origin: CaptureUI.shared.musicGrows ? origins[.music] : nil)
+                        .transition(.opacity.animation(Motion.easeOut(0.16)))
+                }
+            }
             .coordinateSpace(.named(Self.space))
             .background(OwnFocus(focused: $canvasFocused))
         }
@@ -105,7 +112,8 @@ struct DayView: View {
             }
             return .handled
         }
-        .onPasteCommand(of: [.image, .png, .tiff, .heic, .jpeg]) { providers in model.loadStills(providers, at: nil, origin: "pasted") }
+        .onPasteCommand(of: CaptureInput.pasteTypes) { CaptureInput.paste($0, model: model) }
+        .task(id: model.entries.map(\.id)) { await CaptureUI.shared.loadPrompts(model) }
         .onChange(of: screenID, initial: true) { _, s in model.screen = s }
         .onChange(of: model.replayItems) { _, items in model.replay.update(items) }
         .onChange(of: model.replay.active) { _, on in if on { focused = true } }
@@ -114,6 +122,10 @@ struct DayView: View {
             try? await Task.sleep(for: .seconds(2.5))
             LensState.warm()
         }
+        // A closed recorder or music field leaves no field holding the keys; the bar's button may take them next.
+        .onChange(of: model.recorderKind == nil && !CaptureUI.shared.musicOpen) { _, idle in if idle { focused = true } }
+        // So does an edit on a card that Return or Esc ended; a click that ended it leaves the keys where it put them.
+        .onChange(of: CaptureUI.shared.editing == nil) { _, ended in if ended, NSApp.currentEvent?.type == .keyDown { focused = true } }
         .onChange(of: focused) { _, on in if !on { saveNudge() } }
         // Leaving the journal (another pane, or the window closed) ends the replay where it is and closes the open entry,
         // which would otherwise hide the chrome of a day view that comes back without its detail.
@@ -295,18 +307,6 @@ extension AppModel {
                              radius: item.isStack ? 18 : CanvasMath.radius(item.top.kind))
         }
     }
-
-    /// Every dropped file on its own cell of a grid centred where they were let go (B-021).
-    func loadStills(_ providers: [NSItemProvider], at point: CGPoint?, origin: String) {
-        let grid = point.map { DayLayout.dropGrid(count: providers.count, at: $0) }
-        for (i, provider) in providers.enumerated() {
-            let at = grid?[i]
-            _ = provider.loadDataRepresentation(for: .image) { data, _ in
-                guard let data else { return }
-                Task { @MainActor in await self.importStill(data, origin: origin, at: at) }
-            }
-        }
-    }
 }
 
 /// The camera: screen = world × zoom + pan.
@@ -340,6 +340,13 @@ extension Comparable {
     func clamped(to r: ClosedRange<Self>) -> Self { min(max(self, r.lowerBound), r.upperBound) }
 }
 
+extension View {
+    /// The modifier, except while `skip` holds (the view is rebuilt as it changes).
+    @ViewBuilder func modifier(_ m: some ViewModifier, unless skip: Bool) -> some View {
+        if skip { self } else { modifier(m) }
+    }
+}
+
 /// One day's canvas: cards on a camera, marquee, stack fan-out and the open/close flight. Keyed by day, so each day
 /// arrives with its own fitted camera.
 struct DayStage: View {
@@ -358,12 +365,17 @@ struct DayStage: View {
     @State private var marqueeBase: Set<String> = []
     @State private var drag: (ids: Set<String>, offset: CGSize, tilt: Double)?
     @State private var grid: DragGrid?
-    @State private var dropTargeted = false
+    /// What a file dragged over the canvas would become.
+    @State private var dropKind: EntryKind?
+    /// The recorder's developed frame on its way into its card, which waits hidden until it lands.
+    @State private var landing: (image: Image, from: CGRect, to: CGRect, radius: CGFloat, card: String, v: Double)?
     @State private var shownID: String?
     @State private var flightFrom: (rect: CGRect, radius: CGFloat) = (.zero, 28)
     @State private var flight: Double = 0
     @State private var scrim = false
     @State private var fanned = false
+    /// Each fanned turn's words, under its question.
+    @State private var answers: [String: String] = [:]
     @State private var userMoved = false
     /// Cards thrown and still gliding, which keep their motion blur until they land.
     @State private var thrown: Set<String> = []
@@ -433,6 +445,7 @@ struct DayStage: View {
                     .frame(width: m.width, height: m.height).position(x: m.midX, y: m.midY).allowsHitTesting(false)
             }
             if let id = shownID, let entry = model.entry(id) { detail(entry) }
+            if let l = landing { LandingFlight(image: l.image, from: l.from, to: l.to, toRadius: l.radius, v: l.v).allowsHitTesting(false) }
             ForEach(flying) { c in
                 if let face = faces[c.id] {
                     let r = screenRect(c)
@@ -449,11 +462,10 @@ struct DayStage: View {
             faces = faces.filter { ids.contains($0.key) }
             for c in flying where faces[c.id] == nil { faces[c.id] = c.face(model, scheme: colorScheme, scale: displayScale * camera.zoom) }
         }
-        .onDrop(of: [.image], isTargeted: $dropTargeted) { providers, location in
-            model.loadStills(providers, at: world(location), origin: "dropped")
-            return true
-        }
+        .onDrop(of: CaptureInput.dropTypes, delegate: CaptureDrop(model: model, kind: $dropKind, world: world))
+        .overlay { DropOverlay(kind: dropKind, day: day) }
         .onChange(of: model.openEntryID) { _, id in if isCurrent { morph(to: id) } }
+        .onChange(of: CaptureUI.shared.landing) { _, l in if isCurrent, let l { land(l) } }
         .onContinuousHover { phase in
             guard case .active(let p) = phase else { return hover(nil) }
             hover(cards.last { underPointer($0, p) }.flatMap { resizable($0) ? $0.id : nil })
@@ -693,11 +705,9 @@ struct DayStage: View {
                              endPull(after: e)
                          },
                          onDragPan: model.replay.active ? nil : { phase, p in dragPan(phase, at: p) },
-                         takesSpace: canvasFocused)
-            if dropTargeted {
-                RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-                    .padding(12)
-            }
+                         takesSpace: canvasFocused,
+                         // A bare Space tap on the canvas opens the voice pill; held while dragging, it pans.
+                         onSpaceTap: { CaptureInput.space(model) })
             DayStateView(day: day, empty: cards.isEmpty, width: size.width)
         }
         .contentShape(.rect)
@@ -730,9 +740,10 @@ struct DayStage: View {
         }
         // An open voice note grows right and down from the card's top-left corner.
         .frame(width: c.size.width, height: c.size.height, alignment: .topLeading), c, moving: moving)
-        // Held or thrown only (useCardGesture.ts); an open voice note holds a scroller the shader can't draw.
+        // Held or thrown only (useCardGesture.ts); an open voice note holds a scroller the shader can't draw, and a page
+        // being typed into on its card holds AppKit editors the shader's layer can't host at all.
         .modifier(MotionBlurred(position: at, coverage: c.size.width * c.size.height * camera.zoom * camera.zoom / (size.width * size.height),
-                                enabled: !open && (moving || !thrown.isDisjoint(with: c.ids))))
+                                enabled: !open && (moving || !thrown.isDisjoint(with: c.ids))), unless: CaptureUI.shared.editing?.id == c.id)
         // Over the blur, so the handles stay crisp on a thrown card, as the web's sit beside the card it blurs.
         .overlay {
             if showsHandles(c) {
@@ -749,7 +760,8 @@ struct DayStage: View {
         }
         .cardMenu(c.item)
         .position(at)
-        .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) || inFlight(c) ? 0 : 1)
+        .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) || inFlight(c)
+            || landing.map { $0.card == c.id && $0.v < 1 } == true ? 0 : 1)
         .zIndex(moving ? 10 : open ? 5 : 0)
         .gesture(dragGesture(c))
         .onTapGesture { tap(c) }
@@ -771,7 +783,8 @@ struct DayStage: View {
         if let sid = c.item.stackID {
             fanned = false
             withAnimation(Motion.pick(Motion.surface, reduce: reduceMotion)) { model.openStackID = sid }
-        } else {
+        } else if c.item.top.kind != .reflection {
+            // A reflection's next click edits it on the card; its corner button (or Return) opens the page.
             model.openEntryID = c.item.top.id
         }
     }
@@ -987,6 +1000,23 @@ struct DayStage: View {
         return !f.into || faces[c.id] != nil
     }
 
+    // MARK: The recorder's last frame into its card (VideoReflectionScreen.tsx captureMorph)
+
+    /// The camera centres the session's card, then the developed frame flies from where the recorder held it into the card.
+    private func land(_ l: CaptureUI.Landing) {
+        CaptureUI.shared.landing = nil
+        guard let c = cards.first(where: { $0.ids.contains(l.entryId) }) else { return }
+        userMoved = true
+        let pan = CGSize(width: size.width / 2 - c.center.x * camera.zoom, height: size.height / 2 - c.center.y * camera.zoom)
+        withAnimation(Motion.surface) { camera.pan = pan }
+        let to = CGRect(center: CGPoint(x: size.width / 2, y: size.height / 2),
+                        size: CGSize(width: c.size.width * camera.zoom, height: c.size.height * camera.zoom))
+        landing = (Image(decorative: l.image, scale: 1), l.from, to, c.radius * camera.zoom, c.id, 0)
+        DispatchQueue.main.async {
+            withAnimation(Motion.surface) { landing?.v = 1 } completion: { landing = nil }
+        }
+    }
+
     // MARK: The set, fanned out (VideoStackOverlay.tsx)
 
     private func fanPoints(_ sid: String) -> [String: CGPoint] {
@@ -1007,9 +1037,18 @@ struct DayStage: View {
                 .onTapGesture { close(sid) }
             ForEach(Array(members.enumerated()), id: \.element.id) { i, e in
                 let p = fanned || reduceMotion ? points[e.id] ?? origin : origin
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     CardFace(entry: e, selected: model.selection.contains(e.id), size: tile)
-                    Text("Turn \(e.turnNumber ?? i + 1)").monoCaps(10).foregroundStyle(Tok.ink3)
+                    Text(["Turn \(e.turnNumber ?? i + 1)", model.media[e.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) }]
+                        .compactMap { $0 }.joined(separator: " · ")).monoCaps(10).foregroundStyle(Tok.ink2)
+                    if let q = model.prompt(for: e) {
+                        Text(q).font(Typo.serif(15, italic: true)).foregroundStyle(Tok.voice).lineLimit(2)
+                            .multilineTextAlignment(.center).frame(width: tile.width)
+                    }
+                    if let a = answers[e.id], model.verdicts[e.id]?.verdict != "safety_hold" {
+                        Text(a).font(Typo.ui(14)).foregroundStyle(Tok.ink2).lineLimit(2)
+                            .multilineTextAlignment(.center).frame(width: tile.width)
+                    }
                 }
                 .scaleEffect(fanned || reduceMotion ? 1 : 0.6)
                 .modifier(MotionBlurred(position: p, coverage: tile.width * tile.height / (size.width * size.height)))
@@ -1018,19 +1057,39 @@ struct DayStage: View {
                 .animation(fanned ? Motion.easeOut(0.42).delay(Double(i) * 0.04) : Motion.easeOut(0.22).delay(Double(members.count - 1 - i) * 0.03), value: fanned)
                 .onTapGesture { model.openEntryID = e.id }
             }
-            HStack(spacing: 12) {
-                Text("\(members.count) turns").monoCaps(10).foregroundStyle(Tok.ink3)
+            // The set's header (VideoStackOverlay.tsx), at the top as the web keeps it.
+            HStack(spacing: 14) {
+                Text("\(members.count) turns").monoCaps(10).foregroundStyle(Tok.ink2)
                 Button("Unstack") { withAnimation(Motion.pick(Motion.small, reduce: reduceMotion)) { model.unstack(sid) } }
-                Button("Done") { close(sid) }
+                    .help("Lay the turns out on the canvas")
+                if let first = members.first, first.kind == .moment {
+                    Button {
+                        CaptureUI.shared.playAll = true
+                        model.openEntryID = first.id
+                    } label: {
+                        Label("Play all", systemImage: "play.fill").labelStyle(.titleAndIcon).font(Typo.ui(12.5, .semibold))
+                    }
+                    .foregroundStyle(Tok.sage)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Play every turn in order  ⌘↩")
+                }
+                Button("Done") { close(sid) }.help("Fold back into the stack  Esc")
             }
             .font(Typo.ui(12.5, .medium))
             .buttonStyle(.plain)
+            .fixedSize()
             .padding(.horizontal, 16).padding(.vertical, 9)
             .glassPanel(radius: 20)
-            .frame(maxHeight: .infinity, alignment: .bottom)
-            .padding(.bottom, 28)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, 28)
         }
         .onAppear { fanned = true }
+        .task(id: members.map(\.id)) {
+            for e in members {
+                guard let id = e.mediaId, let words = try? await model.ledger.transcript(mediaId: id), !words.isEmpty else { continue }
+                answers[e.id] = words.map(\.text).joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            }
+        }
         .transition(.opacity)
     }
 
@@ -1056,7 +1115,8 @@ struct DayStage: View {
         case .still:
             return CanvasMath.stillFrame(in: size, aspect: ThumbCache.aspect(model.mediaURL(for: e)),
                                          below: StillBelow.room(held: model.verdicts[e.id]?.verdict == "safety_hold"))
-        case .reflection, .music: (w, h) = (min(820, size.width - 96), min(820, size.height - 96))
+        case .reflection: (w, h) = (min(820, size.width - 96), min(820, size.height - 96))
+        case .music: (w, h) = (min(560, size.width - 96), min(460, size.height - 96))
         }
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
     }
@@ -1161,6 +1221,32 @@ struct MorphFlight: View, @MainActor Animatable {
         .elevation(v > 0.5 ? .overlay : .panel)
         .position(x: cx, y: cy)
         .opacity(crossfadeOnly ? v : 1)
+    }
+}
+
+/// The developed frame on its way into its card: the morph's log-space box and straight-line centre, the recorder's 28 pt
+/// corners easing to the card's, handing over to the card in the last 30% of the way.
+private struct LandingFlight: View, @MainActor Animatable {
+    let image: Image
+    let from: CGRect
+    let to: CGRect
+    let toRadius: CGFloat
+    var v: Double
+
+    var animatableData: Double {
+        get { v }
+        set { v = newValue }
+    }
+
+    var body: some View {
+        let box = CanvasMath.flightBox(from: from, to: to, v: CGFloat(v))
+        image.resizable().scaledToFill()
+            .frame(width: box.width, height: box.height)
+            .clipShape(.rect(cornerRadius: Radius.sheet + (toRadius - Radius.sheet) * v))
+            .elevation(.overlay)
+            .opacity(1 - min(max((v - 0.7) / 0.3, 0), 1))
+            .position(x: box.midX, y: box.midY)
+            .accessibilityHidden(true)
     }
 }
 

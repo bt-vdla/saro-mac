@@ -284,14 +284,17 @@ final class AppModel {
         // Only what was checked and read from the entry's current text shows (§13.2): an edit is unchecked until gated.
         for e in d.entries {
             guard let v = d.verdicts[e.id] else { d.annotations[e.id] = nil; continue }
-            if let text = Self.typedText(e), sha256(text) != v.textSha256 {
+            // The words and any typed title, as the gate read them; nil while a still's hold stands as it is.
+            if let text = await pipeline.gatedText(of: e), sha256(text) != v.textSha256 {
                 // A stale all-clear allows nothing; a stale hold still hides the AI text and keeps the hold shown, until
                 // the text is emptied: then nothing is left to hold, as the pipeline's day status already counts it.
                 let emptied = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 if emptied || v.verdict == "clear" || v.verdict == "unavailable_clear" { d.verdicts[e.id] = nil }
                 d.annotations[e.id] = nil
-            } else if d.annotations[e.id] != nil, (try? await ledger.hasAnnotation(entryId: e.id, inputHash: v.textSha256)) != true {
-                d.annotations[e.id] = nil
+            } else if d.annotations[e.id] != nil {
+                // A reading is of the words alone: a title is gated, never read.
+                let words = await pipeline.wordsHash(of: e) ?? ""
+                if (try? await ledger.hasAnnotation(entryId: e.id, inputHash: words)) != true { d.annotations[e.id] = nil }
             }
         }
         for e in d.entries { if let id = e.mediaId, let a = try await ledger.media(id) { d.media[id] = a } }
@@ -300,17 +303,6 @@ final class AppModel {
         let live = Set(d.entries.map(\.id))
         d.reading?.payload.quotes.removeAll { !live.contains($0.entryId) }
         return d
-    }
-
-    /// The text the gate reads from a typed entry (as `Pipeline.text(for:)` does). ponytail: nil for a recording, whose
-    /// transcript of record is never edited, so only its annotation is matched; hash the transcript if editing lands.
-    private static func typedText(_ e: Entry) -> String? {
-        switch e.kind {
-        case .reflection, .music: e.body ?? ""
-        // Uncaptioned, a still's text is Saro's description, matched through its annotation like a recording's.
-        case .still: e.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-        case .moment, .voice: nil
-        }
     }
 
     private func apply(_ d: DayData) {
@@ -441,22 +433,6 @@ final class AppModel {
         go(to: day, animation: PrefsStore.shared.reduceMotionEffective ? Motion.fade : Motion.surface)
     }
 
-    /// Adds photos chosen in an open panel as stills on the day on screen, fanned from `at` when given.
-    func pickStill(at point: CGPoint? = nil) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = true
-        panel.message = "Choose photos to keep as stills. Location data is removed."
-        guard panel.runModal() == .OK else { return }
-        let urls = panel.urls
-        Task {
-            for (i, url) in urls.enumerated() {
-                guard let data = try? await Task.detached(operation: { try Data(contentsOf: url) }).value else { continue }
-                await importStill(data, origin: "picked", at: point.map { CGPoint(x: $0.x + CGFloat(i) * 30, y: $0.y + CGFloat(i) * 30) })
-            }
-        }
-    }
-
     func goToday() { go(to: LocalDay.today()) }
     func goPrevious() { go(to: LocalDay.adding(-1, to: heading ?? day)) }
     func goNext() {
@@ -468,8 +444,11 @@ final class AppModel {
 
     /// Creates the media and entry rows (state `recording`) and returns where the turn's file goes:
     /// `Media/<local_day>/<session>/part-<n>.mov` for moments, `Media/<local_day>/voice/<entry>.mov` for voice notes.
-    /// `day` defaults to the day on screen (a past day backdates); the floating panel passes today.
-    func beginTurn(kind: EntryKind, sessionId: String, turn: Int, day: String? = nil) async throws -> TurnTicket {
+    /// `day` defaults to the day on screen (a past day backdates); the floating panel passes today. The question the part
+    /// answers is kept with it as its prompt row.
+    func beginTurn(kind: EntryKind, sessionId: String, turn: Int, day: String? = nil, prompt: String = "", generator: String = "curated",
+                   aiRunId: String? = nil) async throws -> TurnTicket {
+        Task { await Self.askForSpeechOnce() }
         let entry = Entry(kind: kind, sessionId: sessionId, turnNumber: turn, localDay: day ?? self.day, processingStatus: ProcessingStatus.recording)
         let rel = kind == .moment ? "\(entry.localDay)/\(sessionId)/part-\(turn).mov" : "\(entry.localDay)/voice/\(entry.id).mov"
         let asset = MediaAsset(fileName: rel, kind: kind == .moment ? .video : .audio, origin: "recorded")
@@ -479,6 +458,10 @@ final class AppModel {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await ledger.insertMedia(asset)
         try await ledger.insertEntry(e)
+        if !prompt.isEmpty {
+            try? await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: prompt, generator: generator, localDay: e.localDay, entryId: e.id,
+                                                        sessionId: sessionId, turnNumber: turn, aiRunId: aiRunId))
+        }
         // The first turn's card goes where the background menu opened; later turns join its stack.
         if turn == 1, kind == recorderKind, let p = recorderLandsAt {
             recorderLandsAt = nil
@@ -489,8 +472,8 @@ final class AppModel {
         return TurnTicket(entryId: e.id, mediaId: asset.id, url: url)
     }
 
-    /// Marks the turn's file ready (or failed) and starts processing it.
-    func finishTurn(_ ticket: TurnTicket, durationMs: Int, error: Error?) async {
+    /// Marks the turn's file ready (or failed) and, once kept, starts processing it.
+    func finishTurn(_ ticket: TurnTicket, durationMs: Int, error: Error?, process kept: Bool = true) async {
         let bytes = (try? ticket.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
         let exists = FileManager.default.fileExists(atPath: ticket.url.path)
         try? await saves.track(ticket.entryId) { [ledger] in
@@ -501,11 +484,7 @@ final class AppModel {
         await reload()
         guard exists else { return }
         Task { if let m = try? await ledger.media(ticket.mediaId) { await Posters.ensure(m, in: ledger) } }
-        // Don't hold the recorder (and the camera) open while the Speech prompt waits for an answer.
-        Task {
-            await Self.askForSpeechOnce()
-            process(ticket.entryId)
-        }
+        if kept { process(ticket.entryId) }
     }
 
     /// A new, empty piece of writing on the current day.
@@ -520,19 +499,6 @@ final class AppModel {
         } catch {
             show(.failed("Couldn't save your reflection", error, retry: { [weak self] in Task { await self?.saves.retry(e.id) } }))
             return nil
-        }
-    }
-
-    func saveWriting(id: String, body: String, title: String?) async {
-        do {
-            let caption = entry(id)?.captionUser
-            try await saves.track(id) { [weak self] in
-                try await self?.ledger.updateEntryText(id: id, body: body, titleUser: title, captionUser: caption)
-                await self?.reload()
-                self?.process(id)
-            }
-        } catch {
-            show(.failed("Couldn't save your changes", error, retry: { [weak self] in Task { await self?.saves.retry(id) } }))
         }
     }
 
@@ -579,6 +545,7 @@ final class AppModel {
                     current = id
                     if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
                     await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
+                    try? await ledger.dropFollowUps(heldFrom: id)
                     await memory.learn(entryId: id)
                 }
                 current = nil
@@ -680,6 +647,7 @@ final class AppModel {
         }
         backlog = await memory.unlearned()
         drain()
+        for id in await pipeline.ungatedTitles() { process(id) }
         await regateWaiting()
         _ = try? await ledger.purgeTrash(now: .now)
         _ = try? await ledger.dailySnapshot(now: .now)
@@ -971,50 +939,6 @@ final class AppModel {
         for id in ids { process(id) }
     }
 
-    // MARK: Stills
-
-    /// Saves a dropped or pasted image as HEIC, at most 4096 px (FR-CAP-07), with no metadata but its orientation (DR-11:
-    /// stills lose GPS).
-    func importStill(_ data: Data, origin: String, at world: CGPoint?) async {
-        var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.pending)
-        let asset = MediaAsset(fileName: "\(entry.localDay)/stills/\(entry.id).heic", kind: .image, origin: origin, state: "ready")
-        entry.mediaId = asset.id
-        let url = ledger.url(for: asset)
-        do {
-            // Off the main actor: the HEIC encoder's setup and a large photo's encode stall the UI (a main-thread runtime issue).
-            guard try await Task.detached(operation: { try Self.writeHEIC(data, to: url) }).value else {
-                show(Toast(title: "That file isn't an image Saro can read", detail: "Try a JPEG, PNG or HEIC photo.", style: .destructive))
-                return
-            }
-            let z = (layouts.values.map(\.z).max() ?? 0) + 1
-            let id = entry.id
-            try await saves.track(id) { [weak self, ledger, entry] in
-                if try await ledger.media(asset.id) == nil { try await ledger.insertMedia(asset) }
-                if try await ledger.entry(id) == nil { try await ledger.insertEntry(entry) }
-                Task { await Posters.ensure(asset, in: ledger) }
-                if let world {
-                    try await ledger.setLayouts([CardLayout(entryId: id, x: world.x, y: world.y, z: z, userPlaced: true)])
-                }
-                await self?.reload()
-                self?.process(id)
-            }
-            show(Toast("Still saved to \(DayFormat.sidebar(entry.localDay))"))
-        } catch {
-            show(.failed("Couldn't save the still", error, retry: { [weak self, id = entry.id] in Task { await self?.saves.retry(id) } }))
-        }
-    }
-
-    /// False when `data` isn't an image ImageIO can read.
-    private nonisolated static func writeHEIC(_ data: Data, to url: URL) throws -> Bool {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = StillVision.keepable(src) else { return false }
-        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
-        let orientation = props?[kCGImagePropertyOrientation] ?? 1
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.heic" as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
-        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85, kCGImagePropertyOrientation: orientation] as CFDictionary)
-        guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
-        return true
-    }
 }
 
 private final class TrashUndo: Sendable {}

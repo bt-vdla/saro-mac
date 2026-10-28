@@ -45,11 +45,52 @@ public actor Pipeline {
         })
     }
 
-    /// The text an entry offers the gate and the model, the field it came from, and transcript confidence.
+    /// The text the gate reads and an entry's verdict is for: its words, then the title typed for it, which is the
+    /// person's words too (SR-01, SR-17) but is never read or quoted. Nil while a still's hold stands (SR-15) and while a
+    /// recording has neither words nor a title.
     func text(for entry: Entry) async throws -> (text: String, field: String, confidence: Double?)? {
+        let w = try await words(for: entry)
+        let text = Self.titled(w?.text ?? "", entry)
+        guard let w else { return entry.kind == .still || text.isEmpty ? nil : (text, "title_user", nil) }
+        return (text, w.field, w.confidence)
+    }
+
+    /// `text(for:)` for the canvas: nil while a still's hold stands, so its verdict counts as it is; empty when nothing
+    /// is left to gate.
+    public func gatedText(of entry: Entry) async -> String? {
+        do { return try await text(for: entry)?.text ?? (entry.kind == .still ? nil : "") } catch { return nil }
+    }
+
+    /// The hash a reading of the entry's words as they stand is stored under (a title is gated, never read).
+    public func wordsHash(of entry: Entry) async -> String? {
+        (try? await words(for: entry)).map { sha256($0.text) }
+    }
+
+    /// Live entries with a typed title whose newest verdict isn't for their text with it, as a recording titled before
+    /// titles were gated (SR-01): the launch sweep gates them.
+    public func ungatedTitles() async -> [String] {
+        var out: [String] = []
+        for e in (try? await ledger.allEntries()) ?? [] where e.kind != .music && !Self.titled("", e).isEmpty {
+            guard let src = try? await text(for: e) else { continue }
+            if (try? await ledger.verdicts(day: e.localDay))?[e.id]?.textSha256 != sha256(src.text) { out.append(e.id) }
+        }
+        return out
+    }
+
+    /// A typed title after the words, so their offsets hold; a song's title is already its words.
+    public static func titled(_ words: String, _ e: Entry) -> String {
+        guard e.kind != .music, let t = e.titleUser?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return words }
+        return words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? t : words + "\n" + t
+    }
+
+    /// The words an entry offers the model, the field they came from, and transcript confidence: what is read and quoted.
+    func words(for entry: Entry) async throws -> (text: String, field: String, confidence: Double?)? {
         switch entry.kind {
-        case .reflection, .music:
+        case .reflection:
             return (entry.body ?? "", "body", nil)
+        case .music:
+            // A song's own words are the title and artist typed for it, never its link.
+            return (Self.songText(entry), "title_user", nil)
         case .still:
             return try await stillText(entry)
         case .moment, .voice:
@@ -59,6 +100,11 @@ public actor Pipeline {
             let conf = words.compactMap(\.confidence)
             return (Self.join(words), "transcript", conf.isEmpty ? nil : conf.reduce(0, +) / Double(conf.count))
         }
+    }
+
+    public static func songText(_ e: Entry) -> String {
+        [e.titleUser, e.captionUser].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            .joined(separator: "\n")
     }
 
     static func join(_ words: [TranscriptWord]) -> String {
@@ -127,24 +173,34 @@ public actor Pipeline {
         }
         guard let v = verdict?.verdict, v == "clear" || v == "unavailable_clear" else {
             await status(ProcessingStatus.done)
+            // A hold deletes a still's description (SR-15), which leaves its title to be gated alone. ponytail: a day
+            // reading's layer-3 hold on a titled still leaves it stale until its next edit; the canvas keeps the hold shown.
+            if verdict?.verdict == "safety_hold", source.field == Self.aiCaptionField { await process(entryId: entryId, onStatus: onStatus) }
             return
         }
-        if source.field == Self.aiCaptionField {
-            await keepStillCaptionCurrent(entryId, hash: hash)
+        // A song is gated, never read: nothing of it is ever quoted back. Nor is a title: a reading is of the words alone,
+        // stored under their hash, so a title-only edit is gated without reading the words again.
+        guard entry.kind != .music, let words = try? await words(for: entry), !words.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            await status(ProcessingStatus.done)
+            return
+        }
+        let read = sha256(words.text)
+        if words.field == Self.aiCaptionField {
+            await keepStillCaptionCurrent(entryId, hash: read)
             await status(ProcessingStatus.done)
             return
         }
 
-        // 3. Per-entry reading on the ladder; "In your words" when the model can't run. Skipped if this text was read,
-        //    unless only the heuristic read it and the model now can (a re-gate after Apple Intelligence came back).
-        if (try? await ledger.hasAnnotation(entryId: entryId, inputHash: hash, needsModel: v == "clear" && ai.status == .available)) == true {
+        // 3. Per-entry reading on the ladder; "In your words" when the model can't run. Skipped if these words were read,
+        //    unless only the heuristic read them and the model now can (a re-gate after Apple Intelligence came back).
+        if (try? await ledger.hasAnnotation(entryId: entryId, inputHash: read, needsModel: v == "clear" && ai.status == .available)) == true {
             await status(ProcessingStatus.done)
             return
         }
         await status(ProcessingStatus.reading)
-        let candidates = Heuristics.candidates(entryId: entryId, field: source.field, text: source.text)
-        let fallback = Heuristics.heuristicReading(text: source.text, candidates: candidates)
-        let text = source.text
+        let candidates = Heuristics.candidates(entryId: entryId, field: words.field, text: words.text)
+        let fallback = Heuristics.heuristicReading(text: words.text, candidates: candidates)
+        let text = words.text
         let reading: EntryReading
         let prov: Provenance
         if v == "clear" {
@@ -180,7 +236,7 @@ public actor Pipeline {
         run.contextSize = prov.contextSize
         run.sampling = "greedy"
         run.promptVersion = prov.promptVersion
-        run.inputHash = hash
+        run.inputHash = read
         run.tokensIn = prov.tokensIn
         run.modelCalls = prov.modelCalls
         run.latencyMs = prov.latencyMs
@@ -197,7 +253,7 @@ public actor Pipeline {
             a.quoteTo = c.utf16To
         }
         do {
-            try await ledger.insertRun(run, inputs: [AIRunInput(entryId: entryId, field: source.field, text: text)])
+            try await ledger.insertRun(run, inputs: [AIRunInput(entryId: entryId, field: words.field, text: text)])
             try await ledger.insertAnnotation(a)
             await status(ProcessingStatus.done)
         } catch {
@@ -224,7 +280,12 @@ public actor Pipeline {
                     if EntryState(verdict: v.verdict) == .safetyHold { states.append(.safetyHold) }
                     continue
                 }
-                states.append(EntryState(verdict: v.verdict))
+                // A still's standing hold counts as it is; a recording with neither words nor a title has nothing to hold.
+                if src == nil, e.kind != .still { continue }
+                let state = EntryState(verdict: v.verdict)
+                // A song's words, or a title alone, can hold the day but leave nothing to read.
+                if e.kind == .music || src?.text == Self.titled("", e), state == .clear || state == .modelUnavailable { continue }
+                states.append(state)
                 continue
             }
             switch e.processingStatus {
@@ -260,8 +321,8 @@ public actor Pipeline {
         for e in entries {
             // Only a reading of exactly the current text: one deferred by a rate limit leaves the older reading newest.
             guard let row = verdicts[e.id], row.verdict == "clear" || row.verdict == "unavailable_clear",
-                  let a = annotations[e.id], let src = try? await text(for: e), sha256(src.text) == row.textSha256,
-                  (try? await ledger.hasAnnotation(entryId: e.id, inputHash: row.textSha256)) == true else { continue }
+                  let a = annotations[e.id], let src = try? await words(for: e), sha256(Self.titled(src.text, e)) == row.textSha256,
+                  (try? await ledger.hasAnnotation(entryId: e.id, inputHash: sha256(src.text))) == true else { continue }
             digests.append(EntryDigest(entryId: e.id, kind: e.kind.rawValue, time: e.capturedAt.formatted(date: .omitted, time: .shortened),
                                        title: a.title ?? e.kind.rawValue, summary: a.summary ?? "", mood: a.moodLabel.flatMap(Mood.init(rawValue:))))
             // Only the user's own words are quoted: a still's description is its digest, never a candidate.
@@ -367,7 +428,7 @@ public actor Pipeline {
     }
 
     func verbatim(_ q: Candidate) async -> Bool {
-        guard let e = try? await ledger.entry(q.entryId), e.trashedAt == nil, let src = try? await text(for: e), src.field == q.field
+        guard let e = try? await ledger.entry(q.entryId), e.trashedAt == nil, let src = try? await words(for: e), src.field == q.field
         else { return false }
         let ns = src.text as NSString
         return q.utf16From >= 0 && q.utf16From <= q.utf16To && q.utf16To <= ns.length

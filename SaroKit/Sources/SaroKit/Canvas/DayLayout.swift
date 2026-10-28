@@ -124,15 +124,4 @@ public enum DayLayout {
         }
         .min { $0.cost < $1.cost }?.id
     }
-
-    /// Every dropped file on its own cell of a grid centred where they were let go (Canvas.tsx, B-021): a cell is the
-    /// widest card (a moment) by the tallest (a still), each plus 24, so no two cards overlap. World centres.
-    public static func dropGrid(count: Int, at point: CGPoint) -> [CGPoint] {
-        let cols = max(1, Int(Double(count).squareRoot().rounded(.up))), rows = (count + cols - 1) / cols
-        let cell = CGSize(width: CanvasMath.size(.moment).width + 24, height: CanvasMath.size(.still).height + 24)
-        return (0..<count).map { i in
-            CGPoint(x: point.x + (CGFloat(i % cols) - CGFloat(cols - 1) / 2) * cell.width,
-                    y: point.y + (CGFloat(i / cols) - CGFloat(rows - 1) / 2) * cell.height)
-        }
-    }
 }

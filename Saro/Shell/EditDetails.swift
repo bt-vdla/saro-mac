@@ -63,10 +63,14 @@ struct EditDetailsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Edit details").font(Typo.ui(20, .semibold)).foregroundStyle(Tok.ink)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Edit details").font(Typo.ui(20, .semibold)).foregroundStyle(Tok.ink)
+                Text("\(entry.kind.noun) · \(MusicDetail.when(entry))").monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+            }
             if hasTitle {
                 field("Title") {
-                    TextField("Add a title", text: $title)
+                    // A song's title field shows the title its card reads until one is typed.
+                    TextField("Title", text: $title, prompt: Text(entry.kind == .music ? model.title(for: entry) : "Add a title").foregroundStyle(Tok.ink3))
                         .textFieldStyle(.plain).font(Typo.ui(14, .medium))
                         .padding(.horizontal, 14).frame(height: 44)
                         .focused($focus, equals: 0)

@@ -43,6 +43,8 @@ struct BottomBar: View {
     @Namespace private var cell
     /// The date button, which takes the focus back when the date picker closes and keyboard navigation is on.
     @FocusState private var dateFocused: Bool
+    /// The capture button with the keys (Full Keyboard Access); a closed recorder or music field hands them back to it.
+    @FocusState private var tile: EntryKind?
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -65,6 +67,9 @@ struct BottomBar: View {
         .glassPanel(radius: Radius.sheet)
         .overlay(alignment: .bottomLeading) { ShellPanelLayer() }
         .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: model.replay.active)
+        // After the canvas takes the keys back, so a button that can't hold them (no Full Keyboard Access) leaves them there.
+        .onChange(of: model.recorderKind) { old, new in if new == nil, let old { DispatchQueue.main.async { tile = old } } }
+        .onChange(of: CaptureUI.shared.musicOpen) { _, open in if !open { DispatchQueue.main.async { tile = .music } } }
         .tourAnchor(.captureBar)
     }
 
@@ -140,11 +145,21 @@ struct BottomBar: View {
                 recorderTile(.voice)
                     .keyboardShortcut(KeyboardShortcut(.voiceNote)).help("Leave a voice note  \(Shortcut.voiceNote.keys)")
                 CaptureTile(face: CaptureFace(title: "Still", symbol: "photo", tint: Tok.stillInk)) { model.pickStill() }
+                    .focused($tile, equals: .still)
                     .help("Add a photo (or drop or paste one onto the canvas)")
-                CaptureTile(face: CaptureFace(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk)) {
+                CaptureTile(face: CaptureFace(title: "Reflection", symbol: "text.alignleft", tint: Tok.reflectionInk)) {
                     Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
                 }
-                .keyboardShortcut(KeyboardShortcut(.write)).help("Write  \(Shortcut.write.keys)")
+                .focused($tile, equals: .reflection)
+                .keyboardShortcut(KeyboardShortcut(.write)).help("Write a reflection  \(Shortcut.write.keys)")
+                CaptureTile(face: CaptureFace(title: "Music", symbol: "opticaldisc", tint: Tok.music)) {
+                    CaptureUI.shared.musicGrows = !Motion.byKey
+                    CaptureUI.shared.musicOpen = true
+                }
+                .focused($tile, equals: .music)
+                .opacity(CaptureUI.shared.musicOpen && CaptureUI.shared.musicGrows ? 0 : 1)
+                .anchorPreference(key: CaptureOriginKey.self, value: .bounds) { [.music: $0] }
+                .help("Add a song from a link")
             }
             .disabled(model.recorderKind != nil)
     }
@@ -157,6 +172,7 @@ struct BottomBar: View {
             model.recorderKind = kind
             model.recorderGrows = !Motion.byKey
         }
+        .focused($tile, equals: kind)
         .opacity(hidden ? 0 : 1)
         .animation(nil, value: hidden)
         .anchorPreference(key: CaptureOriginKey.self, value: .bounds) { [kind: $0] }
@@ -215,15 +231,22 @@ struct CaptureFace: View {
     }
 }
 
-/// A capture (CaptureDock.tsx): its face, whose label turns ink on hover.
+/// A capture (CaptureDock.tsx): its face, whose label turns ink on hover. A double click, or a held key's repeats within
+/// 500 ms, counts as one press, so one press never makes two entries.
 private struct CaptureTile: View {
     let face: CaptureFace
     let action: () -> Void
     @Environment(\.isEnabled) private var enabled
     @State private var hover = false
+    @State private var last: ContinuousClock.Instant?
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            let now = ContinuousClock.now
+            defer { last = now }
+            if let last, now - last < .milliseconds(500) { return }
+            action()
+        } label: {
             CaptureFace(title: face.title, symbol: face.symbol, tint: face.tint, lit: hover)
                 .contentShape(.rect(cornerRadius: Radius.panel))
         }

@@ -1,58 +1,113 @@
 import AppKit
+import SaroKit
 import SwiftUI
 
-/// The web build's voice note pill (VoiceEchoOverlay): a night surface in either appearance, like a Dynamic Island,
-/// with a 24-bar level meter, the elapsed time, record or pause, and Done. Steps swap with a 4 pt blur crossfade.
+/// The web build's voice note pill (VoiceEchoOverlay): a night surface in either appearance, like a Dynamic Island.
+/// Opening it starts recording; Space stops into review, where Space plays and Return keeps the note. Esc asks before
+/// anything is thrown away. Steps swap with a 4 pt blur crossfade, and review grows on the layout spring.
 struct VoicePill: View {
     let notice: RecorderNotice?
-    let inSession: Bool
     /// Growing out of the Voice button, which is its entrance.
     var grows = false
-    /// The first reflection's question, on a card 16 pt above the pill (FirstEntry.tsx); it rises in with the pill.
-    var prompt: String?
-    let toggle: () -> Void
-    let done: () -> Void
+    var compact = false
+    /// Keep this: true when the note's card flew out of the pill (given the pill's frame).
+    let kept: (CGRect?) -> Bool
+    /// Back into the button, with nothing kept.
     let close: () -> Void
+    /// Closes, keeping what was kept.
+    let shut: () -> Void
 
+    enum Confirm { case discard, again }
+
+    @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A key brings the pill up at once (the frequency rule).
     @State private var appeared = Motion.byKey
+    @State private var confirm: Confirm?
+    @State private var marked = false
+    @State private var frame: CGRect?
+    @FocusState private var focused: Bool
 
     private var capture: CaptureController { .shared }
     /// A notice with an icon replaces the recorder; a spinner notice keeps it, as the web pill's "starting" step does.
-    private var message: RecorderNotice? { notice?.icon == nil ? nil : notice }
+    private var message: RecorderNotice? {
+        if let notice, notice.icon != nil { return notice }
+        if capture.state == .review, !capture.interrupted, (capture.lastPart ?? .zero) < .milliseconds(300) {
+            return RecorderNotice(icon: "mic.slash", title: "Nothing was recorded. Check your microphone and try again.", retry: true)
+        }
+        return nil
+    }
+
+    private enum Step: Hashable { case message, recording, review, confirm, marked }
+
+    private var step: Step {
+        if marked { return .marked }
+        if confirm != nil { return .confirm }
+        if message != nil { return .message }
+        return capture.state == .review ? .review : .recording
+    }
 
     var body: some View {
-        let step: AnyTransition = reduceMotion ? .opacity : AnyTransition(BlurFade())
-        VStack(spacing: 16) {
-            if let prompt { promptCard(prompt) }
-            ZStack {
-                if let message { messageStep(message).transition(step) } else { recordingStep.transition(step) }
+        let swap: AnyTransition = reduceMotion ? .opacity : AnyTransition(BlurSwap(radius: 4))
+        ZStack {
+            switch step {
+            case .message: messageStep(message!).transition(swap)
+            case .recording: recordingStep.transition(swap)
+            case .review: VoiceReview(again: { confirm = .again }, discard: { confirm = .discard }, keep: keep).transition(swap)
+            case .confirm: confirmStep.transition(swap)
+            case .marked:
+                Text("Your voice leaves a mark.").font(Typo.serif(17)).foregroundStyle(Night.ink)
+                    .frame(maxWidth: .infinity).padding(.vertical, 22)
+                    .transition(swap)
             }
-            .animation(CaptureMotion.out(0.2), value: message)
-            .frame(maxWidth: .infinity)
-            .background(Night.surface.opacity(0.95))
-            .background(.frosted(solid: Night.surface))
-            .clipShape(.rect(cornerRadius: 28))
-            .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
-            .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
         }
+        .animation(reduceMotion ? Motion.fade : step == .review ? Motion.surface : CaptureMotion.out(0.2), value: step)
+        .frame(maxWidth: .infinity)
+        .background(Night.surface.opacity(0.95))
+        .background(.frosted(solid: Night.surface))
+        .clipShape(.rect(cornerRadius: 28))
+        .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
+        .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
         .environment(\.colorScheme, .dark)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(DayView.space)) } action: { frame = $0 }
         .offset(y: appeared || grows || reduceMotion ? 0 : 16)
         .scaleEffect(appeared || grows || reduceMotion ? 1 : 0.96, anchor: .bottom)
         .opacity(appeared || grows ? 1 : 0)
         .animation(reduceMotion ? Motion.fade : CaptureMotion.surface, value: appeared)
         .onAppear { appeared = true }
+        // Opening the pill starts recording, once the microphone is up.
+        .onChange(of: capture.state, initial: true) { _, s in if s == .previewing, capture.turn == 0, confirm == nil { capture.toggle() } }
+        // Esc asks before throwing anything away; the confirm and message steps have their own Esc buttons.
+        .background {
+            if step == .recording || step == .review { Button("", action: escape).keyboardShortcut(.cancelAction).hidden() }
+        }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(inSession ? "Recording a voice note" : "Voice note")
+        .accessibilityLabel(step == .review ? "Listen back to your voice note" : "Voice note")
     }
+
+    // MARK: Recording
 
     private var recordingStep: some View {
         let recording = capture.state == .recording
-        return VStack(alignment: .leading, spacing: 6) {
-            status
-                .frame(height: 24)
-                .padding(.horizontal, 4)
+        let paused = capture.state == .paused
+        let status = notice?.title ?? capture.live.line(paused: paused, voice: true)
+        let always = PrefsStore.shared.captionsAlways
+        return VStack(alignment: .leading, spacing: 8) {
+            if let prompt = capture.shownPrompt {
+                Text(prompt).font(Typo.serif(15, italic: true)).foregroundStyle(Night.ink2).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Today’s prompt: \(prompt)")
+                    .padding(.horizontal, 4)
+            }
+            Group {
+                if let status, notice != nil || !paused || !always {
+                    CaptionStatus(text: status, connecting: capture.live == .connecting || notice != nil, night: true)
+                } else {
+                    PillCaption(words: capture.partWords)
+                }
+            }
+            .frame(height: 22)
+            .padding(.horizontal, 4)
             HStack(spacing: 12) {
                 HStack(spacing: 8) {
                     Circle().fill(recording ? Tok.voiceBright : Night.ink4)
@@ -65,87 +120,53 @@ struct VoicePill: View {
                 }
                 .frame(width: 68, alignment: .leading)
                 .padding(.leading, 4)
-                LevelMeter(color: Night.echo, live: notice == nil && capture.state != .paused)
+                LevelMeter(color: Night.echo, live: notice == nil && !paused)
                     .opacity(recording ? 1 : 0.4)
                     .animation(CaptureMotion.out(0.24), value: recording)
                     .frame(maxWidth: .infinity)
                     .clipped()
-                leftButton
-                rightButton
+                Button { capture.toggle() } label: {
+                    Image(systemName: paused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(CaptureButtonStyle.nightIcon)
+                .disabled(!capture.canToggle || capture.turn == 0)
+                .accessibilityLabel(paused ? "Resume recording" : "Pause recording")
+                .help(paused ? "Resume" : "Pause")
+                Button { Task { await capture.endPart() } } label: {
+                    RoundedRectangle(cornerRadius: 3).fill(Night.bg).frame(width: 14, height: 14)
+                }
+                .buttonStyle(CaptureButtonStyle(fill: Tok.voiceBright, hover: Tok.voiceBright.opacity(0.9), ink: Night.bg, diameter: 44))
+                .keyboardShortcut(.space, modifiers: [])
+                .focused($focused)
+                .disabled(capture.starting || capture.turn == 0 || !(recording || paused))
+                .accessibilityLabel("Stop and listen back")
+                .help("Stop  Space")
+                .tourAnchor(.recordButton)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .onAppear { focused = true }
     }
 
-    @ViewBuilder private var status: some View {
+    // MARK: Confirm and messages
+
+    private var confirmStep: some View {
         HStack(spacing: 8) {
-            if let notice {
-                Text(notice.title).font(Typo.ui(12)).foregroundStyle(Night.ink2)
-            } else if capture.state == .paused {
-                Circle().fill(Night.ink3).frame(width: 6, height: 6)
-                Text("Paused").font(Typo.ui(12)).foregroundStyle(Night.ink2)
-            } else {
-                Text(capture.state == .recording ? "Listening…" : "Ready when you are.")
-                    .font(Typo.serif(15, italic: true))
-                    .foregroundStyle(Night.ink3)
-            }
+            Text(confirm == .again ? "Discard this one and record again?" : "Discard this voice note?")
+                .font(Typo.ui(13)).foregroundStyle(Night.ink).lineLimit(2)
             Spacer(minLength: 8)
-            if notice == nil {
-                Text(inSession ? "↵ TO SAVE" : "SPACE TO RECORD")
-                    .font(Typo.mono(10.5))
-                    .tracking(1.15)
-                    .foregroundStyle(Night.ink3)
-            }
+            Button("Keep") { confirm = nil }
+                .buttonStyle(CaptureButtonStyle(fill: .clear, hover: Night.glass.opacity(0.6), ink: Night.ink2, padding: 14, size: 13))
+                .keyboardShortcut(.cancelAction)
+            Button("Discard") { discard(again: confirm == .again) }
+                .buttonStyle(CaptureButtonStyle(fill: Tok.danger, hover: Tok.danger.opacity(0.85), ink: Night.bg, padding: 14, size: 13))
+                .keyboardShortcut(.defaultAction)
         }
-        .lineLimit(1)
-    }
-
-    /// Close until the first turn, then pause and resume (Space).
-    private var leftButton: some View {
-        let paused = capture.state == .paused
-        return Button(action: inSession ? toggle : close) {
-            Image(systemName: !inSession ? "xmark" : paused ? "play.fill" : "pause.fill")
-                .font(.system(size: inSession ? 14 : 16, weight: .semibold))
-                .contentTransition(.symbolEffect(.replace))
-        }
-        .buttonStyle(CaptureButtonStyle.nightIcon)
-        .keyboardShortcut(inSession ? KeyboardShortcut(.space, modifiers: []) : .cancelAction)
-        .disabled(inSession && !capture.canToggle)
-        .accessibilityLabel(!inSession ? "Close" : paused ? "Resume recording" : "Pause recording")
-        .help(!inSession ? "Close (Esc)" : paused ? "Resume (Space)" : "Pause (Space)")
-    }
-
-    /// Record (Space) until the first turn, then Done (Return): the dot squares off into a stop.
-    private var rightButton: some View {
-        Button(action: inSession ? done : toggle) {
-            RoundedRectangle(cornerRadius: inSession ? 3 : 7)
-                .fill(Night.bg)
-                .frame(width: 14, height: 14)
-                .animation(reduceMotion ? Motion.fade : CaptureMotion.small, value: inSession)
-        }
-        .buttonStyle(CaptureButtonStyle(fill: Tok.voiceBright, hover: Tok.voiceBright.opacity(0.9), ink: Night.bg, diameter: 44))
-        .keyboardShortcut(inSession ? .defaultAction : KeyboardShortcut(.space, modifiers: []))
-        .disabled(inSession ? capture.starting : !capture.canToggle)
-        .accessibilityLabel(inSession ? "Done" : "Start recording")
-        .help(inSession ? "Done (Return)" : "Record (Space)")
-        .tourAnchor(.recordButton)
-    }
-
-    private func promptCard(_ prompt: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Today’s prompt").monoCaps(11, tracking: 0.12).foregroundStyle(Night.ink2)
-            Text(prompt).font(Typo.serif(22)).tracking(-0.22).lineSpacing(4).foregroundStyle(Night.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-        .background(Night.surface, in: .rect(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.1)))
-        .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .combine)
     }
 
     private func messageStep(_ message: RecorderNotice) -> some View {
@@ -157,19 +178,51 @@ struct VoicePill: View {
             .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Spacer()
-                Button("Close", action: close)
+                Button("Close") { capture.take == nil ? close() : discard(again: false) }
                     .buttonStyle(CaptureButtonStyle(fill: .clear, hover: Night.glass.opacity(0.6), ink: Night.ink2, padding: 16, size: 13))
                     .keyboardShortcut(.cancelAction)
                 if let url = message.settings {
                     Button("Open System Settings") { NSWorkspace.shared.open(url) }
                         .buttonStyle(CaptureButtonStyle(fill: Night.sage, hover: Night.sageDark, ink: Night.bg, padding: 16, size: 13))
                         .keyboardShortcut(.defaultAction)
+                } else if message.retry {
+                    Button("Try again") {
+                        if capture.take != nil { discard(again: true) } else { capture.retry() }
+                    }
+                    .buttonStyle(CaptureButtonStyle(fill: Night.sage, hover: Night.sageDark, ink: Night.bg, padding: 16, size: 13))
+                    .keyboardShortcut(.defaultAction)
                 }
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Actions
+
+    /// Esc backs out of a confirm; while recording or in review it asks first; before anything, it closes.
+    private func escape() {
+        if confirm != nil { confirm = nil; return }
+        if capture.take != nil { confirm = .discard } else { close() }
+    }
+
+    private func discard(again: Bool) {
+        confirm = nil
+        Task {
+            await capture.discardTake(again: again)
+            if !again { close() }
+        }
+    }
+
+    private func keep() {
+        if kept(compact ? nil : frame) { return }
+        marked = true
+        AccessibilityNotification.Announcement("Your voice leaves a mark.").post()
+        Task {
+            try? await Task.sleep(for: .seconds(1.4))
+            shut()
+        }
     }
 }
 
@@ -235,11 +288,4 @@ enum Night {
 extension CaptureButtonStyle {
     /// The pill's 44 pt icon discs (`bg-white/80` in the night scope).
     static var nightIcon: Self { Self(fill: Night.glass.opacity(0.8), hover: Night.glass, ink: Night.ink, diameter: 44) }
-}
-
-/// Opacity with a 4 pt blur, for the pill's steps.
-private struct BlurFade: Transition {
-    func body(content: Content, phase: TransitionPhase) -> some View {
-        content.opacity(phase.isIdentity ? 1 : 0).blur(radius: phase.isIdentity ? 0 : 4)
-    }
 }

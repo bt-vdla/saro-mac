@@ -97,20 +97,6 @@ public enum ShellText {
 
     public static func dayImageName(_ day: String) -> String { "saro-\(day).png" }
 
-    /// Where a song's link goes, as its card names it (lib/demo/music.ts sourceFor, MusicCard.tsx's labels).
-    public static func musicSource(_ link: String) -> String {
-        guard let host = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines))?.host()?.lowercased() else { return "Music link" }
-        let on = { (domain: String) in host == domain || host.hasSuffix("." + domain) }
-        if on("music.youtube.com") { return "YouTube Music" }
-        if on("youtube.com") || on("youtu.be") || on("youtube-nocookie.com") { return "YouTube" }
-        if on("spotify.com") || on("spotify.link") { return "Spotify" }
-        if on("music.apple.com") { return "Apple Music" }
-        if on("jiosaavn.com") { return "JioSaavn" }
-        if on("soundcloud.com") { return "SoundCloud" }
-        if on("tidal.com") { return "Tidal" }
-        return "Music link"
-    }
-
     /// Text laid out right to left when its first strong character is (dir="auto"): Hebrew, Arabic, Syriac, Thaana,
     /// N'Ko and their presentation forms. Digits, spaces and punctuation are weak and are skipped.
     public static func isRightToLeft(_ text: String) -> Bool {
@@ -220,6 +206,7 @@ public struct Shortcut: Sendable, Hashable, Identifiable {
     public static let write = Shortcut(.capture, "Write", "⌥⌘W")
     public static let captureAnywhere = Shortcut(.capture, "Capture from anywhere", "⌃⌘J")
     public static let pasteStill = Shortcut(.capture, "Paste a photo as a still", "⌘V")
+    public static let importMedia = Shortcut(.capture, "Import photos, audio or video", "⇧⌘I")
     public static let today = Shortcut(.days, "Today", "⌘T")
     public static let previousDay = Shortcut(.days, "Previous day", "⌘[")
     public static let nextDay = Shortcut(.days, "Next day", "⌘]")
@@ -245,7 +232,8 @@ public struct Shortcut: Sendable, Hashable, Identifiable {
     public static let lock = Shortcut(.windows, "Lock Saro", "⌃⌘L")
 
     public static let all: [Shortcut] = [
-        recordMoment, voiceNote, write, captureAnywhere, pasteStill,
+        recordMoment, voiceNote, write, captureAnywhere, pasteStill, importMedia,
+        Shortcut(.capture, "Leave a voice note", "Space", scope: "canvas"),
         today, previousDay, nextDay, goToDate, timeLens, showDays, noticed, letter,
         Shortcut(.days, "Step through a replay", "← →", scope: "replay"),
         Shortcut(.days, "Play or pause a replay", "Space", scope: "replay"),

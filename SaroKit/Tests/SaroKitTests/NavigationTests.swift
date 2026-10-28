@@ -651,7 +651,6 @@ private func extent(_ items: [DayLayout.Item], _ at: [String: CGPoint]) -> CGRec
     let wide = CGRect(x: -5000, y: -1000, width: 10_000, height: 2000)
     let side = try #require(DayLayout.freeSpot(layoutSizes[.reflection]!, in: wide, avoiding: [CGRect(x: -4000, y: -1000, width: 8000, height: 2000)]))
     #expect(side.x >= 4024 || side.x + 360 <= -4024)
-    #expect(DayLayout.dropGrid(count: 4, at: .zero).count == 4 && DayLayout.dropGrid(count: 1, at: CGPoint(x: 5, y: 6)) == [CGPoint(x: 5, y: 6)])
 }
 
 @Test func arrowsMoveToTheNearestCardThatWay() {

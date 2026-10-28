@@ -247,13 +247,14 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
     private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 
     @Test func aSongNamesWhereItsLinkGoes() {
-        #expect(ShellText.musicSource("https://open.spotify.com/search/weightless") == "Spotify")
-        #expect(ShellText.musicSource(" https://music.youtube.com/watch?v=x ") == "YouTube Music")
-        #expect(ShellText.musicSource("https://youtu.be/x") == "YouTube")
-        #expect(ShellText.musicSource("https://music.apple.com/gb/album/x") == "Apple Music")
-        #expect(ShellText.musicSource("https://www.jiosaavn.com/song/x") == "JioSaavn")
-        #expect(ShellText.musicSource("https://notspotify.com/x") == "Music link")
-        #expect(ShellText.musicSource("") == "Music link")
+        func name(_ link: String) -> String { Music.link(link).map { Music.resolve($0).source.name } ?? "the web" }
+        #expect(name("https://open.spotify.com/search/weightless") == "Spotify")
+        #expect(name(" https://music.youtube.com/watch?v=x ") == "YouTube Music")
+        #expect(name("https://youtu.be/x") == "YouTube")
+        #expect(name("https://music.apple.com/gb/album/x") == "Apple Music")
+        #expect(name("https://www.jiosaavn.com/song/x") == "JioSaavn")
+        #expect(name("https://notspotify.com/x") == "the web")
+        #expect(name("") == "the web")
     }
 
     @Test func sameTitleWithinASecondFolds() {
@@ -359,7 +360,7 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         #expect(Shortcut.moveToTrash.chord == Shortcut.Chord(modifiers: [.command], key: "delete"))
         #expect(Shortcut.previousDay.chord?.key == "[")
         // What a menu item carries is one chord; the replay's arrows and ⇧F10 are listed but not menu keys.
-        let menuKeys: [Shortcut] = [.recordMoment, .voiceNote, .write, .captureAnywhere, .today, .previousDay, .nextDay, .showDays, .noticed,
+        let menuKeys: [Shortcut] = [.recordMoment, .voiceNote, .write, .captureAnywhere, .importMedia, .today, .previousDay, .nextDay, .showDays, .noticed,
                                     .letter, .fitDay, .zoomIn, .zoomOut, .editDetails, .exportCopy, .showInFinder, .copyText, .stack,
                                     .grid, .moveToTrash, .search, .whatSaroKnows, .settings, .shortcuts, .lock]
         #expect(menuKeys.allSatisfy { $0.chord != nil && Shortcut.all.contains($0) })

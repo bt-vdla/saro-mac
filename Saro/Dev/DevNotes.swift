@@ -26,10 +26,10 @@ struct DevNotes {
                         "Two-finger pan, pinch and ⌘-scroll zoom (0.2-3×); the day stays framed until you move it; Recenter (⌘0)",
                         "Marquee on empty canvas and the contextual toolbar: Stack ⌘S, Grid ⌘G, Delete",
                         "Chevrons slide the whole day (viewport + 32 pt, surface spring); ⌘[ ⌘] switch instantly; tomorrow leans 24 pt and comes back",
-                        "The glass bar: History (days sidebar), date + 7-day mood ribbon, Moment ⌘N, Voice ⇧⌘N, Still, Write ⌥⌘W, Recenter",
+                        "The glass bar: History (days sidebar), date + 7-day mood ribbon, Moment ⌘N, Voice ⇧⌘N, Still, Reflection ⌥⌘W, Music, Recenter",
                         "Lit ground: the web's WebGL shader ported to Metal, keyed to the hour; palette follows the clock (B-18)",
-                        "Drop, paste or pick photos as stills; -SaroDemo YES opens a throwaway journal of synthetic entries",
-                        "Navigation: Space-drag and middle-drag pan with a glide, a faint pan grid, a wheel notch springs, fit down to 8%; arrows, Tab and ⌘A select (Tab goes on to the bar past the last card), ⌥-arrow nudges and ⇧⌥-arrow resizes (saved when the arrow comes up, whichever key is let go first); Space pans only while the canvas has focus; a held card pans the canvas at the edges",
+                        "Drop, paste or import photos, audio, video and music links (Import Media ⇧⌘I); -SaroDemo YES opens a throwaway journal of synthetic entries",
+                        "Navigation: Space-drag and middle-drag pan with a glide, a faint pan grid, a wheel notch springs, fit down to 8%; arrows, Tab and ⌘A select (Tab goes on to the bar past the last card), ⌥-arrow nudges and ⇧⌥-arrow resizes (saved when the arrow comes up, whichever key is let go first); a bare Space tap on the focused canvas opens the voice pill, Space held while dragging pans; a held card pans the canvas at the edges",
                         "The canvas's keys act only while the canvas itself has the focus, never from a field, panel or bar button inside the day; it takes the focus back when a detail, the Noticed panel, the letter, the lens or ⌘K closes",
                         "Day layout (dayLayout.ts): a new day is laid out by type and the window's shape, again when the width changes for cards nobody moved; new cards land in view (freeSpot, packBurst), dropped files on a grid",
                         "The bar: 'TODAY · 4:16 PM' on the Mac's clock, Yesterday, shorter forms when narrow, one or two rows; the date opens the date picker; the next chevron dims at today; mood ribbon tooltips, VoiceOver summary and click-to-day",
@@ -51,19 +51,30 @@ struct DevNotes {
         case .recorder:
             DevNotes(
                 name: "Recorder",
-                does: "The in-window recorder for video moments and voice notes. Video is the default; each pause ends a turn and resume starts the next.",
+                does: "The in-window recorder for video moments and voice notes. A pause keeps the part; Pause & reflect ends it, Saro asks, and Keep going starts the next.",
                 built: ["Video first at 720p HEVC (1080p in Settings)", "Camera picker incl. Continuity Camera",
-                        "One file per turn, rows written before the first frame (crash-safe)", "Voice notes use the same turns"],
-                stubbed: ["Countdown, orb, checkpoints and Keep going ritual (FR-CAP-04)", "Live captions (FR-CAP-05)",
-                          "Checkpoint follow-up question (FR-REF-06)"],
-                issues: ["The launch sweep that reconciles rows and files after a crash isn't verified with kill -9 (FR-CAP-11)"],
-                brd: ["FR-CAP-01", "FR-CAP-04", "FR-CAP-05", "FR-CAP-11", "DR-11", "DR-12"])
+                        "One file per part, rows written before the first frame (crash-safe); pause and resume in the same file",
+                        "Today's prompt under Saro's orb, frozen at the first part and kept as its prompt row",
+                        "3-2-1 that Cancel (or Space) stops; default focus on the record disc; no entrance animation by key",
+                        "Live captions on this Mac (SpeechAnalyzer volatile results), never stored (FR-CAP-05), in the panel too; Captions always on",
+                        "Pause & reflect (R): the gate on the live words, then reflect_deeper raced against its twin for 2.5 s",
+                        "Observation line and the question arriving word by word; held words show the night SafetyCard",
+                        "Keep going (Return or K), Saving… only past 150 ms; the question, minus any live words it quoted, is the next part's prompt",
+                        "The checkpoint's gate and question run in the model's queue, ahead of parts still being read",
+                        "Finish dialog with two-step discard of the part not yet kept (Ledger.discardTake); a failed save offers Try again and Show in Finder",
+                        "The last frame develops, then flies into its card after a click",
+                        "Voice pill: starts on open, one live caption line, review with bars, transcript and Keep this / Record again",
+                        "Mic errors offer Try again; a disconnect keeps what was said"],
+                stubbed: [],
+                issues: ["The launch sweep that reconciles rows and files after a crash isn't verified with kill -9 (FR-CAP-11)",
+                         "Live captions, checkpoints and the develop flight need a person at the Mac to check (camera, mic, speech)"],
+                brd: ["FR-CAP-01", "FR-CAP-04", "FR-CAP-05", "FR-CAP-11", "FR-REF-06", "DR-11", "DR-12"])
         case .capturePanel:
             DevNotes(
                 name: "Capture panel",
                 does: "The floating ⌃⌘J panel: capture from any app without bringing Saro forward. Captures file under today.",
-                built: ["⌃⌘J global hotkey", "Video, voice and writing from the panel"],
-                stubbed: ["Changing the hotkey", "Dropping media onto the panel (FR-CAP-09)"],
+                built: ["⌃⌘J global hotkey", "Video, voice and writing from the panel", "Photos, audio and video dropped on the panel go to today"],
+                stubbed: ["Changing the hotkey"],
                 issues: [],
                 brd: ["FR-CAN-09", "FR-CAP-02", "FR-CAP-09"])
         case .menuBar:
@@ -81,8 +92,8 @@ struct DevNotes {
                 built: ["Morphs open from its card and back", "Player with timed transcript", "Tap a sentence to seek; the playing sentence is highlighted",
                         "Your own title (outranks Saro's)", "What Saro heard: summary, mood, a verbatim quote that seeks, provenance line",
                         "Held entries show the SafetyCard instead; technical holds offer Try again"],
-                stubbed: ["Copy transcript, Show in Finder, Export a copy (FR-DAY-02)", "Edit caption and summary (FR-DAY-04)",
-                          "Turn n of N navigation inside a session"],
+                stubbed: ["Copy transcript, Show in Finder, Export a copy (FR-DAY-02)", "Edit summary (FR-DAY-04); Edit details ⌘I edits the title"],
+                // Turn n of N with the turn's question, ← →, and Play all (AVQueuePlayer) are built.
                 issues: ["Transcription follows the system locale when supported, else en-US (B-12)"],
                 brd: ["FR-CAN-01", "FR-DAY-02", "FR-DAY-04", "FR-CAP-06"])
         case .voiceDetail:
@@ -97,11 +108,15 @@ struct DevNotes {
         case .writingDetail:
             DevNotes(
                 name: "Writing",
-                does: "The plain-text editor for a written reflection. It autosaves; only you write the body, and Writing Tools stays off.",
-                built: ["Autosaving editor (0.8 s debounce), New York serif", "Writing Tools off in Saro's editors",
-                        "The first line becomes the card title", "Closing an empty page discards it (B-16)",
-                        "Gate and reading run when the editor closes"],
-                stubbed: ["Follow-up question after the gate (FR-REF-07)", "Writing Tools opt-in (FR-SET-03)"],
+                does: "The reading page for a written reflection, or a song's view. It autosaves; only you write the body.",
+                built: ["Autosaving editor (0.8 s debounce)", "Title field (the card's title, else Untitled), TODAY · 4:16 PM · EDITED, the prompt row, your caption",
+                        "The first line becomes the card title when none is typed", "Closing an empty page discards it (B-16)",
+                        "Gate and reading run when the editor closes", "Edit on the card: the second click on a selected page edits its title or body",
+                        "A typed title is gated with the words (a held title holds the day), never read or quoted",
+                        "Reflect further after the gate: reflect_further on the ladder, Another question, Retry, the SafetyCard when held",
+                        "Questions and gated answers are reflection_turn rows, never the body (DR-04)",
+                        "Songs: 560 pt view with Open in … and Copy link; Edit Details ⌘I (the shell's sheet) for title and artist, which are gated, never read"],
+                stubbed: [],
                 issues: [],
                 brd: ["FR-CAP-03", "FR-REF-07", "FR-SET-03", "DR-04"])
         case .stillDetail:
@@ -115,14 +130,15 @@ struct DevNotes {
                         "Edit the caption in place: it becomes yours, is gated, and outranks Saro's; Describe again ⌘R",
                         "A cleared still feeds the day's digest; only your own words are ever quoted"],
                 stubbed: ["The note pinned over the image on the canvas (FR-CAN-04)", "Search over Saro's descriptions (navigation)",
-                          "The Edit details sheet's caption field (capture)", "A mood from a still: skipped, no claims about the user"],
+                          "A mood from a still: skipped, no claims about the user"],
                 issues: [],
                 brd: ["FR-CAP-07", "FR-CAP-08", "FR-CAN-07", "SR-11"])
         case .stack:
             DevNotes(
                 name: "Stack",
                 does: "A recording session's turns piled together. Opening it fans the turns out in place and dims the canvas behind.",
-                built: ["A session's turns stack automatically", "Fan out in place with the canvas dimmed", "Unstack", "Stack ⌘S from any selection"],
+                built: ["A session's turns stack automatically", "Fan out in place over the window, the bar and panel hidden", "Header at the top: Unstack, Play all ⌘↩, Done (Esc)",
+                        "Each turn under its question, with its words", "Stack ⌘S from any selection"],
                 stubbed: ["Turn numbers inside the opened detail"],
                 issues: [],
                 brd: ["FR-CAN-02", "FR-CAN-03"])
@@ -239,7 +255,8 @@ struct DevNotes {
                 does: "The camera and mic check as a mirror on its own preview-only session: light, direction, framing (Vision) and mic. Nothing is recorded.",
                 built: ["Phases and copy from the web, rewritten for macOS", "64×36 readings every 166 ms with holds", "Oval, mic rim, light arc and eye-line marks",
                         "Status rows with Turn off and Esc", "Camera picker incl. Continuity Camera", "Readiness card: Apple Intelligence and speech download",
-                        "Hand-off on today: moment recorder or voice pill under Today's prompt, or a writing page with the prompt as its question"],
+                        "Hand-off on today: moment recorder or voice pill under Today's prompt, or a writing page with the prompt as its question",
+                        "The first question shows under Saro's orb in the recorder, atop the voice pill and on the page as its prompt row, never on a held day"],
                 stubbed: [],
                 issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras"],
                 brd: ["FR-ONB-05", "FR-ONB-03"])

@@ -182,6 +182,7 @@ struct SaroCommands: Commands {
         }
         CommandGroup(after: .importExport) {
             Group {
+                Button("Import Media…") { model.pane = .day; model.pickMedia() }.keyboardShortcut(KeyboardShortcut(.importMedia))
                 Button("Export Day as Image…") { Task { await model.exportDayImage() } }
                     .disabled(model.pane != .day || model.entries.isEmpty)
                 Button("Export Everything…") { Task { await model.exportEverything() } }

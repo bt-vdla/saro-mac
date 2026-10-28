@@ -96,7 +96,7 @@ struct ToneSource: Equatable {
             guard let entries = try? await model.ledger.entries(day: day), let verdicts = try? await model.ledger.verdicts(day: day) else { continue }
             for e in entries.reversed() where e.kind == .reflection {
                 guard let body = e.body, !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let v = verdicts[e.id],
-                      v.verdict == "clear" || v.verdict == "unavailable_clear", v.textSha256 == sha256(body) else { continue }
+                      v.verdict == "clear" || v.verdict == "unavailable_clear", v.textSha256 == sha256(Pipeline.titled(body, e)) else { continue }
                 return ToneSource(sentence: TonePreview.previewSentence(TonePreview.toSecondPerson(body)), caption: "From your reflection on \(short(day))",
                                   day: day, inputs: [AIRunInput(entryId: e.id, field: "body", text: body)])
             }

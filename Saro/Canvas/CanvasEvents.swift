@@ -10,9 +10,11 @@ struct CanvasEvents: NSViewRepresentable {
     var onZoom: (_ factor: CGFloat, _ at: CGPoint, NSEvent) -> Void = { _, _, _ in }
     var onEvent: ((NSEvent, CGPoint) -> Void)?
     /// Space-drag and middle-drag pan (a mouse down, its drags and its up); Space is taken only while this is set and
-    /// `takesSpace` says the canvas has keyboard focus, so a focused button still presses on Space.
+    /// `takesSpace` says the canvas has keyboard focus, so a focused button or field still gets its Space.
     var onDragPan: ((NSEvent.EventType, CGPoint) -> Void)?
     var takesSpace = true
+    /// A Space taken that came back up with no pan and no key repeat in between: a tap, not a hold.
+    var onSpaceTap: (() -> Void)?
 
     func makeNSView(context: Context) -> EventView { EventView() }
 
@@ -23,6 +25,7 @@ struct CanvasEvents: NSViewRepresentable {
         view.onEvent = onEvent
         view.onDragPan = onDragPan
         view.takesSpace = takesSpace
+        view.onSpaceTap = onSpaceTap
     }
 
     final class EventView: NSView {
@@ -32,8 +35,11 @@ struct CanvasEvents: NSViewRepresentable {
         var onEvent: ((NSEvent, CGPoint) -> Void)?
         var onDragPan: ((NSEvent.EventType, CGPoint) -> Void)?
         var takesSpace = true
+        var onSpaceTap: (() -> Void)?
         private var monitor: Any?
         private var spaceHeld = false
+        /// The Space held now panned or repeated, so letting it go isn't a tap.
+        private var spaceUsed = false
         private var dragging = false
 
         override var isFlipped: Bool { true }
@@ -51,17 +57,19 @@ struct CanvasEvents: NSViewRepresentable {
             }
         }
 
-        /// Space held (outside text) turns a left drag into a pan, as a middle drag always is.
+        /// Space held (outside text) turns a left drag into a pan, as a middle drag always is; tapped, it is `onSpaceTap`.
         private func dragPan(_ e: NSEvent, _ p: CGPoint) -> Bool? {
             switch e.type {
             case .keyUp:
                 // Let go wherever focus went, so a later click is never taken for a pan.
                 guard e.keyCode == 49 else { return false }
                 defer { spaceHeld = false }
+                if spaceHeld, !spaceUsed, enabled, e.window === window { onSpaceTap?() }
                 return spaceHeld && e.window === window
             case .keyDown:
                 guard e.keyCode == 49, enabled, takesSpace, onDragPan != nil, e.window === window, !(window?.firstResponder is NSTextView),
                       e.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
+                spaceUsed = spaceHeld && (spaceUsed || e.isARepeat)
                 spaceHeld = true
                 return true
             case .leftMouseDown, .otherMouseDown:
@@ -69,6 +77,7 @@ struct CanvasEvents: NSViewRepresentable {
                 let space = spaceHeld && CGEventSource.keyState(.combinedSessionState, key: 49)
                 guard enabled, let onDragPan, e.window === window, e.type == .otherMouseDown ? e.buttonNumber == 2 : space, bounds.contains(p) else { return false }
                 dragging = true
+                if e.type == .leftMouseDown { spaceUsed = true }
                 onDragPan(e.type, p)
                 return true
             case .leftMouseDragged, .otherMouseDragged, .leftMouseUp, .otherMouseUp:

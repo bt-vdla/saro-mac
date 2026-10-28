@@ -157,7 +157,7 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     try await l.insertEntry(e)
     await p.process(entryId: e.id) {}
     // ⌘Q before the editor's autosave: the words are written before the call returns, and left for the sweep.
-    #expect(await MainActor.run { l.updateEntryTextBeforeQuit(id: e.id, body: chai + " I want to die.", titleUser: nil) })
+    #expect(await MainActor.run { l.updateEntryTextBeforeQuit(id: e.id, body: chai + " I want to die.", titleUser: nil, captionUser: nil) })
     #expect(try await l.entry(e.id)?.body == chai + " I want to die.")
     #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     await p.process(entryId: e.id) {}

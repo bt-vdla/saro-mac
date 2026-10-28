@@ -12,7 +12,8 @@ struct DetailView: View {
         Group {
             switch entry.kind {
             case .moment, .voice: MediaDetail(entry: entry)
-            case .reflection, .music: WritingEditor(entry: entry)
+            case .reflection: WritingEditor(entry: entry)
+            case .music: MusicDetail(entry: entry)
             case .still: StillDetail(entry: entry)
             }
         }
@@ -58,12 +59,19 @@ final class PlayerModel {
     var playing = false
     /// The file's own length, for a recording whose row has none.
     var durationMs: Int?
+    /// Play all: the next file in the queue started (its index).
+    @ObservationIgnored var onAdvance: ((Int) -> Void)?
+    @ObservationIgnored private let items: [AVPlayerItem]
     @ObservationIgnored private var token: Any?
     @ObservationIgnored private var ended: (any NSObjectProtocol)?
     @ObservationIgnored private var locked: (any NSObjectProtocol)?
 
-    init(url: URL) {
-        player = AVPlayer(url: url)
+    convenience init(url: URL) { self.init(urls: [url]) }
+
+    /// Several files play one after another (AVQueuePlayer), as the set's Play all.
+    init(urls: [URL]) {
+        items = urls.map { AVPlayerItem(url: $0) }
+        player = items.count > 1 ? AVQueuePlayer(items: items) : AVPlayer(playerItem: items.first)
         #if DOGFOOD
         // Snapshots run unattended, often at night.
         player.isMuted = UserDefaults.standard.string(forKey: "SaroSnapshot") != nil
@@ -77,12 +85,19 @@ final class PlayerModel {
                 if let d = m.player.currentItem?.duration, d.isNumeric { m.durationMs = Int(d.seconds * 1000) }
             }
         }
-        // ...but not when it plays to its end: its last call still sees rate 1. Back to the top, as the web's onEnded.
-        ended = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: player.currentItem,
-                                                       queue: .main) { [weak self] _ in
+        // ...but not when it plays to its end: its last call still sees rate 1. Back to the top, as the web's onEnded,
+        // unless another file follows in the queue.
+        ended = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil,
+                                                       queue: .main) { [weak self] n in
+            let item = n.object as? AVPlayerItem
             MainActor.assumeIsolated {
-                self?.playing = false
-                self?.timeMs = 0
+                guard let m = self, let i = m.items.firstIndex(where: { $0 === item }) else { return }
+                if i + 1 < m.items.count {
+                    m.onAdvance?(i + 1)
+                } else {
+                    m.playing = false
+                    m.timeMs = 0
+                }
             }
         }
         locked = NotificationCenter.default.addObserver(forName: Locker.didLock, object: nil, queue: .main) { [weak self] _ in
@@ -151,9 +166,25 @@ func timedSentences(_ words: [TranscriptWord]) -> [TimedSentence] {
 
 private struct MediaDetail: View {
     @Environment(AppModel.self) private var model
-    let entry: Entry
+    /// The entry opened; ← and → move through its session's turns.
+    let opened: Entry
     @State private var player: PlayerModel?
     @State private var sentences: [TimedSentence] = []
+    @State private var turnId: String?
+    /// Typing a title keeps ← and → for the caret.
+    @FocusState private var titleFocused: Bool
+
+    init(entry: Entry) { opened = entry }
+
+    /// The turn on screen.
+    private var entry: Entry { turnId.flatMap(model.entry) ?? opened }
+    /// Every turn of the session, in order (a single recording is its own only turn).
+    private var turns: [Entry] {
+        guard let sid = opened.sessionId else { return [opened] }
+        let all = model.entries.filter { $0.sessionId == sid }.sorted { ($0.turnNumber ?? 0) < ($1.turnNumber ?? 0) }
+        return all.isEmpty ? [opened] : all
+    }
+    private var index: Int { turns.firstIndex { $0.id == entry.id } ?? 0 }
 
     var body: some View {
         GeometryReader { geo in
@@ -175,13 +206,89 @@ private struct MediaDetail: View {
                 .padding(.horizontal, 36).padding(.top, 32)
             }
         }
-        .task(id: entry.id) {
-            if let url = model.mediaURL(for: entry), FileManager.default.fileExists(atPath: url.path) { player = PlayerModel(url: url) }
-            if let ms = model.memory.takePlayFrom(entry.id) { player?.seek(ms: ms) }
-            await loadTranscript()
+        .task(id: opened.id) {
+            if CaptureUI.shared.playAll {
+                CaptureUI.shared.playAll = false
+                playAll()
+            } else {
+                load(opened)
+                if let ms = model.memory.takePlayFrom(opened.id) { player?.seek(ms: ms) }
+            }
         }
+        .task(id: entry.id) { await loadTranscript() }
         .onChange(of: entry.processingStatus) { _, _ in Task { await loadTranscript() } }
         .onDisappear { player?.stop() }
+        .background {
+            if turns.count > 1, !titleFocused {
+                Group {
+                    Button("Previous turn") { step(-1) }.keyboardShortcut(.leftArrow, modifiers: [])
+                    Button("Next turn") { step(1) }.keyboardShortcut(.rightArrow, modifiers: [])
+                }
+                .hidden()
+            }
+        }
+    }
+
+    private func load(_ e: Entry) {
+        player?.stop()
+        turnId = e.id
+        player = model.mediaURL(for: e).flatMap { FileManager.default.fileExists(atPath: $0.path) ? PlayerModel(url: $0) : nil }
+    }
+
+    private func step(_ by: Int) {
+        let i = index + by
+        guard turns.indices.contains(i) else { return }
+        load(turns[i])
+    }
+
+    /// Play all (VideoStackOverlay.tsx): every turn from this one, in order, the detail following along.
+    private func playAll() {
+        let rest = Array(turns.dropFirst(index))
+        let files = rest.compactMap { e in model.mediaURL(for: e).flatMap { FileManager.default.fileExists(atPath: $0.path) ? (e, $0) : nil } }
+        guard let first = files.first else { return load(entry) }
+        player?.stop()
+        turnId = first.0.id
+        let p = PlayerModel(urls: files.map(\.1))
+        p.onAdvance = { i in turnId = files[i].0.id }
+        player = p
+        p.player.play()
+    }
+
+    /// "Turn 2 of 3 · Today · 4:16 PM · 0:42" under the question the turn answered, with the turn controls.
+    @ViewBuilder private var turnHeader: some View {
+        if turns.count > 1 {
+            VStack(alignment: .leading, spacing: 8) {
+                if let q = model.prompt(for: entry) {
+                    Text(q).font(Typo.serif(19, italic: true)).foregroundStyle(Tok.voice).fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 6) {
+                    let day = entry.localDay == LocalDay.today() ? "Today" : DayFormat.sidebar(entry.localDay)
+                    Text(["Turn \(index + 1) of \(turns.count)", day, entry.capturedAt.formatted(date: .omitted, time: .shortened),
+                          model.media[entry.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) }]
+                        .compactMap { $0 }.joined(separator: " · "))
+                        .monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+                    Spacer(minLength: 8)
+                    turnButton("chevron.left", "Previous turn  ←", enabled: index > 0) { step(-1) }
+                    turnButton("chevron.right", "Next turn  →", enabled: index + 1 < turns.count) { step(1) }
+                    Button("Play all", action: playAll)
+                        .font(Typo.ui(12, .medium)).buttonStyle(.plain).foregroundStyle(Tok.onPrimary)
+                        .padding(.horizontal, 12).frame(height: 28).background(Tok.sage, in: .capsule)
+                }
+            }
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func turnButton(_ symbol: String, _ help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(Tok.ink2)
+                .frame(width: 28, height: 28).background(Tok.ink.opacity(0.06), in: .circle)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     private func loadTranscript() async {
@@ -203,9 +310,10 @@ private struct MediaDetail: View {
     private func side(player showPlayer: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                turnHeader.padding(.trailing, 44)
                 VStack(alignment: .leading, spacing: 6) {
                     Eyebrow(entry: entry)
-                    TitleField(entry: entry)
+                    TitleField(entry: entry, focused: $titleFocused).id(entry.id)
                 }
                 .padding(.trailing, 44)
                 if showPlayer { playerArea.frame(height: 56).clipShape(.rect(cornerRadius: Radius.field)) }
@@ -278,6 +386,7 @@ struct TranscriptLines: View {
 private struct TitleField: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
+    var focused: FocusState<Bool>.Binding
     @State private var text = ""
 
     var body: some View {
@@ -287,6 +396,7 @@ private struct TitleField: View {
             .lineLimit(1...3)
             .foregroundStyle(Tok.ink)
             .saroWritingTools()
+            .focused(focused)
             .onAppear { text = entry.titleUser ?? "" }
             .onSubmit { save() }
             .onDisappear { save() }
@@ -298,40 +408,39 @@ private struct TitleField: View {
         guard t != (entry.titleUser ?? "") else { return }
         let title = t.isEmpty ? nil : t
         if quitting { model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: entry.body, titleUser: title, captionUser: entry.captionUser); return }
-        let e = entry
-        Task {
-            try? await model.saves.track(e.id) { [model] in
-                try await model.ledger.updateEntryText(id: e.id, body: e.body, titleUser: title, captionUser: e.captionUser)
-                await model.reload()
-            }
-        }
+        // A typed title is the person's words too: gated with the words, so it goes back through the pipeline.
+        Task { await model.saveText(entry, body: entry.body, title: title, caption: entry.captionUser) }
     }
 }
 
 // MARK: Writing
 
+/// The reading page (TextReflectionCard.tsx expanded): the question it started from, an editable title, "TODAY · 4:16 PM
+/// · EDITED 4:20 PM", the person's words in Geist 17/1.7 at most ~62 characters a line, their caption, and Reflect further.
 private struct WritingEditor: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     @State private var text = ""
+    @State private var title = ""
     @State private var loaded = false
-    /// The question the page answers (its prompt row), if it has one.
-    @State private var prompt: String?
+    @State private var editedAt: Date?
+    @FocusState private var writing: Bool
 
     var body: some View {
-        // The web's reading page: the user's words in Geist 17/1.7, at most ~62 characters a line.
         HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                Eyebrow(entry: entry)
-                // Never on a held day: an older hand-off could have kept the day's reading question here (SR-13).
-                if let prompt, !model.isDayHeld {
-                    Text(prompt).font(Typo.serif(22)).tracking(-0.22).lineSpacing(4).foregroundStyle(Tok.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel("Prompt: \(prompt)")
-                }
+            VStack(alignment: .leading, spacing: 12) {
+                if let prompt = model.prompt(for: entry) { PromptHeader(question: prompt).padding(.bottom, 4) }
+                TextField("Title", text: $title, prompt: Text(model.untitled(model.entry(entry.id) ?? entry)).foregroundStyle(Tok.ink4), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(Typo.ui(22, .semibold))
+                    .foregroundStyle(Tok.reflectionInk)
+                    .lineLimit(1...3)
+                    .saroWritingTools()
+                    .onSubmit { writing = true }
+                Text(details).monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
                 ZStack(alignment: .topLeading) {
                     if text.isEmpty {
-                        Text("Write what's on your mind. The first line becomes the title.")
+                        Text("Write what’s on your mind…")
                             .font(Typo.ui(17)).foregroundStyle(Tok.ink4).padding(.top, 1).padding(.leading, 5)
                             .allowsHitTesting(false)
                     }
@@ -342,7 +451,13 @@ private struct WritingEditor: View {
                         .scrollContentBackground(.hidden)
                         .scrollIndicators(.never)
                         .saroWritingTools()
+                        .focused($writing)
                 }
+                .frame(minHeight: 160)
+                if let caption = entry.captionUser?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {
+                    Text(caption).font(Typo.ui(14)).foregroundStyle(Tok.reflectionInk).fixedSize(horizontal: false, vertical: true)
+                }
+                ReflectFurther(entry: entry, written: [title, text].filter { !$0.isEmpty }.joined(separator: "\n"), page: text)
             }
             .frame(maxWidth: 600, maxHeight: .infinity, alignment: .topLeading)
             .padding(.leading, 48).padding(.top, 40).padding(.bottom, 24)
@@ -353,29 +468,43 @@ private struct WritingEditor: View {
         }
         .onAppear {
             text = entry.body ?? ""
+            title = entry.titleUser ?? ""
             loaded = true
+            if text.isEmpty { writing = true }
         }
-        .task(id: entry.id) { prompt = try? await model.ledger.turns(entryId: entry.id).first { $0.kind == .prompt }?.question }
-        .task(id: text) {
+        .task(id: "\(title)\n\(text)") {
             guard loaded else { return }
             do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
             await save(process: false)
         }
+        .task(id: model.entry(entry.id)?.processingStatus) { editedAt = try? await model.ledger.editedAt(entryId: entry.id) }
         .onDisappear { Task { await save(process: true) } }
         .onQuit {
-            guard loaded, text != (model.entry(entry.id)?.body ?? "") else { return }
-            model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: text, titleUser: entry.titleUser)
+            let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let now = model.entry(entry.id)
+            guard loaded, text != (now?.body ?? "") || (t.isEmpty ? nil : t) != now?.titleUser else { return }
+            model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: text, titleUser: t.isEmpty ? nil : t, captionUser: now?.captionUser)
         }
+    }
+
+    /// "TODAY · 4:16 PM", and "EDITED 4:20 PM" once it changed after it was written.
+    private var details: String {
+        let edited = editedAt.map { "Edited \($0.formatted(date: .omitted, time: .shortened))" }
+        return [MusicDetail.when(entry), edited].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func save(process: Bool) async {
         let body = text
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = t.isEmpty ? nil : t
         let e = entry
+        let now = model.entry(e.id)
         // A save that fails keeps the text here and the dot red until a retry lands; nothing says it was saved.
-        if body != (model.entry(e.id)?.body ?? "") {
+        if body != (now?.body ?? "") || typed != now?.titleUser {
             do {
                 try await model.saves.track(e.id) { [model] in
-                    try await model.ledger.updateEntryText(id: e.id, body: body, titleUser: e.titleUser, captionUser: e.captionUser)
+                    let caption = try await model.ledger.entry(e.id)?.captionUser
+                    try await model.ledger.updateEntryText(id: e.id, body: body, titleUser: typed, captionUser: caption)
                     await model.edited(e.id)
                 }
             } catch {
@@ -388,6 +517,171 @@ private struct WritingEditor: View {
         // Always, even when emptied (an entry that was gated is kept, and must not stay pending): the pipeline skips text
         // it has already gated and read, and an autosave may have saved the edit.
         model.process(entry.id)
+    }
+}
+
+/// Reflect further (TextReflectionCard.tsx, BRD FR-REF-07): once the page's words are gated, Saro asks one question about
+/// what was written, rising in Newsreader italic 19 in its voice with "Keep writing…" under it. Another question swaps an
+/// unanswered one. Questions and answers are reflection_turn rows shown here, never written into the page (DR-04); each
+/// answer is the person's words, gated as it is saved. A held page or day shows the resources instead.
+private struct ReflectFurther: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let entry: Entry
+    /// The title and the page, as they stand.
+    let written: String
+    let page: String
+
+    private enum Ask: Equatable { case idle, loading, failed, held }
+
+    @State private var turns: [ReflectionTurn] = []
+    @State private var ask = Ask.idle
+    @State private var drafts: [String: String] = [:]
+    @State private var instant = false
+
+    private var open: ReflectionTurn? { turns.last { $0.answer == nil } }
+    private var heldPage: Bool { model.verdicts[entry.id]?.verdict == "safety_hold" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if model.isDayHeld || heldPage || ask == .held {
+                // A held page or day: no question, ever (SR-13), and the resources take its place.
+                if heldPage || ask == .held { SafetyNotice() }
+            } else {
+                if !turns.isEmpty {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 18) {
+                                ForEach(turns.filter { !$0.question.isEmpty }) { turn in block(turn).id(turn.id) }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .scrollIndicators(.never)
+                        .frame(maxHeight: 280)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onChange(of: turns.last?.id) { _, id in
+                            guard let id else { return }
+                            withAnimation(instant || reduceMotion ? nil : Motion.surface) { proxy.scrollTo(id, anchor: .bottom) }
+                        }
+                    }
+                }
+                HStack(spacing: 12) {
+                    Button(action: { Task { await reflect() } }) {
+                        HStack(spacing: 8) {
+                            if ask == .loading { ProgressView().controlSize(.small) }
+                            Text(ask == .loading ? "Finding a question…" : open == nil ? "Reflect further" : "Another question")
+                        }
+                    }
+                    .buttonStyle(CaptureButtonStyle.primary)
+                    .disabled(ask == .loading || page.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .keyboardShortcut(.return, modifiers: [.command, .shift])
+                    .help("Saro asks one question about what you wrote  ⇧⌘↵")
+                    if ask == .failed {
+                        Text("Couldn’t generate a question right now.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
+                        Button("Retry") { Task { await reflect() } }.buttonStyle(.link).font(Typo.ui(13, .medium))
+                    }
+                }
+            }
+        }
+        .task(id: entry.id) { turns = (try? await model.ledger.turns(entryId: entry.id).filter { $0.kind == .reflectFurther }) ?? [] }
+        .onDisappear { leave() }
+    }
+
+    private func block(_ turn: ReflectionTurn) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Group {
+                if turn.answer == nil, !instant {
+                    ArrivingWords(text: turn.question, instant: reduceMotion, rises: !reduceMotion)
+                } else {
+                    Text(turn.question)
+                }
+            }
+            .font(Typo.serif(19, italic: true)).foregroundStyle(Tok.voice)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("Saro asks: \(turn.question)")
+            if let answer = turn.answer {
+                Text(answer).font(Typo.ui(16)).lineSpacing(6).foregroundStyle(Tok.ink).fixedSize(horizontal: false, vertical: true)
+            } else {
+                TextField("Answer", text: Binding(get: { drafts[turn.id] ?? "" }, set: { drafts[turn.id] = $0 }),
+                          prompt: Text("Keep writing…").foregroundStyle(Tok.ink4), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(Typo.ui(16)).lineSpacing(6)
+                    .lineLimit(1...8)
+                    .saroWritingTools()
+                    .onSubmit { Task { await answer(turn, drafts[turn.id] ?? "") } }
+            }
+        }
+        .transition(reduceMotion || instant ? .opacity : .opacity.combined(with: .offset(y: 8)))
+    }
+
+    /// Gate the page (and the answers so far) first; then the ladder, raced against the twin; then the output gate.
+    private func reflect() async {
+        instant = Motion.byKey
+        withAnimation(Motion.fade) { ask = .loading }
+        for t in turns where t.answer == nil { await answer(t, drafts[t.id] ?? "") }
+        let answers = turns.compactMap(\.answer)
+        let all = ([written] + answers).joined(separator: "\n")
+        switch await model.exclusive({ await model.pipeline.check(all) })?.state {
+        case .clear?, .modelUnavailable?: break
+        case .safetyHold?, .awaitingCheck?:
+            withAnimation(Motion.fade) { ask = .held }
+            return
+        default:
+            withAnimation(Motion.fade) { ask = .failed }
+            return
+        }
+        let (f, run) = await model.ai.followUp(text: all, verb: "wrote", exclude: turns.map(\.question) + [model.prompt(for: entry)].compactMap { $0 },
+                                               seed: FollowUps.seed("\(all)\n\(turns.count)"), phraseFrom: answers.last ?? page,
+                                               localDay: entry.localDay)
+        guard !SafetyGate.phraseHit(f.question) else {
+            withAnimation(Motion.fade) { ask = .held }
+            return
+        }
+        do {
+            try await model.ledger.insertRun(run, inputs: [AIRunInput(entryId: entry.id, field: "body", text: page)])
+            if let open { try await model.ledger.dropUnanswered(turnId: open.id) }
+            let turn = ReflectionTurn(kind: .reflectFurther, question: f.question, generator: f.generator, localDay: entry.localDay,
+                                      entryId: entry.id, aiRunId: run.id)
+            try await model.ledger.insertTurn(turn)
+            withAnimation(instant ? nil : Motion.surface) {
+                turns.removeAll { $0.id == open?.id }
+                turns.append(turn)
+                ask = .idle
+            }
+        } catch {
+            withAnimation(Motion.fade) { ask = .failed }
+        }
+    }
+
+    /// The answer is the person's words outside the entry: gated as it is saved, its verdict kept with it (SR-13).
+    private func answer(_ turn: ReflectionTurn, _ draft: String) async {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let verdict = await model.exclusive({ await model.pipeline.check(text) }) else { return }
+        do {
+            try await model.saves.track(turn.id) { [model] in try await model.ledger.setTurnAnswer(id: turn.id, answer: text, verdict: verdict.verdict) }
+            if let i = turns.firstIndex(where: { $0.id == turn.id }) {
+                turns[i].answer = text
+                turns[i].answerVerdict = verdict.verdict
+            }
+            drafts[turn.id] = nil
+            if verdict.verdict != "clear" { await model.reload() }
+        } catch {
+            model.show(.failed("Couldn't save your answer", error, context: "Your words are still here."))
+        }
+    }
+
+    /// Closing keeps every answer and lets unanswered questions go.
+    private func leave() {
+        let pending = turns.filter { $0.answer == nil }.map { ($0, drafts[$0.id] ?? "") }
+        Task {
+            for (t, draft) in pending {
+                if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    try? await model.ledger.dropUnanswered(turnId: t.id)
+                } else {
+                    await answer(t, draft)
+                }
+            }
+        }
     }
 }
 
@@ -696,3 +990,4 @@ struct SafetyNotice: View {
         SafetyCardView(compact: true)
     }
 }
+

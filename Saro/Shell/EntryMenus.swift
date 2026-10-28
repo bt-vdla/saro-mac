@@ -197,17 +197,21 @@ extension AppModel {
         if body.isEmpty { openEntryID = e.id } else { process(e.id) }
     }
 
-    /// An image on the clipboard becomes a still, text a page, at the point (Canvas.tsx's paste).
+    /// Copied files become what they are, an image a still, a music link a song and other text a page, at the point
+    /// (Canvas.tsx's paste).
     func paste(at point: CGPoint?) async {
         let pb = NSPasteboard.general
-        if let image = (pb.readObjects(forClasses: [NSImage.self]) as? [NSImage])?.first, let tiff = image.tiffRepresentation {
+        if let files = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !files.isEmpty {
+            await importMedia(files, at: point, origin: "pasted")
+        } else if let image = (pb.readObjects(forClasses: [NSImage.self]) as? [NSImage])?.first, let tiff = image.tiffRepresentation {
             await importStill(tiff, origin: "pasted", at: point)
-        } else if let text = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-            await newWriting(at: point, body: text)
+        } else {
+            await CaptureInput.pasted(pb.string(forType: .string), at: point, model: self)
         }
     }
 
-    private func place(_ id: String, at p: CGPoint) async {
+    /// A new card's place, tracked on its own: a layout that doesn't land leaves the entry saved.
+    func place(_ id: String, at p: CGPoint) async {
         let l = CardLayout(entryId: id, x: p.x, y: p.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, userPlaced: true)
         try? await saves.track("layout:\(id)") { [weak self] in
             try await self?.ledger.setLayouts([l])

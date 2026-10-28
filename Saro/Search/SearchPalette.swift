@@ -164,6 +164,16 @@ struct SearchPalette: View {
                 m.pane = .day
                 m.pickStill()
             },
+            PaletteCommand(id: "music", title: "Add music", symbol: "opticaldisc", keywords: "song link spotify apple music youtube soundcloud") { m in
+                m.pane = .day
+                CaptureUI.shared.musicGrows = false
+                CaptureUI.shared.musicOpen = true
+            },
+            PaletteCommand(id: "import", title: "Import media…", symbol: "square.and.arrow.down", keywords: "file audio video photo drop add",
+                           shortcut: Shortcut.importMedia.keys) { m in
+                m.pane = .day
+                m.pickMedia()
+            },
             PaletteCommand(id: "date", title: "Go to date…", symbol: "calendar", keywords: "calendar day jump picker", shortcut: Shortcut.goToDate.keys) { m in
                 m.pane = .day
                 m.datePickerOpen = true
