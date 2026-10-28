@@ -3,48 +3,44 @@ import AppKit
 import SaroKit
 import SwiftUI
 
-/// `-SaroSnapshot <dir>` renders key surfaces to PNG with ImageRenderer and quits, so the UI can be checked without
-/// bringing the window forward. AppKit-backed pieces (player, text editor, lists) render blank. Use with -SaroDemo.
+/// `-SaroSnapshot <dir>` (with -SaroDemo, in an unsandboxed build) hosts the real UI in an off-screen window, steps through
+/// a few states and writes each as `<dir>/<state>.png`, so the UI can be checked without taking the user's focus.
 @MainActor
 enum Snapshots {
-    /// ponytail: renderers that hosted an AppKit view crash on deinit, so they live until the app quits.
-    private static var keep: [AnyObject] = []
+    private static var panel: NSPanel?
 
     static func runIfRequested(_ model: AppModel) {
         guard let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
-        let delay = UserDefaults.standard.double(forKey: "SaroSnapshotDelay")
+        let p = NSPanel(contentRect: NSRect(x: -6000, y: 0, width: 1320, height: 860), styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        p.contentView = NSHostingView(rootView: RootView().environment(model))
+        panel = p
+        let dark = UserDefaults.standard.bool(forKey: "SaroSnapshotDark")
+        p.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
-            try? await Task.sleep(for: .seconds(delay > 0 ? delay : 20))
-            await model.reload()
-            let size = CGSize(width: 1280, height: 820)
-            for dark in [true, false] {
-                let suffix = dark ? "dark" : "light"
-                shot("\(dir)/canvas-\(suffix).png", dark: dark, size: size, DayView())
-                shot("\(dir)/noticed-\(suffix).png", dark: dark, size: CGSize(width: 360, height: 820), NoticedView())
-                shot("\(dir)/letter-\(suffix).png", dark: dark, size: CGSize(width: 640, height: 720), LetterView())
-                if let e = model.entries.first(where: { $0.kind == .reflection }) {
-                    shot("\(dir)/detail-\(suffix).png", dark: dark, size: CGSize(width: 1040, height: 720), DetailView(entry: e))
+            try? await Task.sleep(for: .seconds(UserDefaults.standard.double(forKey: "SaroSnapshotDelay").clamped(to: 5...120)))
+            let steps: [(String, @MainActor () -> Void)] = [
+                ("canvas", { model.selection = [] }),
+                ("selected", { model.selection = Set(model.entries.prefix(2).map(\.id)) }),
+                ("noticed", { model.selection = []; model.showNoticed = true }),
+                ("detail", { model.showNoticed = false; model.openEntryID = model.entries.first(where: { $0.kind == .reflection })?.id }),
+                ("still", { model.openEntryID = model.entries.first(where: { $0.kind == .still })?.id }),
+                ("letter", { model.openEntryID = nil; model.showLetter = true }),
+            ]
+            for (name, apply) in steps {
+                apply()
+                try? await Task.sleep(for: .seconds(2.5))
+                if let v = p.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
                 }
-                shot("\(dir)/safety-\(suffix).png", dark: dark, size: CGSize(width: 440, height: 520), SafetyCardView())
             }
             NSApp.terminate(nil)
         }
     }
-
-    private static func shot(_ path: String, dark: Bool, size: CGSize, _ view: some View) {
-        NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        let r = ImageRenderer(content: view.environment(AppModelBox.model!).frame(width: size.width, height: size.height)
-            .background(Tok.bg).environment(\.colorScheme, dark ? .dark : .light))
-        r.scale = 2
-        keep.append(r)
-        guard let cg = r.cgImage, let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return }
-        try? png.write(to: URL(fileURLWithPath: path))
-    }
 }
 
-/// ImageRenderer content needs the model in its environment; this hands it over without capturing in a generic closure.
-@MainActor
-enum AppModelBox {
-    static var model: AppModel?
+private extension Double {
+    func clamped(to r: ClosedRange<Double>) -> Double { self == 0 ? 20 : Swift.min(Swift.max(self, r.lowerBound), r.upperBound) }
 }
 #endif

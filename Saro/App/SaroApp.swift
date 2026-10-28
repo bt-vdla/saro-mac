@@ -14,10 +14,7 @@ struct SaroApp: App {
                     .task { await model.sweep() }
                     .task { CapturePanelController.shared.install(model) }
                     #if DOGFOOD
-                    .task {
-                        AppModelBox.model = model
-                        Snapshots.runIfRequested(model)
-                    }
+                    .task { Snapshots.runIfRequested(model) }
                     #endif
             case .failure(let error):
                 ContentUnavailableView("Saro couldn't open its journal", systemImage: "externaldrive.badge.exclamationmark",
