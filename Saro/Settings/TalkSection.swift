@@ -36,7 +36,16 @@ struct TalkSection: View {
             lines = Self.rewrites[next.sentence]
             guard lines == nil, Readiness.model().isReady else { return }
             // The rules show at once; the model's lines replace them once they pass the output gate and drift check.
-            let (tones, run) = await model.exclusive { await model.ai.tonePreview(next.sentence, localDay: next.day) }
+            let asked = await model.exclusive { () -> (tones: [Tone: String], run: AIRun)? in
+                // Openings that queued the same sentence meanwhile have nothing to ask once one has its rewrite.
+                guard Self.rewrites[next.sentence] == nil else { return nil }
+                return await model.ai.tonePreview(next.sentence, localDay: next.day)
+            }
+            guard let asked else {
+                if source == next { lines = Self.rewrites[next.sentence] }
+                return
+            }
+            let (tones, run) = asked
             try? await model.ledger.insertRun(run, inputs: next.inputs)
             // A busy or failed model is tried again next time, not kept as the rules' lines for the session.
             if run.status == "ok" { Self.rewrites[next.sentence] = tones }
