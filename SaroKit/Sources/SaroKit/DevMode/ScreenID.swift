@@ -23,6 +23,8 @@ public enum ScreenID: String, Sendable, Codable, CaseIterable, Identifiable {
     case onboardingFirstWeek = "onboarding.firstweek"
     case onboardingFindLight = "onboarding.light"
     case knows = "memory.knows"
+    case lens = "navigation.lens"
+    case datePicker = "navigation.datepicker"
 
     public var id: String { rawValue }
 }

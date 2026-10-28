@@ -31,6 +31,7 @@ enum Snapshots {
         p.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
             await seedReflection(model)
+            await seedHistory(model)
             try? await Task.sleep(for: .seconds(UserDefaults.standard.double(forKey: "SaroSnapshotDelay").clamped(to: 5...120)))
             let steps: [(String, @MainActor () -> Void)] = [
                 ("canvas", { model.selection = [] }),
@@ -146,9 +147,32 @@ enum Snapshots {
                 ("knows-why", { NotificationCenter.default.post(name: showWhy, object: nil) }),
                 ("knows-search", { model.memory.query = "anxious" }),
                 ("knows-deleted", {
-                    model.memory.query = ""
                     if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
                 }),
+                // Navigation: the time lens at each level, the date picker, the palette's start and an empty past day.
+                ("nav-lens-week", {
+                    model.pane = .day
+                    model.openLens(level: .week, opener: .key)
+                }),
+                ("nav-lens-month", { model.lens?.go(to: .month, how: .instant) }),
+                ("nav-lens-year", { model.lens?.go(to: .year, how: .instant) }),
+                ("nav-lens-focus", {
+                    model.lens?.go(to: .month, how: .instant)
+                    model.lens?.move(.pageUp)
+                }),
+                ("nav-datepicker", {
+                    model.lens?.close(how: .instant)
+                    model.datePickerOpen = true
+                }),
+                ("nav-palette", {
+                    model.datePickerOpen = false
+                    model.searchOpen = true
+                }),
+                ("nav-empty-past", {
+                    model.searchOpen = false
+                    model.go(to: LocalDay.adding(-200, to: LocalDay.today()))
+                }),
+                ("nav-today", { model.goToday() }),
                 // ⌘K's actions menu, then a day not yet loaded as it loads and as it couldn't be read, on its own ground
                 // (the canvas's own load is too quick to catch). These leave the live UI, so they come after its states.
                 ("actions", {
@@ -196,6 +220,22 @@ enum Snapshots {
             NSApp.terminate(nil)
         }
     }
+}
+
+/// Synthetic writings on a scatter of earlier days (none in the last four, which other states show), so the time lens has a
+/// history to draw; they go through the gate and reading like any entry (SR-28: synthetic text only).
+@MainActor private func seedHistory(_ model: AppModel) async {
+    let lines = ["Walked by the river after work.", "Slow morning, good coffee.", "Long call with an old friend.",
+                 "The team shipped the release.", "Rain all day; read on the sofa.", "Cooked dinner for everyone."]
+    for (i, back) in [5, 6, 8, 9, 12, 15, 16, 20, 23, 27, 31, 34, 40, 47, 55, 62, 70, 88, 120, 160].enumerated() {
+        let day = LocalDay.adding(-back, to: LocalDay.today())
+        let at = (LocalDay.date(day) ?? .now).addingTimeInterval(Double(i % 5) * 3600 - 2 * 3600)
+        let e = Entry(kind: .reflection, body: lines[i % lines.count], capturedAt: at, localDay: day)
+        try? await model.ledger.insertEntry(e)
+        if i % 3 == 0 { try? await model.ledger.insertEntry(Entry(kind: .reflection, body: lines[(i + 2) % lines.count], capturedAt: at.addingTimeInterval(5400), localDay: day)) }
+        model.process(e.id)
+    }
+    await model.reload()
 }
 
 /// The letter is due at once and the first week started two days ago; yesterday left two commitments open, and the day
