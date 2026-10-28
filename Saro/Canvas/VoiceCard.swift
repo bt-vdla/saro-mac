@@ -168,9 +168,9 @@ private struct VoicePanel: View {
 
     private var details: some View {
         let title = model.title(for: entry)
-        // The person's own summary (Edit Details) outranks Saro's (DR-04).
+        // The person's own summary (Edit Details) outranks Saro's (DR-04); either shows only when it adds something.
         let own = entry.summaryUser?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let summary = own.flatMap { $0.isEmpty ? nil : $0 } ?? model.summary(for: entry).flatMap {
+        let summary = (own.flatMap { $0.isEmpty ? nil : $0 } ?? model.summary(for: entry)).flatMap {
             Heuristics.summaryAddsSomething($0, title: title, transcript: sentences.map(\.text).joined(separator: " ")) ? $0 : nil
         }
         return VStack(alignment: .leading, spacing: 0) {
