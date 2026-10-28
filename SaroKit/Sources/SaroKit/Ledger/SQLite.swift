@@ -79,7 +79,8 @@ final class SQLite {
             case .null: sqlite3_bind_null(stmt, idx)
             case .int(let v): sqlite3_bind_int64(stmt, idx, v)
             case .real(let v): sqlite3_bind_double(stmt, idx, v)
-            case .text(let v): sqlite3_bind_text(stmt, idx, v, -1, Self.transient)
+            // An explicit length, so text holding a NUL isn't cut there.
+            case .text(let v): sqlite3_bind_text(stmt, idx, v, Int32(v.utf8.count), Self.transient)
             }
         }
         var rows: [Row] = []
@@ -93,7 +94,9 @@ final class SQLite {
                 switch sqlite3_column_type(stmt, c) {
                 case SQLITE_INTEGER: row[name] = .int(sqlite3_column_int64(stmt, c))
                 case SQLITE_FLOAT: row[name] = .real(sqlite3_column_double(stmt, c))
-                case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, c)))
+                case SQLITE_TEXT:
+                    let bytes = UnsafeRawBufferPointer(start: sqlite3_column_text(stmt, c), count: Int(sqlite3_column_bytes(stmt, c)))
+                    row[name] = .text(String(decoding: bytes, as: UTF8.self))
                 default: row[name] = .null
                 }
             }
