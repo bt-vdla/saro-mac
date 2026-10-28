@@ -282,33 +282,6 @@ public enum MemoryRules {
     // MARK: About you (memory.ts starterMemory)
 
     static let toneWord: [Tone: String] = [.gentle: "gentle", .direct: "direct", .neutral: "plain", .contemplative: "thoughtful"]
-    private static let you: [String: String] = ["myself": "yourself", "my": "your", "me": "you", "mine": "yours", "i'm": "you’re", "i": "you"]
-
-    /// Their words said back to them (memory.ts sayBack): "my" is "your", "kinder to me" is "kinder to yourself".
-    public static func sayBack(_ s: String) -> String {
-        var t = s.replacingOccurrences(of: #"(?i)\b((?:kind|kinder|nice|nicer|gentle|gentler|easy|easier|hard|harder|soft|softer|honest|patient|good|better)\s+(?:to|on|with)|(?:feel|be|more)\s+like|(?:time|space|room)\s+for)\s+me\b"#,
-                                       with: "$1 myself", options: .regularExpression)
-            .replacingOccurrences(of: #"(?i)\bme[\s-]time\b"#, with: "time for myself", options: .regularExpression)
-            .replacingOccurrences(of: #"(?i)\bour(s?)\b"#, with: "your$1", options: .regularExpression)
-        t = toYou(t)
-        return t.replacingOccurrences(of: #"(?i)\byou am\b"#, with: "you are", options: .regularExpression)
-            .replacingOccurrences(of: #"(?i)\byou was\b"#, with: "you were", options: .regularExpression)
-    }
-
-    static func toYou(_ s: String) -> String {
-        let re = try! NSRegularExpression(pattern: #"(?i)\b(?:myself|mine|my|me|i['’]m|i)\b"#)
-        let ns = s as NSString
-        var out = ""
-        var at = 0
-        for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
-            out += ns.substring(with: NSRange(location: at, length: m.range.location - at))
-            let w = ns.substring(with: m.range)
-            out += you[w.lowercased().replacingOccurrences(of: "’", with: "'")] ?? w
-            at = NSMaxRange(m.range)
-        }
-        return out + ns.substring(from: at)
-    }
-
     private static func capitalize(_ s: String) -> String { s.prefix(1).uppercased() + s.dropFirst() }
     private static func isAre(_ noun: String) -> String { noun.range(of: #"[^s]s$"#, options: [.regularExpression, .caseInsensitive]) != nil ? "are" : "is" }
     private static func titleCase(_ s: String) -> String {
@@ -333,48 +306,6 @@ public enum MemoryRules {
         return after.firstMatch(of: /^[\s,:\-]*([\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*)/).map { String($0.1) }
     }
 
-    private static let goalLead = try! NSRegularExpression(pattern: #"(?i)(?:\b(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+(?:(?:just|really|also|still|honestly|genuinely|actually|finally|so)\s+)*(?:trying|going|hoping|planning)|\b(?:i|we)(?:['’]d|\s+would)\s+(?:(?:just|really|also|still|honestly|genuinely|actually|finally|so)\s+)*(?:like|love)|\b(?:i|we)\s+(?:(?:just|really|also|still|honestly|genuinely|actually|finally|so)\s+)*(?:(need|have)|want|hope|plan)|\b(?:trying|hoping)|^\s*)\s*to\s+"#)
-    private static let describes = try! NSRegularExpression(pattern: #"^(?:calm|kind|kinder|present|patient|happy|healthy|fit|strong|brave|open|honest|free|sure|tidy|steady|ready|easy|chill|gentle|humble|loyal|aware|awake|alive|sober|tired|lonely|friendly|lovely|busy|lazy|angry|grumpy|sleepy|chatty|funny|loving|caring|understanding|forgiving|outgoing|easygoing|myself|like)$|^.{2,}(?:ous|ful|less|ish|[^e]ed)$|^.{3,}(?:ive|ent|ant|able|ible|ial|ical|nal|ual|istic|etic|atic|ntic)$"#)
-    private static let openingVerb = words("be feel get become stay stop start worry sleep eat drink spend move read write walk run exercise stress care think overthink talk listen laugh smile complain travel cook give take say see go do make find learn practise practice save trust enjoy")
-    private static let filler = words("lol lmao haha hahaha tbh honestly please ok okay idk")
-    private static let unfinished = words("who whom whose which that where")
-    private static let empty = words("be able get have do feel go to")
-
-    /// A goal pick said back as one line: "You want to be kinder to yourself.", or nil when it can't be a whole sentence.
-    // ponytail: the short form of memory.ts goalPhrase (lead, more/less, opening verb, clause end); onboarding's
-    // SayBack.goalPhrase is the full grammar, and replaces this when it merges.
-    static func goalLine(_ span: String, answer: String?) -> String? {
-        var text = span.trimmingCharacters(in: .whitespaces)
-        if let a = answer, let r = a.range(of: span) {
-            text += a[r.upperBound...].prefix { !",.;:!?\n".contains($0) }
-        }
-        let ns = text as NSString
-        var need = false
-        var head = ""
-        if let m = goalLead.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)), m.range.location == 0, m.range.length > 0,
-           !ns.substring(with: m.range).trimmingCharacters(in: .whitespaces).isEmpty {
-            need = m.range(at: 1).location != NSNotFound
-            head = "to "
-            text = ns.substring(from: NSMaxRange(m.range))
-        }
-        var tokens = text.split(whereSeparator: \.isWhitespace).map(String.init)
-        if let i = tokens.firstIndex(where: { ["and", "but"].contains($0.lowercased()) }), i > 0 { tokens = Array(tokens[..<i]) }
-        if head.isEmpty, let first = tokens.first?.lowercased() {
-            if ["more", "less", "fewer"].contains(first) {
-                guard tokens.count > 1 else { return nil }
-                let second = tokens[1].lowercased().trimmingCharacters(in: .punctuationCharacters)
-                if describes.firstMatch(in: second, range: NSRange(location: 0, length: (second as NSString).length)) != nil, first != "fewer" { head = "to be " }
-            } else if openingVerb.contains(first) { head = "to " }
-        }
-        var said = sayBack(tokens.joined(separator: " ").replacingOccurrences(of: #"[.!?]+$"#, with: "", options: .regularExpression))
-            .split(separator: " ").map(String.init)
-        while let last = said.last?.lowercased(), filler.contains(last) || dangling.contains(last) { said.removeLast() }
-        guard let last = said.last?.lowercased(), !unfinished.contains(last), !said.allSatisfy({ empty.contains($0.lowercased()) }) else { return nil }
-        if said.count >= 1, ["more", "less"].contains(last), said.dropLast().last.map({ ["be", "become", "get", "stay"].contains($0.lowercased()) }) ?? true { return nil }
-        let goal = said.joined(separator: " ")
-        return MemoryList.clip("You \(need ? "need" : "want") \(head)\(goal.prefix(1).lowercased() + goal.dropFirst()).", MemoryList.maxChars)
-    }
-
     /// One onboarding pick as a memory line, from what the extractor took it to mean. A theme, mood or named person shares
     /// its key with the one learned from entries, so the two never both show.
     static func starterLine(_ pick: Pick, answer: String?) -> (key: String, text: String)? {
@@ -394,14 +325,17 @@ public enum MemoryRules {
             if let m = Mood.allCases.first(where: { $0.rawValue.lowercased() == lower }) {
                 return ("mood:\(m.rawValue.lowercased())", "You’ve been feeling \(m.rawValue.lowercased()).")
             }
-            return ("starter:theme:\(lower)", "\(capitalize(toYou(words))) \(isAre(words)) on your mind.")
+            return ("starter:theme:\(lower)", "\(capitalize(SayBack.toYou(words))) \(isAre(words)) on your mind.")
         case .time:
             let when = clock(value).map { "around \($0)" } ?? (value == "weekends" ? "at weekends" : value == "commute" ? "on your commute" : nil)
             return when.map { ("starter:time", "You like to reflect \($0).") }
         case .goal:
-            let said = goalLead.firstMatch(in: value, range: NSRange(location: 0, length: (value as NSString).length))
-                .flatMap { $0.range.location == 0 ? (value as NSString).substring(from: NSMaxRange($0.range)) : nil } ?? value
-            return goalLine(value, answer: answer).map { ("starter:goal:\(toYou(said.replacingOccurrences(of: #"[.!?]+$"#, with: "", options: .regularExpression)).lowercased())", $0) }
+            let said = SayBack.goalLead.first(value).flatMap { $0.range.location == 0 ? (value as NSString).substring(from: NSMaxRange($0.range)) : nil } ?? value
+            // The same line the first prompt says back, so a goal reads alike wherever it's shown.
+            return SayBack.goalPhrase(pick.text, answer: answer).map {
+                ("starter:goal:\(SayBack.toYou(said.replacingOccurrences(of: #"[.!?]+$"#, with: "", options: .regularExpression)).lowercased())",
+                 "You \($0.need ? "need" : "want") \($0.phrase).")
+            }
         case .tone:
             return Tone(rawValue: lower).flatMap { toneWord[$0] }.map { ("starter:tone", "You’d like Saro to be \($0) with you.") }
         }

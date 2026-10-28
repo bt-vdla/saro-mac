@@ -28,7 +28,7 @@ public enum SayBack {
     // What a goal opens on: "I want to", "I just need to", "I'd love to", "I'm trying to", "we want to", "trying to", or
     // "to" opening the clause. Group 1 is set when it's a need.
     private static let adverbs = #"(?:(?:just|really|also|still|honestly|genuinely|actually|finally|so)\s+)*"#
-    private static let goalLead = Rx(#"(?:\b(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+"# + adverbs + #"(?:trying|going|hoping|planning)|\b(?:i|we)(?:['’]d|\s+would)\s+"# + adverbs + #"(?:like|love)|\b(?:i|we)\s+"# + adverbs + #"(?:(need|have)|want|hope|plan)|\b(?:trying|hoping)|^\s*)\s*to\s+"#, .caseInsensitive)
+    static let goalLead = Rx(#"(?:\b(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+"# + adverbs + #"(?:trying|going|hoping|planning)|\b(?:i|we)(?:['’]d|\s+would)\s+"# + adverbs + #"(?:like|love)|\b(?:i|we)\s+"# + adverbs + #"(?:(need|have)|want|hope|plan)|\b(?:trying|hoping)|^\s*)\s*to\s+"#, .caseInsensitive)
 
     private static func words(_ s: String) -> Set<String> { Set(s.split(separator: " ").map(String.init)) }
     private static let dangling = words("a an the to of for with at in on by from into onto about until till than as because if when while whether and but or nor so every each very really just my our your their its")

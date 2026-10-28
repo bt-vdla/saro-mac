@@ -254,9 +254,13 @@ private func rows(_ entries: [String], now: Date = .now) -> [MemoryObservation] 
     // Learned from entries wins over the onboarding line with the same meaning.
     let both = MemoryList.derive(rows(["Worked late on the launch again.", "Another meeting about work."]), starter: starter)
     #expect(texts(both.filter { $0.key == "theme:work" }) == ["Work has been on your mind."])
-    #expect(MemoryRules.goalLine("I want to be kinder to me", answer: nil) == "You want to be kinder to yourself.")
-    #expect(MemoryRules.goalLine("More sleep", answer: nil) == "You want more sleep.")
-    #expect(MemoryRules.goalLine("I want to be the kind of person who", answer: nil) == nil)
+    // A goal is said back as onboarding's SayBack says it, its key unchanged.
+    let goal = { (t: String) in MemoryRules.starterLine(Pick(kind: .goal, text: t, value: t, start: 0, end: (t as NSString).length, q: 4), answer: t) }
+    #expect(goal("I want to be kinder to me")?.text == "You want to be kinder to yourself.")
+    #expect(goal("I want to be kinder to me")?.key == "starter:goal:be kinder to you")
+    #expect(goal("More sleep")?.text == "You want more sleep.")
+    #expect(goal("I just need to rest and stop overthinking")?.text == "You need to rest and stop overthinking.")
+    #expect(goal("I want to be the kind of person who") == nil)
     #expect(MemoryRules.nameOf("שמי נועה", answer: nil) == "נועה")
 }
 

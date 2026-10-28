@@ -249,7 +249,7 @@ struct DevNotes {
                         "SR-15: a verdict that doesn't clear an entry deletes what was learned from it; Delete and Forget delete the words, keeping only key hashes",
                         "Export everything carries a readable memories array; ⌘K lists matching memories and jumps to the line"],
                 stubbed: ["What you're working on needs reflection's commitment table (v4); it reads it once it exists",
-                          "About you lines use a short goalPhrase until onboarding's SayBack merges; they are read from the starter context, so the graph doesn't show them",
+                          "About you lines (goals said back by onboarding's SayBack) are read from the starter context, so the graph doesn't show them",
                           "Feeding prompts: knownLabels is ready; reflection's setPersonalization reads it",
                           "Settings: WhatSaroKnowsView(embedded: true) is ready for the settings package to place"],
                 issues: ["Pausing is recorded per window; text gated while paused is learned once memory is back on only if it was written outside the pause",
