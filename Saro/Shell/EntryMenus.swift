@@ -162,7 +162,7 @@ struct CanvasMenu: View {
         Menu {
             Button("Moment", systemImage: "video") { record(.moment) }
             Button("Voice Note", systemImage: "waveform") { record(.voice) }
-            Button("Still…", systemImage: "photo") { pickStill() }
+            Button("Still…", systemImage: "photo") { model.pickStill(at: at) }
             Button("Reflection", systemImage: "text.alignleft") { Task { await model.newWriting(at: at) } }
         } label: {
             Label("New", systemImage: "plus.circle")
@@ -175,25 +175,11 @@ struct CanvasMenu: View {
         Button("Export Day as Image…", systemImage: "photo.on.rectangle") { Task { await model.exportDayImage() } }
     }
 
-    // ponytail: a recording lands where Saro places new cards, not at the point; the turn's rows are capture's to make.
+    /// The recording's card lands where the menu opened.
     private func record(_ kind: EntryKind) {
         model.pane = .day
         model.recorderKind = kind
-    }
-
-    private func pickStill() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = true
-        panel.message = "Choose photos to keep as stills. Location data is removed."
-        guard panel.runModal() == .OK else { return }
-        let urls = panel.urls, at = at
-        Task {
-            for (i, url) in urls.enumerated() {
-                guard let data = try? Data(contentsOf: url) else { continue }
-                await model.importStill(data, origin: "picked", at: at.map { CGPoint(x: $0.x + CGFloat(i) * 30, y: $0.y + CGFloat(i) * 30) })
-            }
-        }
+        model.recorderLandsAt = at
     }
 }
 

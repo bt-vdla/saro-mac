@@ -79,8 +79,11 @@ final class AppModel {
     /// Non-nil while the in-window recorder is up.
     var recorderKind: EntryKind? {
         didSet {
-            // Only the bar button that opens it sets this, just after.
-            if recorderKind != oldValue { recorderGrows = false }
+            // Only the bar button (or the background menu) that opens it sets these, just after.
+            if recorderKind != oldValue {
+                recorderGrows = false
+                recorderLandsAt = nil
+            }
             guard recorderKind != nil else { return }
             openVoiceID = nil
             replay.exit(animated: false)
@@ -88,6 +91,8 @@ final class AppModel {
     }
     /// A click on the recorder's bar button opened it: it grows out of that button and closes back into it (morph.ts).
     var recorderGrows = false
+    /// The background menu's New ▸ Moment or Voice Note: where, in the day's world space, the recording's card lands.
+    var recorderLandsAt: CGPoint?
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false
@@ -343,8 +348,8 @@ final class AppModel {
         go(to: day, animation: PrefsStore.shared.reduceMotionEffective ? Motion.fade : Motion.surface)
     }
 
-    /// Adds photos chosen in an open panel as stills on the day on screen.
-    func pickStill() {
+    /// Adds photos chosen in an open panel as stills on the day on screen, fanned from `at` when given.
+    func pickStill(at point: CGPoint? = nil) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
@@ -352,8 +357,9 @@ final class AppModel {
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
         Task {
-            for url in urls {
-                if let data = try? Data(contentsOf: url) { await importStill(data, origin: "picked", at: nil) }
+            for (i, url) in urls.enumerated() {
+                guard let data = try? Data(contentsOf: url) else { continue }
+                await importStill(data, origin: "picked", at: point.map { CGPoint(x: $0.x + CGFloat(i) * 30, y: $0.y + CGFloat(i) * 30) })
             }
         }
     }
@@ -380,6 +386,13 @@ final class AppModel {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await ledger.insertMedia(asset)
         try await ledger.insertEntry(e)
+        // The first turn's card goes where the background menu opened; later turns join its stack.
+        if turn == 1, kind == recorderKind, let p = recorderLandsAt {
+            recorderLandsAt = nil
+            let l = CardLayout(entryId: e.id, x: p.x, y: p.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, stackId: sessionId, userPlaced: true)
+            try await ledger.setLayouts([l])
+            if e.localDay == loadedDay { layouts[e.id] = l }
+        }
         return TurnTicket(entryId: e.id, mediaId: asset.id, url: url)
     }
 
