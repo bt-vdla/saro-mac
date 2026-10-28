@@ -33,6 +33,10 @@ struct FirstWeekView: View {
     @State private var pressed = -1
     @State private var announcement = ""
     @State private var monitor: Any?
+    /// The palette's change to the ritual hour, due mid-sweep; leaving cancels it, so it can't land after the clock is back.
+    @State private var palette: Task<Void, Never>?
+    /// While the time is being typed, Return is the pill's.
+    @State private var editingTime = false
     @FocusState private var weekFocused: Bool
     @AccessibilityFocusState private var titleFocused: Bool
 
@@ -107,11 +111,14 @@ struct FirstWeekView: View {
         minutes = keep ? prefs.ritualMinutes : suggestion.minutes
         previous = minutes
         weekdays = saved ? prefs.ritualWeekdays : Prefs.everyDay
+        let moved = prefs.ritualMinutes != minutes || prefs.ritualWeekdays != weekdays
         prefs.ritualMinutes = minutes
         prefs.ritualWeekdays = weekdays
         prefs.ritualSource = keep && minutes != suggestion.minutes ? .user : suggestion.source
         prefs.ritualSuggested = suggestion.minutes
         prefs.weekStartedOn = LocalDay.today()
+        // A replay whose answers suggest a new time moves reminders already on to it.
+        if moved { reschedule() }
         let fresh = Self.enteredFor != flow.starter.id
         Self.enteredFor = flow.starter.id
         still = !fresh || reduceMotion || reduceTransparency
@@ -124,10 +131,7 @@ struct FirstWeekView: View {
         }
         entrance = .now
         // The palette changes where the sweep crosses into the other half of the day, once, mid-sweep.
-        Task {
-            try? await Task.sleep(for: .seconds(WeekLight.sweep / 2))
-            Daylight.shared.replayHour = hour
-        }
+        setPalette(hour, after: WeekLight.sweep / 2)
         // The first click or key lands everything at rest.
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { event in
             MainActor.assumeIsolated { land() }
@@ -146,7 +150,16 @@ struct FirstWeekView: View {
     private func leave() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        palette?.cancel()
         Daylight.shared.replayHour = nil
+    }
+
+    private func setPalette(_ hour: Double, after seconds: Double) {
+        palette?.cancel()
+        palette = Task {
+            guard (try? await Task.sleep(for: .seconds(seconds))) != nil else { return }
+            Daylight.shared.replayHour = hour
+        }
     }
 
     /// 0–1 from `at` over `duration`, eased; 1 at rest.
@@ -332,10 +345,7 @@ struct FirstWeekView: View {
         prefs.ritualSource = m == suggestion.minutes ? suggestion.source : .user
         announcement = announce
         reschedule()
-        Task {
-            try? await Task.sleep(for: .seconds(0.3))
-            Daylight.shared.replayHour = Double(m) / 60
-        }
+        setPalette(Double(m) / 60, after: 0.3)
     }
 
     /// Esc puts the previous time back.
