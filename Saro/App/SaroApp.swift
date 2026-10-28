@@ -114,6 +114,13 @@ struct SaroCommands: Commands {
                 .keyboardShortcut(KeyboardShortcut(.lock))
                 .disabled(!PrefsStore.shared.lockEnabled || Locker.shared.locked)
         }
+        // The journal doesn't change under the lock: ⌘Z can't bring back a Move to Trash or a deleted memory behind it.
+        if Locker.shared.locked {
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") {}.keyboardShortcut("z").disabled(true)
+                Button("Redo") {}.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(true)
+            }
+        }
         CommandMenu("Entry") { EntryCommands(model: model).disabled(Locker.shared.locked) }
         CommandMenu("Go") {
             Group {
