@@ -161,13 +161,13 @@ extension Ledger {
             SELECT e.local_day AS d FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
             WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict = 'safety_hold'
             UNION SELECT local_day AS d FROM reflection_turn WHERE answer_verdict = 'safety_hold'
+            UNION SELECT local_day AS d FROM day_state WHERE mood_note_verdict = 'safety_hold'
             """).compactMap { $0.str("d") })
-        for s in try db.run("SELECT * FROM insight_snapshot WHERE kind='letter' AND from_day LIKE ? ORDER BY rowid", [.text(prefix + "%")])
-            .map(InsightSnapshot.init) where !held.contains(s.fromDay) {
-            guard let payload = try? JSONDecoder().decode(DayPayload.self, from: Data(s.payload.utf8)),
-                  let letter = Letter(reading: payload.reading, candidates: payload.quotes) else { continue }
-            // One letter a day: the newest kept.
-            days[s.fromDay, default: []].removeAll { $0.kind == .letter }
+        // The letter the day keeps now (a rewrite unkeeps the old one), as Reflection kept it.
+        for s in try db.run("""
+            SELECT s.* FROM insight_snapshot s JOIN day_state d ON d.letter_kept_snapshot_id = s.id WHERE s.kind='letter' AND d.local_day LIKE ?
+            """, [.text(prefix + "%")]).map(InsightSnapshot.init) where !held.contains(s.fromDay) {
+            guard let letter = try? JSONDecoder().decode(Letter.self, from: Data(s.payload.utf8)) else { continue }
             days[s.fromDay, default: []].append(Book.Piece(kind: .letter, minutes: nil, body: letter.paragraphs + [letter.question].compactMap { $0 }))
         }
         return days.map { Book.Day(day: $0.key, pieces: $0.value) }

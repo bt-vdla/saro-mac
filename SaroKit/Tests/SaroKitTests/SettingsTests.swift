@@ -542,17 +542,43 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(try await l.aiRunCount() == 1)
     }
 
-    @Test func bookLeavesOutHeldLetters() async throws {
+    /// A kept letter as Reflection keeps it (an encoded `Letter`).
+    func keep(_ l: Ledger, _ text: String, day: String = "2026-10-26") async throws -> InsightSnapshot {
+        let letter = try #require(Letter(reading: DayReading(mood: .calm, moodBasis: "chai", quoteIndexes: [], question: "What else?", narrative: text),
+                                         candidates: []))
+        let s = InsightSnapshot(kind: "letter", day: day, aiRunId: nil, generator: "heuristic", inputHash: nil,
+                                payload: String(decoding: try JSONEncoder().encode(letter), as: UTF8.self))
+        try await l.keepLetter(day: day, snapshot: s)
+        return s
+    }
+
+    @Test func bookHoldsTheLetterTheDayKeepsUnlessHeld() async throws {
         let l = try freshLedger()
         let page = try await seed(l)
-        let reading = DayReading(mood: .calm, moodBasis: "chai", quoteIndexes: [1], question: "What else?", narrative: "You had chai with Ravi.")
-        let payload = String(decoding: try JSONEncoder().encode(DayPayload(reading: reading, quotes: [], entryIds: [page.id])), as: UTF8.self)
-        try await l.insertSnapshot(InsightSnapshot(kind: "letter", day: "2026-10-26", aiRunId: nil, generator: "heuristic", inputHash: nil, payload: payload))
+        _ = try await keep(l, "You had chai with Ravi.")
         let html = Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026))
-        #expect(html.contains("Chai with Ravi.") && html.contains("Walked") && html.contains("You had chai with Ravi."))
+        #expect(html.contains("Chai with Ravi.") && html.contains("Walked") && html.contains("You had chai with Ravi.") && html.contains("What else?"))
+
+        // Rewritten and kept again: only the one kept now.
+        try await l.clearKept(day: "2026-10-26")
+        #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
+        _ = try await keep(l, "Rain, then chai.")
+        let rewritten = Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026))
+        #expect(rewritten.contains("Rain, then chai.") && !rewritten.contains("You had chai with Ravi."))
+
         try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(page.body!), safetyVersion: "t", layer: 1, verdict: "safety_hold", reasonCode: "x"))
         let held = Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026))
-        #expect(!held.contains("You had chai with Ravi.") && !held.contains("Saro’s letter"))
+        #expect(!held.contains("Rain, then chai.") && !held.contains("Saro’s letter"))
+    }
+
+    /// A letter kept on a day whose mood note was held later (an import, or a row from before the drop) stays out too.
+    @Test func bookLeavesOutADayHeldByItsMoodNote() async throws {
+        let l = try freshLedger()
+        _ = try await seed(l)
+        let s = try await keep(l, "You had chai with Ravi.")
+        try await l.setUserMood(day: "2026-10-26", label: .tender, note: "x", verdict: "safety_hold")
+        try await l.insertSnapshot(s)
+        #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
     }
 
     /// FR-EXP-02: export, import into an empty journal, same rows and files; importing again adds nothing.
