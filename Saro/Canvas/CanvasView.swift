@@ -109,6 +109,10 @@ struct DayView: View {
         .onChange(of: model.replayItems) { _, items in model.replay.update(items) }
         .onChange(of: model.replay.active) { _, on in if on { focused = true } }
         .onAppear { focused = true }
+        .task {
+            try? await Task.sleep(for: .seconds(2.5))
+            LensState.warm()
+        }
         .onChange(of: focused) { _, on in if !on { saveNudge() } }
         // Leaving the journal (another pane, or the window closed) ends the replay where it is and closes the open entry,
         // which would otherwise hide the chrome of a day view that comes back without its detail.
@@ -567,6 +571,7 @@ struct DayStage: View {
         let level = (pull < 1 ? lo * pull : camera.zoom) * factor
         pull = level < lo ? level / lo : 1
         pullAt = p
+        if pull < 1 { LensState.warm() }
         if pull < 0.7 {
             pull = 1
             settle?.cancel()

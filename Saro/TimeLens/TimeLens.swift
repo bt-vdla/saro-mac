@@ -152,6 +152,16 @@ final class LensState {
         Task { await load() }
     }
 
+    private static var warmed = false
+
+    /// Compiles the tiles' smear ahead of the first opening, at idle or on the first zoom-out, so opening the lens compiles
+    /// nothing (TimeLens.tsx's prefetch).
+    static func warm() {
+        guard !warmed else { return }
+        warmed = true
+        Task { try? await ShaderLibrary.lensSmear(.float2(0, 0)).compile(as: .layerEffect) }
+    }
+
     var focusDay: String { cal.days[focus].key }
     var unit: ClosedRange<Int> { cal.unit(focus, level) }
 
