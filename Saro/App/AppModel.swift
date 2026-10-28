@@ -714,6 +714,7 @@ struct Toast: Identifiable, Equatable {
 /// Writes synthetic speech to a file for the demo journal.
 enum DemoSpeech {
     private final class Sink: @unchecked Sendable {
+        var synth: AVSpeechSynthesizer?
         var file: AVAudioFile?
         let url: URL
         init(url: URL) { self.url = url }
@@ -722,22 +723,28 @@ enum DemoSpeech {
     /// Nonisolated: the synthesizer's buffer callback arrives off the main thread.
     nonisolated static func write(_ text: String, to url: URL) async -> Bool {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let synth = AVSpeechSynthesizer()
         let sink = Sink(url: url)
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            var done = false
-            synth.write(utterance) { buffer in
-                guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
-                    if !done { done = true; c.resume() }
-                    return
+            // The synthesizer blocks synchronously while it sets up (AXCommon's "unsafeForcedSync called from Swift
+            // Concurrent context"), so it starts on a plain queue, not a cooperative thread.
+            DispatchQueue.global().async {
+                let synth = AVSpeechSynthesizer()
+                sink.synth = synth
+                let utterance = AVSpeechUtterance(string: text)
+                utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+                var done = false
+                synth.write(utterance) { buffer in
+                    guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
+                        if !done { done = true; c.resume() }
+                        return
+                    }
+                    if sink.file == nil { sink.file = try? AVAudioFile(forWriting: sink.url, settings: pcm.format.settings) }
+                    try? sink.file?.write(from: pcm)
                 }
-                if sink.file == nil { sink.file = try? AVAudioFile(forWriting: sink.url, settings: pcm.format.settings) }
-                try? sink.file?.write(from: pcm)
             }
         }
         sink.file = nil
+        sink.synth = nil
         return FileManager.default.fileExists(atPath: url.path)
     }
 }
