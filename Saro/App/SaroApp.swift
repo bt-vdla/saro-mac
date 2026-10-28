@@ -20,6 +20,7 @@ struct SaroApp: App {
                     .task { CapturePanelController.shared.install(model) }
                     #if DOGFOOD
                     .task { Snapshots.runIfRequested(model) }
+                    .task { Scenarios.runIfRequested(model) }
                     #endif
             case .failure(let error):
                 ContentUnavailableView("Saro couldn't open its journal", systemImage: "externaldrive.badge.exclamationmark",

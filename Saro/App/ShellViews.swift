@@ -110,18 +110,23 @@ extension AppModel {
         panel.prompt = "Export Here"
         panel.message = "Choose where to put the Saro export. It contains your words and recordings."
         guard panel.runModal() == .OK, let dir = panel.url else { return }
-        let name = "Saro-\(LocalDay.today()).saroexport"
-        let dest = dir.appending(path: name, directoryHint: .isDirectory)
         do {
-            if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
-            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-            try await ledger.exportJSON(to: dest.appending(path: "saro.json"))
-            // Off the main actor: every recording is copied, which would freeze the window for as long as that takes.
-            let media = ledger.mediaURL
-            try await Task.detached { try FileManager.default.copyItem(at: media, to: dest.appending(path: "Media")) }.value
-            show(Toast("Exported to \(dir.lastPathComponent)/\(name)"))
+            let dest = try await export(to: dir)
+            show(Toast("Exported to \(dir.lastPathComponent)/\(dest.lastPathComponent)"))
         } catch {
             show(Toast("Export failed: \(error.localizedDescription)", style: .error))
         }
+    }
+
+    /// Writes `Saro-<today>.saroexport` into `dir`, replacing an earlier one of that name.
+    func export(to dir: URL) async throws -> URL {
+        let dest = dir.appending(path: "Saro-\(LocalDay.today()).saroexport", directoryHint: .isDirectory)
+        if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        try await ledger.exportJSON(to: dest.appending(path: "saro.json"))
+        // Off the main actor: every recording is copied, which would freeze the window for as long as that takes.
+        let media = ledger.mediaURL
+        try await Task.detached { try FileManager.default.copyItem(at: media, to: dest.appending(path: "Media")) }.value
+        return dest
     }
 }

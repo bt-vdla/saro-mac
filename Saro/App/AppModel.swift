@@ -83,13 +83,13 @@ final class AppModel {
     private var queue: [String] = []
     /// Days to read once the queued entries are done (a trash, a restore, the inspector opening).
     private var unreadDays: Set<String> = []
-    private var working = false
+    private(set) var working = false
     private var current: String?
     private var navigation = 0
     /// Bumped by every drag, stack and grid, so a load that read the layouts before one doesn't put the cards back.
     private var layoutEdits = 0
-    /// The calendar day as of the last midnight, wake or activation.
-    private var today = LocalDay.today()
+    /// The calendar day as of the last midnight, wake or activation. Internal so a scenario can stand on the far side of midnight.
+    var today = LocalDay.today()
     private static var swept = false
 
     init(ledger: Ledger) {
@@ -443,6 +443,10 @@ final class AppModel {
     /// A refusal doesn't stop anything: the recording is kept and shows "Transcript not ready" if Speech says no.
     /// Nonisolated so the handler, which Speech may call off the main queue, isn't main-actor-isolated (Swift 6 would trap).
     private nonisolated static func askForSpeechOnce() async {
+        #if DOGFOOD
+        // Scenarios run unattended, often at night: no system prompt.
+        if UserDefaults.standard.string(forKey: "SaroScenario") != nil { return }
+        #endif
         guard SFSpeechRecognizer.authorizationStatus() == .notDetermined else { return }
         _ = await withCheckedContinuation { (c: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
