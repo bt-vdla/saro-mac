@@ -147,11 +147,18 @@ extension SafetyGate {
     }
 
     private static let negated = ["dont", "didnt", "doesnt", "never", "not"]
-    private static let housing = ["in", "with", "near", "there", "here", "at", "on", "together", "alone", "by", "next", "so",
-                                  "far", "somewhere", "abroad", "close"]
+    // DRAFT: clinician review (SR-32), safety-2 — "next" and "so" as whole phrases: bare, they cancelled "don't want to
+    // live next year" and "don't want to live so I'm writing this down".
+    private static let housing = ["in", "with", "near", "there", "here", "at", "on", "together", "alone", "by", "next door",
+                                  "next to", "so far", "so close", "far", "somewhere", "abroad", "close"]
+    // DRAFT: clinician review (SR-32), safety-2 — risk continuations of a guard word; each hits whatever the guard says.
+    private static let liveRisk = ["at all", "in this world", "on this earth", "on this planet", "with this pain", "with the pain",
+                                   "with this feeling", "with myself", "in pain"]
+    private static let wakeRisk = ["at all", "yet again", "yet another", "for another day"]
     // DRAFT: clinician review (SR-32), safety-2 — "late" onwards, as whole phrases so "wake up the next day" and
-    // "wake up with this feeling" still hit.
-    private static let wakeGuard = ["early", "at", "before", "for", "so", "too", "yet", "late", "the house", "the whole house"]
+    // "wake up with this feeling" still hit; "so" and "too" only before "early" or "late".
+    private static let wakeGuard = ["early", "at", "before", "for", "so early", "so late", "too early", "too late", "yet", "late",
+                                    "the house", "the whole house"]
         + combos(["the", "my", "our", "his", "her"], ["kids", "baby", "family", "neighbours", "neighbors"])
         + combos(["with a"], ["migraine", "headache", "hangover", "cold", "fever"])
     // DRAFT: clinician review (SR-32), safety-2 — "in" dropped: it cancelled "cut myself in the bathroom" and
@@ -175,6 +182,8 @@ extension SafetyGate {
         phrases(["don't want to live", "do not want to live", "don't wanna live"], notAfter: housing),
         phrases(["don't want to be alive", "do not want to be alive", "don't want to exist", "do not want to exist"]),
         phrases(["don't want to wake up", "do not want to wake up"], notAfter: wakeGuard),
+        phrases(combos(["dont want to live", "do not want to live", "dont wanna live"], liveRisk)),
+        phrases(combos(["dont want to wake up", "do not want to wake up", "dont wanna wake up", "do not wanna wake up"], wakeRisk)),
         phrases(["don't want to be here", "do not want to be here", "don't wanna be here"]),
         phrases(["no reason to live", "nothing to live for", "no point in living", "no point living", "no point anymore",
                  "no point to anything", "no point in anything",
@@ -305,11 +314,12 @@ extension SafetyGate {
     ])
 
     // safety.py's one pattern with a gap: "wish I could just not wake up". Written in normalised form.
-    // DRAFT: clinician review (SR-32), safety-2 — the -ing and "pray" triggers, and "I don't / won't / wouldn't wake up".
+    // DRAFT: clinician review (SR-32), safety-2 — the -ing and "pray" triggers, and "I (just) don't / won't / wouldn't wake up".
     // A " , " clause break counts as one character of the 30, as the one space it was before the normaliser kept pauses.
     private static let wakeRegex = try! NSRegularExpression(
         pattern: "\\b(?:wish|wishing|hope|hoping|want|wanting|pray|praying)\\b(?:[^.,]| , ){0,30}"
-            + "\\b(?:not|never|i dont|i wont|i wouldnt|i didnt) wake up\\b(?! (?:\(wakeGuard.joined(separator: "|")))\\b)")
+            + "\\b(?:not|never|i (?:just )?(?:dont|wont|wouldnt|didnt)) wake up\\b"
+            + "(?! (?!(?:\(wakeRisk.joined(separator: "|")))\\b)(?:\(wakeGuard.joined(separator: "|")))\\b)")
 
     // P0 draft (SR-06): broad on purpose. A hit only blocks quote-backs and heuristic questions until layer 2 reads the entry.
     private static let cautionIndex = index([
