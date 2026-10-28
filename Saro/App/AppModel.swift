@@ -100,6 +100,9 @@ final class AppModel {
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
     private var queue: [String] = []
+    /// Cleared entries the memory extractor hasn't read: learned one at a time, only while nothing else waits.
+    private var backlog: [String] = []
+    private var draining = false
     /// Refreshes and gate checks waiting their turn behind the entries (§11.7: one model call at a time).
     private var jobs: [@MainActor () async -> Void] = []
     /// Days to read once the queued entries are done (a trash, a restore, the inspector opening).
@@ -468,10 +471,17 @@ final class AppModel {
 
     /// Works the queue until it is empty, re-reading each touched day; work that arrives meanwhile is picked up.
     private func drain() {
-        guard !working else { return }
-        working = true
+        guard !draining else { return }
+        draining = true
         Task {
             repeat {
+                // The memory backfill waits behind everything else, and no day waits on it.
+                let busy = !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty
+                if working != busy { working = busy }
+                if !busy, !backlog.isEmpty {
+                    await memory.learn(entryId: backlog.removeFirst())
+                    continue
+                }
                 var days = unreadDays
                 unreadDays = []
                 while !queue.isEmpty {
@@ -486,7 +496,8 @@ final class AppModel {
                 while !jobs.isEmpty { await jobs.removeFirst()() }
                 // Read back while still working, so a reading never shows as missing between landing and the reload.
                 if queue.isEmpty, unreadDays.isEmpty, jobs.isEmpty { await reload() }
-            } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty
+            } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty || !backlog.isEmpty
+            draining = false
             working = false
             // A hold on a day hides its lines at once (SR-16), wherever What Saro knows is showing.
             await memory.load()
@@ -569,7 +580,8 @@ final class AppModel {
             if e.processingStatus == ProcessingStatus.recording { try? await ledger.setProcessingStatus(id: e.id, ProcessingStatus.pending) }
             process(e.id)
         }
-        for id in await memory.unlearned() { process(id) }
+        backlog = await memory.unlearned()
+        drain()
         await regateWaiting()
         await reload()
     }
