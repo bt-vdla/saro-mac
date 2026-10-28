@@ -42,8 +42,8 @@ private func fillEveryTable(_ l: Ledger) async throws -> Entry {
     try await l.appendScreenNote(ScreenNote(screenId: "canvas", note: "spacing", appVersion: "0.1.0"))
     let now = SQLValue.text(Date.now.iso)
     try await l.run("""
-        INSERT INTO observation (id, entry_id, ai_run_id, source, kind, key, label, quote, field, span_start, span_end, text_sha256, local_day, created_at)
-        VALUES ('o1', ?, ?, 'extractor', 'theme', 'plants', 'Plants', 'the plants got water', 'body', 22, 42, 'x', ?, ?)
+        INSERT INTO observation (id, entry_id, ai_run_id, source, kind, key, key_sha256, label, quote, field, span_start, span_end, text_sha256, local_day, created_at)
+        VALUES ('o1', ?, ?, 'extractor', 'theme', 'plants', 'x', 'Plants', 'the plants got water', 'body', 22, 42, 'x', ?, ?)
         """, [.text(e.id), .text(runId), .text(e.localDay), now])
     try await l.run("INSERT INTO observation_retraction (observation_id, reason, created_at) VALUES ('o1', 'user_edited', ?)", [now])
     try await l.run("INSERT INTO day_state (local_day, updated_at) VALUES (?, ?)", [.text(e.localDay), now])

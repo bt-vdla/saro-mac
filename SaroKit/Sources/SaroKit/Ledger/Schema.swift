@@ -3,7 +3,7 @@ import Foundation
 /// Schema migrations, indexed by `PRAGMA user_version`: position decides the version, the names are only labels.
 /// Append a new migration at the END for every change; never insert, reorder or edit a shipped one.
 enum Schema {
-    static let migrations: [String] = [v1, v3, stills, v4]
+    static let migrations: [String] = [v1, v3, stills, v4, v5]
 
     /// Tables that may only be inserted into (DR-05). The trigger aborts any UPDATE.
     static let appendOnly = [
