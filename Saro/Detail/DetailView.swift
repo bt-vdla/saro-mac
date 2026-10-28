@@ -447,7 +447,7 @@ private struct WritingEditor: View {
                 ZStack(alignment: .topLeading) {
                     if text.isEmpty {
                         Text("Write what’s on your mind…")
-                            .font(Typo.ui(17)).foregroundStyle(Tok.ink4).padding(.top, 1).padding(.leading, 5)
+                            .font(Typo.ui(17)).foregroundStyle(Tok.ink4).padding(.top, 1)
                             .allowsHitTesting(false)
                     }
                     TextEditor(text: $text)
@@ -458,6 +458,8 @@ private struct WritingEditor: View {
                         .scrollIndicators(.never)
                         .saroWritingTools()
                         .focused($writing)
+                        // The text view's 5 pt line padding: its words line up with the title.
+                        .padding(.leading, -5)
                 }
                 .frame(minHeight: 160)
                 if let caption = entry.captionUser?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {

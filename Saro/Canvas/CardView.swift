@@ -236,8 +236,10 @@ struct ReflectionFace: View {
                     TextEditor(text: $text)
                         .scrollContentBackground(.hidden)
                         .focused($focus, equals: .body)
+                        // The text view's 5 pt line padding: its words start where the card's text does.
+                        .padding(.leading, -5)
                         .overlay(alignment: .topLeading) {
-                            if text.isEmpty { Text("Write what’s on your mind…").foregroundStyle(Tok.ink4).padding(.leading, 5).allowsHitTesting(false) }
+                            if text.isEmpty { Text("Write what’s on your mind…").foregroundStyle(Tok.ink4).allowsHitTesting(false) }
                         }
                 } else {
                     Text(shownBody.isEmpty ? "Write what’s on your mind…" : shownBody)
