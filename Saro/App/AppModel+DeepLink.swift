@@ -18,6 +18,8 @@ extension AppModel {
 
     private func follow(_ link: DeepLink) async {
         let today = LocalDay.today()
+        // The lens is modal: a link lands on the day it names, not under the lens or into its tile.
+        lens?.close(how: .instant)
         switch link {
         case .capture(let kind):
             // A recording under way keeps going: the window only comes forward.
