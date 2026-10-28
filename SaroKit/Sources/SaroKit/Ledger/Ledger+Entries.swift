@@ -12,8 +12,13 @@ extension Ledger {
         try db.run("SELECT summary_user FROM entry WHERE id=?", [.text(id)]).first?.str("summary_user")
     }
 
+    /// A user edit, as `updateEntryText`: a changed summary is the person's words, so it goes back to pending for the gate.
     public func updateSummary(id: String, _ summary: String?) throws {
-        try db.run("UPDATE entry SET summary_user=?, updated_at=? WHERE id=?", [summary.sql, .text(Date.now.iso), .text(id)])
+        guard let old = try entry(id) else { return }
+        let status = Self.statusAfterEdit(old, body: old.body, titleUser: old.titleUser, captionUser: old.captionUser, summaryUser: summary)
+            ?? old.processingStatus
+        try db.run("UPDATE entry SET summary_user=?, processing_status=?, updated_at=? WHERE id=?",
+                   [summary.sql, .text(status), .text(Date.now.iso), .text(id)])
     }
 
     /// The entry this one was copied from, nil for an original.

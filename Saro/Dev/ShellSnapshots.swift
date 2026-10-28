@@ -14,6 +14,7 @@ enum ShellSnapshots {
         guard let voice = model.entries.first(where: { $0.kind == .voice }) else { return }
         Task {
             try? await model.ledger.updateSummary(id: voice.id, "The walk home through the park, and feeling lighter.")
+            model.process(voice.id)
             if let page = model.entries.first(where: { $0.kind == .reflection }) {
                 try? await model.ledger.updateEntryText(id: page.id, body: page.body ?? "", titleUser: page.titleUser,
                                                        captionUser: "Written on the bus home")

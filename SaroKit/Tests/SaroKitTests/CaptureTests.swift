@@ -652,3 +652,71 @@ private func sampleBuffer(_ pcm: AVAudioPCMBuffer, at frame: Int64) throws -> CM
     #expect(await p.gatedText(of: cleared) == "")
     #expect(await p.dayStatus(page.localDay) == .ready)
 }
+
+// MARK: What Edit details takes is gated with the words
+
+@Test func aPagesCaptionIsGatedWithItsWords() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let page = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(page)
+    await p.process(entryId: page.id) {}
+    #expect(await p.dayStatus(page.localDay) == .ready)
+
+    // Edit details ▸ Caption, as the sheet saves it.
+    try await l.updateEntryText(id: page.id, body: chai, titleUser: nil, captionUser: "No point anymore")
+    #expect(try await l.entry(page.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: page.id) {}
+    #expect(await p.dayStatus(page.localDay) == .held)
+    #expect(await p.readDay(page.localDay) == nil)
+
+    // A caption that clears: the lens hashes it as the gate did, so the page's mood shows there.
+    try await l.updateEntryText(id: page.id, body: chai, titleUser: nil, captionUser: "Tuesday tea")
+    await p.process(entryId: page.id) {}
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    #expect(try await l.lensEntries(from: page.localDay, to: page.localDay).first?.mood == .calm)
+}
+
+@Test func aVoiceNotesSummaryIsGatedWithItsWords() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let asset = MediaAsset(fileName: "2026-10-28/v/a.m4a", kind: .audio, origin: "recorded", state: "ready")
+    let v = Entry(kind: .voice, mediaId: asset.id)
+    try await l.insertMedia(asset)
+    try await l.insertEntry(v)
+    let said = chai.split(separator: " ").enumerated().map { TranscriptWord(text: String($1), startMs: $0 * 300, durMs: 300, confidence: 0.95) }
+    try await l.setTranscript(mediaId: asset.id, words: said, extractorVersion: "t")
+    await p.process(entryId: v.id) {}
+    #expect(await p.dayStatus(v.localDay) == .ready)
+
+    // Edit details ▸ Summary.
+    try await l.updateSummary(id: v.id, "No point anymore")
+    #expect(try await l.entry(v.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: v.id) {}
+    #expect(await p.dayStatus(v.localDay) == .held)
+    #expect(await p.ungatedTitles().isEmpty)
+}
+
+@Test func aTitleOnARecordingThatCouldntBeSavedIsStillGated() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let page = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(page)
+    await p.process(entryId: page.id) {}
+    let asset = MediaAsset(fileName: "2026-10-28/s/part-1.mov", kind: .video, origin: "recorded", state: "missing")
+    let m = Entry(kind: .moment, titleUser: "No point anymore", localDay: page.localDay, mediaId: asset.id)
+    try await l.insertMedia(asset)
+    try await l.insertEntry(m)
+    #expect(await p.ungatedTitles() == [m.id])
+    await p.process(entryId: m.id) {}
+    #expect(try await l.entry(m.id)?.processingStatus == ProcessingStatus.failed)
+    #expect(await p.ungatedTitles().isEmpty)
+    #expect(await p.dayStatus(page.localDay) == .held)
+
+    try await l.updateEntryText(id: m.id, body: nil, titleUser: "Tuesday", captionUser: nil)
+    await p.process(entryId: m.id) {}
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    // One that couldn't be transcribed still waits on its words, its title cleared or not.
+    try await l.setProcessingStatus(id: m.id, ProcessingStatus.transcriptUnavailable)
+    #expect(await p.dayStatus(page.localDay) == .awaitingCheck)
+}

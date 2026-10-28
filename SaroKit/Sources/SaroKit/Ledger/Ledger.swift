@@ -83,7 +83,8 @@ public actor Ledger {
     /// but never processed; one emptied of text has nothing left to read.
     public func updateEntryText(id: String, body: String?, titleUser: String?, captionUser: String?) throws {
         guard let old = try entry(id) else { return }
-        let status = Self.statusAfterEdit(old, body: body, titleUser: titleUser, captionUser: captionUser) ?? old.processingStatus
+        let status = Self.statusAfterEdit(old, body: body, titleUser: titleUser, captionUser: captionUser, summaryUser: old.summaryUser)
+            ?? old.processingStatus
         try db.run("UPDATE entry SET body=?, title_user=?, caption_user=?, processing_status=?, updated_at=? WHERE id=?",
                    [body.sql, titleUser.sql, captionUser.sql, .text(status), .text(Date.now.iso), .text(id)])
     }
@@ -101,12 +102,12 @@ public actor Ledger {
         return done.wait(timeout: .now() + 2) == .success
     }
 
-    /// Nil when the gated text is unchanged. A typed title is gated with the words (SR-01); a song's words are its title
-    /// and artist, not its link, and a recording's are its transcript, which no edit empties.
-    static func statusAfterEdit(_ old: Entry, body: String?, titleUser: String?, captionUser: String?) -> String? {
+    /// Nil when the gated text is unchanged. What was typed in Edit details is gated with the words (SR-01); a song's words
+    /// are its title and artist, not its link, and a recording's are its transcript, which no edit empties.
+    static func statusAfterEdit(_ old: Entry, body: String?, titleUser: String?, captionUser: String?, summaryUser: String?) -> String? {
         let (was, now): ([String?], [String?]) = switch old.kind {
         case .music: ([old.titleUser, old.captionUser], [titleUser, captionUser])
-        case .moment, .voice: ([old.titleUser], [titleUser])
+        case .moment, .voice: ([old.titleUser, old.summaryUser], [titleUser, summaryUser])
         case .reflection, .still: ([old.body, old.captionUser, old.titleUser], [body, captionUser, titleUser])
         }
         guard was != now else { return nil }
@@ -122,7 +123,8 @@ public actor Ledger {
     /// one actor turn, so none can slip between): the pass was for older text, and the edit still needs its gate.
     public func setProcessingStatus(_ status: String, startedFrom pass: Entry) throws {
         guard let now = try entry(pass.id) else { return }
-        try setProcessingStatus(id: pass.id, Self.statusAfterEdit(pass, body: now.body, titleUser: now.titleUser, captionUser: now.captionUser) ?? status)
+        try setProcessingStatus(id: pass.id, Self.statusAfterEdit(pass, body: now.body, titleUser: now.titleUser, captionUser: now.captionUser,
+                                                                   summaryUser: now.summaryUser) ?? status)
     }
 
     public func entry(_ id: String) throws -> Entry? {

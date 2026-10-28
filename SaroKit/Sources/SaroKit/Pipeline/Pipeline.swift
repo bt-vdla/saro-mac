@@ -45,9 +45,9 @@ public actor Pipeline {
         })
     }
 
-    /// The text the gate reads and an entry's verdict is for: its words, then the title typed for it, which is the
-    /// person's words too (SR-01, SR-17) but is never read or quoted. Nil while a still's hold stands (SR-15) and while a
-    /// recording has neither words nor a title.
+    /// The text the gate reads and an entry's verdict is for: its words, then what was typed for it in Edit details (a
+    /// title, a page's caption, a recording's summary), which are the person's words too (SR-01, SR-17) but are never
+    /// read or quoted. Nil while a still's hold stands (SR-15) and while a recording has neither words nor typed text.
     func text(for entry: Entry) async throws -> (text: String, field: String, confidence: Double?)? {
         let w = try await words(for: entry)
         let text = Self.titled(w?.text ?? "", entry)
@@ -66,8 +66,8 @@ public actor Pipeline {
         (try? await words(for: entry)).map { sha256($0.text) }
     }
 
-    /// Live entries with a typed title whose newest verdict isn't for their text with it, as a recording titled before
-    /// titles were gated (SR-01): the launch sweep gates them.
+    /// Live entries with typed text (a title, caption or summary) whose newest verdict isn't for their text with it, as one
+    /// typed before it was gated (SR-01): the launch sweep gates them.
     public func ungatedTitles() async -> [String] {
         var out: [String] = []
         for e in (try? await ledger.allEntries()) ?? [] where e.kind != .music && !Self.titled("", e).isEmpty {
@@ -77,12 +77,22 @@ public actor Pipeline {
         return out
     }
 
-    /// A typed title after the words, so their offsets hold; a song's title is already its words.
-    public static func titled(_ words: String, _ e: Entry) -> String { titled(words, title: e.titleUser, kind: e.kind) }
+    /// What was typed for an entry after its words, so their offsets hold: a title, a page's caption, a recording's
+    /// summary. A song's title and artist are already its words, as a still's caption is.
+    public static func titled(_ words: String, _ e: Entry) -> String {
+        titled(words, title: e.titleUser, caption: e.captionUser, summary: e.summaryUser, kind: e.kind)
+    }
 
-    static func titled(_ words: String, title: String?, kind: EntryKind) -> String {
-        guard kind != .music, let t = title?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return words }
-        return words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? t : words + "\n" + t
+    static func titled(_ words: String, title: String?, caption: String?, summary: String?, kind: EntryKind) -> String {
+        let typed: [String?] = switch kind {
+        case .music: []
+        case .still: [title]
+        case .reflection: [title, caption]
+        case .moment, .voice: [title, summary]
+        }
+        let extra = typed.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !extra.isEmpty else { return words }
+        return ([words].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } + extra).joined(separator: "\n")
     }
 
     /// The words an entry offers the model, the field they came from, and transcript confidence: what is read and quoted.
@@ -120,6 +130,12 @@ public actor Pipeline {
             try? await ledger.setProcessingStatus(s, startedFrom: entry)
             await onStatus()
         }
+        // A recording with nothing to transcribe still has its typed text gated (SR-01, SR-17), then keeps `final`.
+        func gateWhatIsThere(_ final: String) async {
+            if let src = try? await self.text(for: entry), !src.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               await self.verdict(entry, src, status: status) == nil { return }
+            await status(final)
+        }
 
         // 1. Transcript of record (moments and voice notes).
         if entry.kind == .moment || entry.kind == .voice {
@@ -127,7 +143,7 @@ public actor Pipeline {
             if media.state == "recording" { return }
             guard media.state == "ready" else {
                 // A file that went missing or failed can't be transcribed; don't leave the day waiting on it.
-                await status(ProcessingStatus.failed)
+                await gateWhatIsThere(ProcessingStatus.failed)
                 return
             }
             if (try? await ledger.transcript(mediaId: mid))?.isEmpty ?? true {
@@ -136,7 +152,7 @@ public actor Pipeline {
                     let r = try await Transcriber.transcribe(url: ledger.url(for: media))
                     try await ledger.setTranscript(mediaId: mid, words: r.words, extractorVersion: r.extractorVersion)
                 } catch {
-                    await status(ProcessingStatus.transcriptUnavailable)
+                    await gateWhatIsThere(ProcessingStatus.transcriptUnavailable)
                     return
                 }
             }
@@ -149,35 +165,14 @@ public actor Pipeline {
             return
         }
 
-        // 2. SafetyGate, cached by text hash and gate version (SR-17, SR-18).
+        // 2. SafetyGate.
         let hash = sha256(source.text)
-        var verdict = try? await ledger.cachedVerdict(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version)
-        // A verdict made while the model couldn't run is re-gated once it can (SR-17); one it couldn't read stands.
-        // ponytail: an OS update that adds the language re-gates only with a SAFETY_VERSION bump (SR-18).
-        if let v = verdict, v.verdict.hasPrefix("unavailable"), v.reasonCode != "unsupported_language", ai.status == .available { verdict = nil }
-        if verdict == nil {
-            await status(ProcessingStatus.gating)
-            guard let r = await gate.gate(text: source.text, transcriptConfidence: source.confidence) else {
-                // Rate-limited (§11.7): no verdict yet. Pending, so the next pass or the launch sweep checks it.
-                await status(ProcessingStatus.pending)
-                return
-            }
-            let row = SafetyVerdictRow(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version, layer: r.layer,
-                                       verdict: r.verdict, reasonCode: r.reasonCode)
-            try? await ledger.insertVerdict(row)
-            verdict = row
-        } else if let cached = verdict, (try? await ledger.verdicts(day: entry.localDay))?[entryId]?.id != cached.id {
-            // An edit back to text gated before: its verdict is restated as the newest, which the day and the canvas read.
-            let row = SafetyVerdictRow(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version, layer: cached.layer,
-                                       verdict: cached.verdict, reasonCode: cached.reasonCode)
-            try? await ledger.insertVerdict(row)
-            verdict = row
-        }
-        guard let v = verdict?.verdict, v == "clear" || v == "unavailable_clear" else {
+        guard let v = await verdict(entry, source, status: status)?.verdict else { return }
+        guard v == "clear" || v == "unavailable_clear" else {
             await status(ProcessingStatus.done)
             // A hold deletes a still's description (SR-15), which leaves its title to be gated alone. ponytail: a day
             // reading's layer-3 hold on a titled still leaves it stale until its next edit; the canvas keeps the hold shown.
-            if verdict?.verdict == "safety_hold", source.field == Self.aiCaptionField { await process(entryId: entryId, onStatus: onStatus) }
+            if v == "safety_hold", source.field == Self.aiCaptionField { await process(entryId: entryId, onStatus: onStatus) }
             return
         }
         // A song is gated, never read: nothing of it is ever quoted back. Nor is a title: a reading is of the words alone,
@@ -263,6 +258,34 @@ public actor Pipeline {
         }
     }
 
+    /// Step 2: the entry's verdict for `source`, cached by text hash and gate version (SR-17, SR-18). Nil while the gate is
+    /// rate-limited (§11.7), with the entry left pending so the next pass or the launch sweep checks it.
+    func verdict(_ entry: Entry, _ source: (text: String, field: String, confidence: Double?),
+                 status: (String) async -> Void) async -> SafetyVerdictRow? {
+        let hash = sha256(source.text)
+        var verdict = try? await ledger.cachedVerdict(entryId: entry.id, textSha256: hash, safetyVersion: SafetyGate.version)
+        // A verdict made while the model couldn't run is re-gated once it can (SR-17); one it couldn't read stands.
+        // ponytail: an OS update that adds the language re-gates only with a SAFETY_VERSION bump (SR-18).
+        if let v = verdict, v.verdict.hasPrefix("unavailable"), v.reasonCode != "unsupported_language", ai.status == .available { verdict = nil }
+        if let cached = verdict {
+            guard (try? await ledger.verdicts(day: entry.localDay))?[entry.id]?.id != cached.id else { return cached }
+            // An edit back to text gated before: its verdict is restated as the newest, which the day and the canvas read.
+            let row = SafetyVerdictRow(entryId: entry.id, textSha256: hash, safetyVersion: SafetyGate.version, layer: cached.layer,
+                                       verdict: cached.verdict, reasonCode: cached.reasonCode)
+            try? await ledger.insertVerdict(row)
+            return row
+        }
+        await status(ProcessingStatus.gating)
+        guard let r = await gate.gate(text: source.text, transcriptConfidence: source.confidence) else {
+            await status(ProcessingStatus.pending)
+            return nil
+        }
+        let row = SafetyVerdictRow(entryId: entry.id, textSha256: hash, safetyVersion: SafetyGate.version, layer: r.layer,
+                                   verdict: r.verdict, reasonCode: r.reasonCode)
+        try? await ledger.insertVerdict(row)
+        return row
+    }
+
     // MARK: Day
 
     public func dayStatus(_ day: String) async -> DayStatus {
@@ -285,8 +308,12 @@ public actor Pipeline {
                 // A still's standing hold counts as it is; a recording with neither words nor a title has nothing to hold.
                 if src == nil, e.kind != .still { continue }
                 let state = EntryState(verdict: v.verdict)
-                // A song's words, or a title alone, can hold the day but leave nothing to read.
-                if e.kind == .music || src?.text == Self.titled("", e), state == .clear || state == .modelUnavailable { continue }
+                // A song's words, or typed text alone, can hold the day but leave nothing to read; a recording that
+                // couldn't be transcribed still waits on its words.
+                if e.kind == .music || src?.text == Self.titled("", e), state == .clear || state == .modelUnavailable {
+                    if e.processingStatus == ProcessingStatus.transcriptUnavailable { states.append(.awaitingCheck) }
+                    continue
+                }
                 states.append(state)
                 continue
             }

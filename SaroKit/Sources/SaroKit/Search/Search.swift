@@ -69,7 +69,7 @@ extension Ledger {
     func searchDocs() throws -> [SearchDoc] {
         let held = try heldDays()
         let rows = try db.run("""
-            SELECT e.id, e.kind, e.local_day, e.captured_at, e.title_user, e.caption_user, e.body, m.duration_ms,
+            SELECT e.id, e.kind, e.local_day, e.captured_at, e.title_user, e.caption_user, e.summary_user, e.body, m.duration_ms,
               v.verdict, v.text_sha256, r.input_hash, a.title AS ai_title, a.summary AS ai_summary, a.caption AS ai_caption,
               a.mood_label,
               (SELECT group_concat(w.text, ' ' ORDER BY w.idx) FROM transcript_word w WHERE w.media_id = e.media_id

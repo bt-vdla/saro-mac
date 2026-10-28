@@ -54,7 +54,8 @@ extension Ledger {
         let held = try heldDays()
         var seen: Set<String> = []
         return try db.run("""
-            SELECT e.id, e.kind, e.local_day, e.captured_at, e.body, e.caption_user, e.title_user, COALESCE(l.stack_id, e.session_id, e.id) AS card,
+            SELECT e.id, e.kind, e.local_day, e.captured_at, e.body, e.caption_user, e.title_user, e.summary_user,
+              COALESCE(l.stack_id, e.session_id, e.id) AS card,
               v.verdict, v.text_sha256, r.input_hash, a.mood_label
             FROM live_entry e
             LEFT JOIN card_layout l ON l.entry_id = e.id
@@ -71,22 +72,24 @@ extension Ledger {
         }
     }
 
-    /// Saro's text for an entry may show (§13.2): its newest verdict clears its current words with any typed title (SR-01),
+    /// Saro's text for an entry may show (§13.2): its newest verdict clears its current words with any typed text (SR-01),
     /// its newest reading was made from those words, and its day isn't held. The row carries kind, local_day, body,
-    /// caption_user, title_user, verdict, text_sha256 and input_hash.
+    /// caption_user, title_user, summary_user, verdict, text_sha256 and input_hash.
     static func cleared(_ r: Row, _ kind: EntryKind, held: Set<String>) -> Bool {
         let words: String? = switch kind {
         case .reflection, .music: r.str("body") ?? ""
         case .still: r.str("caption_user").flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         case .moment, .voice: nil
         }
-        let title = r.str("title_user")
+        let typed = { (words: String) in
+            Pipeline.titled(words, title: r.str("title_user"), caption: r.str("caption_user"), summary: r.str("summary_user"), kind: kind)
+        }
         guard let sha = r.str("text_sha256"), ["clear", "unavailable_clear"].contains(r.str("verdict") ?? ""),
               !held.contains(r.str("local_day") ?? "") else { return false }
-        // A recording's words (or an uncaptioned still's description) aren't in the row: untitled, its verdict and reading
-        // share one hash. ponytail: titled, it shows no Saro text here; join the transcript in if that's ever missed.
-        guard let words else { return Pipeline.titled("", title: title, kind: kind).isEmpty && r.str("input_hash") == sha }
-        return sha256(Pipeline.titled(words, title: title, kind: kind)) == sha && r.str("input_hash") == sha256(words)
+        // A recording's words (or an uncaptioned still's description) aren't in the row: with nothing typed, its verdict and
+        // reading share one hash. ponytail: titled, it shows no Saro text here; join the transcript in if that's ever missed.
+        guard let words else { return typed("").isEmpty && r.str("input_hash") == sha }
+        return sha256(typed(words)) == sha && r.str("input_hash") == sha256(words)
     }
 
     /// A media file's key frame, relative to `mediaURL` (Media/<day>/<id>.poster.jpg), once one is made.
