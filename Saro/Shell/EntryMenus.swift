@@ -22,10 +22,12 @@ extension AppModel {
     /// as a folder, shown or trashed; several get Stack, Grid and Move to Trash.
     func entryMenu(_ targets: [Entry], stack: Bool = false, undoManager: UndoManager? = nil) -> [EntryMenuItem] {
         let ids = Set(targets.map(\.id))
-        let trash = EntryMenuItem(id: "trash", title: "Move to Trash", symbol: "trash", keys: KeyboardShortcut(.delete, modifiers: .command),
+        let trash = EntryMenuItem(id: "trash", title: "Move to Trash", symbol: "trash", keys: KeyboardShortcut(.moveToTrash),
                                   destructive: true, body: .run { [weak self] in
             let flies = !Motion.byKey && !PrefsStore.shared.reduceMotionEffective
-            Task { await self?.trash(ids, undoManager: undoManager, flies: flies) }
+            // A menu bar menu may have no undo manager of its own; the journal window's takes the ⌘Z.
+            let undo = undoManager ?? NSApp.keyWindow?.undoManager
+            Task { await self?.trash(ids, undoManager: undo, flies: flies) }
         })
         guard let e = targets.first else { return [] }
         if targets.count > 1 && !stack {
@@ -196,11 +198,11 @@ struct CanvasMenu: View {
 }
 
 extension AppModel {
-    /// A new page placed at `at` and opened.
+    /// A new page placed at `at`: an empty one opens to be written; a pasted one is read as it stands.
     func newWriting(at point: CGPoint?, body: String = "") async {
         guard let e = await newWriting(body: body) else { return }
         if let point { await place(e.id, at: point) }
-        if body.isEmpty { openEntryID = e.id }
+        if body.isEmpty { openEntryID = e.id } else { process(e.id) }
     }
 
     /// An image on the clipboard becomes a still, text a page, at the point (Canvas.tsx's paste).

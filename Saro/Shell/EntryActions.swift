@@ -37,8 +37,9 @@ extension EntryKind {
 
 /// The card and Entry menus' actions (CanvasContextMenu.tsx, CanvasItemView.tsx).
 extension AppModel {
-    /// What the Entry menu acts on: the open entry, else the selection.
+    /// What the Entry menu acts on: the open entry, else the selection; nothing while the day isn't on screen.
     var entryTargets: [Entry] {
+        guard pane == .day else { return [] }
         if let id = openEntryID, let e = entry(id) { return [e] }
         return entries.filter { selection.contains($0.id) }
     }
