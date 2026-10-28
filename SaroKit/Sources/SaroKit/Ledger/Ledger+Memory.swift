@@ -2,7 +2,7 @@ import Foundation
 
 /// One thing Saro picked up, or that the person told it (BRD §13 `observation`). An extractor row always carries the
 /// person's own words verbatim (DR-09): `quote` is `field`'s text at UTF-16 [spanStart, spanEnd).
-public struct Observation: Sendable, Hashable, Codable, Identifiable {
+public struct MemoryObservation: Sendable, Hashable, Codable, Identifiable {
     public enum Source: String, Sendable, Codable { case extractor, user, onboarding }
 
     public enum Kind: String, Sendable, Codable {
@@ -87,26 +87,26 @@ extension Ledger {
     public static let memoryFeature = "memory"
 
     /// Every row the engine may read (the `active_observation` view), oldest first.
-    public func activeObservations() throws -> [Observation] {
+    public func activeObservations() throws -> [MemoryObservation] {
         try db.run("""
             SELECT o.*, e.captured_at AS entry_at, r.executor AS executor FROM active_observation o
             LEFT JOIN entry e ON e.id = o.entry_id LEFT JOIN ai_run r ON r.id = o.ai_run_id
             ORDER BY COALESCE(e.captured_at, o.created_at), o.created_at
-            """).map(Observation.init)
+            """).map(MemoryObservation.init)
     }
 
     /// An entry's extractor rows that nothing retracted yet, whatever hides them.
-    public func standingObservations(entryId: String) throws -> [Observation] {
+    public func standingObservations(entryId: String) throws -> [MemoryObservation] {
         try db.run("""
             SELECT * FROM observation o WHERE entry_id=? AND source='extractor'
               AND NOT EXISTS (SELECT 1 FROM observation_retraction r WHERE r.observation_id = o.id)
-            """, [.text(entryId)]).map(Observation.init)
+            """, [.text(entryId)]).map(MemoryObservation.init)
     }
 
     /// One learning pass in one transaction (FR-MEM-01): its run and inputs, its rows, and the retraction of what the
     /// entry's earlier text gave (FR-MEM-02, `source_edited`, pointing at the new row with the same key when there is one).
     /// A row without an `aiRunId` belongs to `run`.
-    public func insertObservations(_ observations: [Observation], run: AIRun, inputs: [AIRunInput], retracting stale: [Observation] = []) throws {
+    public func insertObservations(_ observations: [MemoryObservation], run: AIRun, inputs: [AIRunInput], retracting stale: [MemoryObservation] = []) throws {
         try db.transaction {
             try insertRunRow(run, inputs: inputs)
             for var o in observations {
@@ -125,7 +125,7 @@ extension Ledger {
 
     /// The person's own line or name for `key` (FR-MEM-09): it replaces their earlier one of the same kind (`user_edited`),
     /// and extraction never writes over it because it outranks every extractor row with that key.
-    public func addUserMemory(_ o: Observation) throws {
+    public func addUserMemory(_ o: MemoryObservation) throws {
         try db.transaction {
             let earlier = try db.run("""
                 SELECT id FROM observation o WHERE key=? AND kind=? AND source='user'
@@ -234,7 +234,7 @@ extension Ledger {
 
     // MARK: Rows
 
-    private func insertRow(_ o: Observation) throws {
+    private func insertRow(_ o: MemoryObservation) throws {
         try db.run("""
             INSERT INTO observation (id, entry_id, ai_run_id, source, kind, key, key_sha256, label, quote, field, span_start, span_end,
               text_sha256, local_day, created_at)

@@ -56,7 +56,7 @@ public struct KnowledgeGraph: Sendable, Hashable {
 
     /// Nodes for people (memory.ts's person rule), places and organisations, themes, feelings and intentions, with every
     /// mention since `since`; the person's corrected names win. ponytail: the busiest 80 nodes, so the layout stays legible.
-    public static func build(_ rows: [Observation], since: Date? = nil, maxNodes: Int = maxNodes) -> KnowledgeGraph {
+    public static func build(_ rows: [MemoryObservation], since: Date? = nil, maxNodes: Int = maxNodes) -> KnowledgeGraph {
         let labels = Dictionary(rows.filter { $0.source == .user && $0.kind == .label }.map { ($0.key, $0.label) }, uniquingKeysWith: { $1 })
         let learned = rows.filter { $0.source != .user }
         var nodes: [Node] = []
@@ -145,8 +145,10 @@ public struct KnowledgeGraph: Sendable, Hashable {
 
     /// A force-directed layout (Fruchterman–Reingold with gravity), centred on the origin, about one unit between
     /// neighbours. Deterministic: starts from a golden-angle spiral in id order, so the same graph always lands the same.
-    /// `from` keeps nodes that were already placed where they were, so a change settles instead of reshuffling.
-    public func layout(iterations: Int = 300, from start: [String: SIMD2<Double>] = [:]) -> [String: SIMD2<Double>] {
+    /// `from` keeps nodes that were already placed where they were, so a change settles instead of reshuffling. `extents`
+    /// (half width and height, in the same units) are pushed apart afterwards so no two labels overlap.
+    public func layout(iterations: Int = 300, from start: [String: SIMD2<Double>] = [:],
+                       extents: [String: SIMD2<Double>] = [:]) -> [String: SIMD2<Double>] {
         let ids = nodes.map(\.id).sorted()
         let n = ids.count
         guard n > 0 else { return [:] }
@@ -184,6 +186,29 @@ public struct KnowledgeGraph: Sendable, Hashable {
                 let len = (d[i] * d[i]).sum().squareRoot()
                 if len > 0 { p[i] += d[i] / len * min(len, t) }
             }
+        }
+        // ponytail: pairwise box separation, O(n²) a pass; fine at 80 nodes.
+        let e = ids.map { extents[$0] ?? .zero }
+        for _ in 0..<80 where !extents.isEmpty {
+            var moved = false
+            for i in 0..<n {
+                for j in (i + 1)..<n {
+                    let v = p[j] - p[i]
+                    let over = e[i] + e[j] - SIMD2(abs(v.x), abs(v.y))
+                    guard over.x > 0, over.y > 0 else { continue }
+                    moved = true
+                    if over.x < over.y {
+                        let s = (v.x == 0 ? (i < j ? 1.0 : -1.0) : (v.x > 0 ? 1.0 : -1.0)) * (over.x / 2 + 0.001)
+                        p[i].x -= s
+                        p[j].x += s
+                    } else {
+                        let s = (v.y == 0 ? (i < j ? 1.0 : -1.0) : (v.y > 0 ? 1.0 : -1.0)) * (over.y / 2 + 0.001)
+                        p[i].y -= s
+                        p[j].y += s
+                    }
+                }
+            }
+            if !moved { break }
         }
         let c = p.reduce(.zero, +) / Double(n)
         return Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, p[$0] - c) })

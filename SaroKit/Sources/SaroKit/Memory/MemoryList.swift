@@ -11,7 +11,7 @@ public struct Sighting: Sendable, Hashable, Identifiable {
     public let field: String?
     public let spanStart: Int?
 
-    init(_ o: Observation) {
+    init(_ o: MemoryObservation) {
         id = o.id
         entryId = o.entryId
         day = o.localDay
@@ -72,7 +72,7 @@ public enum MemoryList {
     static let moodWindow: TimeInterval = 30 * 86_400
     static let maxThemes = 5
     static let maxMoods = 2
-    static let personKinds: Set<Observation.Kind> = [.person, .personTalks, .personThing, .personName]
+    static let personKinds: Set<MemoryObservation.Kind> = [.person, .personTalks, .personThing, .personName]
 
     /// Cut at a word, with an ellipsis, so a line stays one short line (memory.ts clip).
     public static func clip(_ s: String, _ max: Int) -> String {
@@ -91,7 +91,7 @@ public enum MemoryList {
 
     // MARK: Derive (memory.ts deriveMemories + mergeMemories)
 
-    public static func derive(_ rows: [Observation], starter: StarterContext? = nil, commitments: [OpenCommitment] = [],
+    public static func derive(_ rows: [MemoryObservation], starter: StarterContext? = nil, commitments: [OpenCommitment] = [],
                               tombstones: Set<String> = [], forgotAllAt: Date? = nil, pauses: [MemoryPause] = [], now: Date = .now) -> [Memory] {
         let gone = { (key: String) in tombstones.contains(sha256(key)) }
         let user = rows.filter { $0.source == .user }
@@ -99,7 +99,7 @@ public enum MemoryList {
         let learned = rows.filter { $0.source != .user }
         var out: [Memory] = []
 
-        func memory(_ key: String, _ text: String, _ group: Memory.Group, _ rows: [Observation], label: String) -> Memory {
+        func memory(_ key: String, _ text: String, _ group: Memory.Group, _ rows: [MemoryObservation], label: String) -> Memory {
             let s = sightings(rows)
             return Memory(key: key, text: clip(text, maxChars), group: group, source: .entries, count: Set(rows.compactMap(\.entryId)).count,
                           lastSeen: s.first?.at ?? now, updatedAt: s.first?.at ?? now, label: label, sightings: s, told: nil)
@@ -115,7 +115,7 @@ public enum MemoryList {
         }
         // A feeling counts within one lineage only (DR-13): heuristic and model moods are never added together.
         let recent = learned.filter { $0.kind == .emotion && $0.at >= now.addingTimeInterval(-moodWindow) }
-        var moods: [String: [Observation]] = [:]
+        var moods: [String: [MemoryObservation]] = [:]
         for lineage in Set(recent.map { $0.lineage ?? "heuristic" }) {
             for (key, rs) in ranked(recent.filter { ($0.lineage ?? "heuristic") == lineage }, min: 3) where weight(rs) > moods[key].map(weight) ?? (0, .distantPast) {
                 moods[key] = rs
@@ -217,20 +217,20 @@ public enum MemoryList {
 
     // MARK: Helpers
 
-    static func sightings(_ rows: [Observation]) -> [Sighting] {
+    static func sightings(_ rows: [MemoryObservation]) -> [Sighting] {
         var seen = Set<String>()
         return rows.sorted { $0.at > $1.at }.filter { seen.insert("\($0.entryId ?? $0.id)|\($0.spanStart ?? -1)").inserted }.map(Sighting.init)
     }
 
     /// Keys seen in at least `min` entries, most-seen first, then most recent.
-    static func ranked(_ rows: [Observation], min: Int) -> [(key: String, rows: [Observation])] {
+    static func ranked(_ rows: [MemoryObservation], min: Int) -> [(key: String, rows: [MemoryObservation])] {
         Dictionary(grouping: rows, by: \.key)
             .filter { Set($0.value.compactMap(\.entryId)).count >= min }
             .map { ($0.key, $0.value) }
             .sorted { weight($0.rows) > weight($1.rows) }
     }
 
-    static func weight(_ rows: [Observation]) -> (Int, Date) {
+    static func weight(_ rows: [MemoryObservation]) -> (Int, Date) {
         (Set(rows.compactMap(\.entryId)).count, rows.map(\.at).max() ?? .distantPast)
     }
 

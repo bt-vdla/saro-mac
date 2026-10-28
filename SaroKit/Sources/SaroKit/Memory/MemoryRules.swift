@@ -97,7 +97,7 @@ public enum MemoryRules {
     }
 
     /// A name is a person on a person cue seen at least as often as a thing cue, or on talking cues with no thing cue at all.
-    static func isPerson(_ kinds: [Observation.Kind]) -> Bool {
+    static func isPerson(_ kinds: [MemoryObservation.Kind]) -> Bool {
         let person = kinds.filter { $0 == .person }.count, talks = kinds.filter { $0 == .personTalks }.count
         let things = kinds.filter { $0 == .personThing }.count
         return (person > 0 && person >= things) || (talks > 0 && things == 0)
@@ -175,6 +175,9 @@ public enum MemoryRules {
     static func intention(in sentence: String) -> (label: String, range: NSRange)? {
         let ns = sentence as NSString
         guard let m = intentionLead.firstMatch(in: sentence, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        // "If I have to sit through one more meeting…" is a condition, not a plan.
+        let before = Heuristics.tokenize(ns.substring(to: m.range.location)).last?.lower
+        if let before, ["if", "unless", "when", "whenever"].contains(before) { return nil }
         let rest = ns.substring(from: NSMaxRange(m.range))
         let clause = rest.prefix { !",;:.!?\n—–()".contains($0) }
         var tokens = Heuristics.tokenize(String(clause))
@@ -193,14 +196,14 @@ public enum MemoryRules {
     /// Everything the heuristic twin reads from one entry's text. `mood` is the entry reading's mood (one lineage per
     /// entry, DR-13), and `moodQuote` the verbatim phrase it picked, used when no sentence names the feeling.
     public static func observe(entryId: String, field: String, text: String, localDay: String, mood: Mood? = nil,
-                               moodQuote: Candidate? = nil) -> [Observation] {
+                               moodQuote: Candidate? = nil) -> [MemoryObservation] {
         let ns = text as NSString
         let hash = sha256(text)
-        func row(_ kind: Observation.Kind, _ key: String, _ label: String, _ r: NSRange) -> Observation {
-            Observation(entryId: entryId, kind: kind, key: key, label: label, quote: ns.substring(with: r), field: field,
+        func row(_ kind: MemoryObservation.Kind, _ key: String, _ label: String, _ r: NSRange) -> MemoryObservation {
+            MemoryObservation(entryId: entryId, kind: kind, key: key, label: label, quote: ns.substring(with: r), field: field,
                         spanStart: r.location, spanEnd: NSMaxRange(r), textSha256: hash, localDay: localDay)
         }
-        var out: [Observation] = []
+        var out: [MemoryObservation] = []
         let tagged = taggedNames(text)
 
         // People: every mention keeps its cue; NLTagger's personal name is one more, weak, signal (like "told Sam").
@@ -208,7 +211,7 @@ public enum MemoryRules {
         for m in mentions {
             guard let s = sentence(containing: m.range, in: text) else { continue }
             let nl = tagged.contains { $0.tag == .personalName && NSIntersectionRange($0.range, m.range).length > 0 }
-            let kind: Observation.Kind = switch m.cue {
+            let kind: MemoryObservation.Kind = switch m.cue {
             case .person: .person
             case .thing: .personThing
             case .talks: .personTalks
@@ -232,41 +235,41 @@ public enum MemoryRules {
         return dedupe(out)
     }
 
-    static func themes(entryId: String, field: String, text: String, localDay: String) -> [Observation] {
+    static func themes(entryId: String, field: String, text: String, localDay: String) -> [MemoryObservation] {
         let ns = text as NSString
         return Heuristics.analyzeText(text).themes.compactMap { theme in
             quote(text, { Heuristics.analyzeText($0).themes.contains(theme) }).map { r in
-                Observation(entryId: entryId, kind: .theme, key: "theme:\(theme.rawValue)", label: theme.rawValue, quote: ns.substring(with: r),
+                MemoryObservation(entryId: entryId, kind: .theme, key: "theme:\(theme.rawValue)", label: theme.rawValue, quote: ns.substring(with: r),
                             field: field, spanStart: r.location, spanEnd: NSMaxRange(r), textSha256: sha256(text), localDay: localDay)
             }
         }
     }
 
-    static func intentions(entryId: String, field: String, text: String, localDay: String) -> [Observation] {
+    static func intentions(entryId: String, field: String, text: String, localDay: String) -> [MemoryObservation] {
         let ns = text as NSString
         return sentences(text).compactMap { s in
             intention(in: ns.substring(with: s)).map { i in
-                Observation(entryId: entryId, kind: .intention, key: "intent:\(i.label.lowercased())", label: i.label,
+                MemoryObservation(entryId: entryId, kind: .intention, key: "intent:\(i.label.lowercased())", label: i.label,
                             quote: ns.substring(with: s), field: field, spanStart: s.location, spanEnd: NSMaxRange(s),
                             textSha256: sha256(text), localDay: localDay)
             }
         }
     }
 
-    static func emotion(entryId: String, field: String, text: String, localDay: String, mood: Mood?, moodQuote: Candidate?) -> Observation? {
+    static func emotion(entryId: String, field: String, text: String, localDay: String, mood: Mood?, moodQuote: Candidate?) -> MemoryObservation? {
         guard let mood = mood ?? Heuristics.analyzeText(text).moods.first, mood != .neutral else { return nil }
         let ns = text as NSString
         let r = quote(text, { Heuristics.analyzeText($0).moods.contains(mood) })
             ?? moodQuote.map { NSRange(location: $0.utf16From, length: $0.utf16To - $0.utf16From) }
         guard let r, NSMaxRange(r) <= ns.length else { return nil }
-        return Observation(entryId: entryId, kind: .emotion, key: "mood:\(mood.rawValue.lowercased())", label: mood.rawValue,
+        return MemoryObservation(entryId: entryId, kind: .emotion, key: "mood:\(mood.rawValue.lowercased())", label: mood.rawValue,
                            quote: ns.substring(with: r), field: field, spanStart: r.location, spanEnd: NSMaxRange(r),
                            textSha256: sha256(text), localDay: localDay)
     }
 
     /// One row per key, kind and sentence, and nothing whose words would trip the phrase gate (SR-08): a sentence can
     /// lose the guard word a whole entry passed on.
-    static func dedupe(_ rows: [Observation]) -> [Observation] {
+    static func dedupe(_ rows: [MemoryObservation]) -> [MemoryObservation] {
         var seen = Set<String>()
         return rows.filter { o in
             !SafetyGate.phraseHit(o.quote ?? "") && !SafetyGate.phraseHit(o.label)

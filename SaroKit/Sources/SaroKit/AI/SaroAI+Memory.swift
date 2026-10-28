@@ -96,7 +96,8 @@ extension SaroAI {
         }
         for i in out.intentions {
             guard let c = byIndex[i] else { return nil }
-            out2.append(ExtractedObservation(kind: .intention, candidate: c))
+            // Only a phrase that says what they mean to do in so many words is an intention; the rest of the reply stands.
+            if MemoryRules.intention(in: c.text) != nil { out2.append(ExtractedObservation(kind: .intention, candidate: c)) }
         }
         return out2
     }

@@ -109,17 +109,30 @@ extension Pipeline {
         }
     }
 
-    static func observation(_ p: ExtractedObservation, text: String, hash: String, day: String) -> Observation {
+    /// Where a quote at UTF-16 `offset` of a transcript (as `join` spells it) starts playing: its word's start.
+    public static func startMs(atUTF16 offset: Int, in words: [TranscriptWord]) -> Int? {
+        var at = 0
+        for w in words {
+            for part in w.text.split(whereSeparator: \.isWhitespace) {
+                at += part.utf16.count
+                if offset < at { return w.startMs }
+                at += 1
+            }
+        }
+        return words.last?.startMs
+    }
+
+    static func observation(_ p: ExtractedObservation, text: String, hash: String, day: String) -> MemoryObservation {
         let c = p.candidate
-        let (kind, key, label): (Observation.Kind, String, String) = switch p.kind {
+        let (kind, key, label): (MemoryObservation.Kind, String, String) = switch p.kind {
         case .person(let name):
             (.person, "person:\(name.replacingOccurrences(of: #"['’]s$"#, with: "", options: .regularExpression).lowercased())", name)
         case .theme(let t): (.theme, "theme:\(t.rawValue)", t.rawValue)
         case .intention:
             MemoryRules.intention(in: c.text).map { (.intention, "intent:\($0.label.lowercased())", $0.label) }
-                ?? (.intention, "intent:\(c.text.lowercased())", c.text)
+                ?? (.intention, "intent:\(c.text.lowercased())", c.text) // picks already passed MemoryRules.intention
         }
-        return Observation(entryId: c.entryId, kind: kind, key: key, label: label, quote: c.text, field: c.field, spanStart: c.utf16From,
+        return MemoryObservation(entryId: c.entryId, kind: kind, key: key, label: label, quote: c.text, field: c.field, spanStart: c.utf16From,
                            spanEnd: c.utf16To, textSha256: hash, localDay: day)
     }
 }

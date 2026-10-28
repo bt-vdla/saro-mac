@@ -91,6 +91,7 @@ private func people(_ entries: [String]) -> [String] { texts(derived(entries).fi
     #expect(MemoryRules.intention(in: "I'll be honest")?.label == "be honest")
     #expect(MemoryRules.intention(in: "I want to be") == nil)
     #expect(MemoryRules.intention(in: "Tomorrow I start the new job.")?.label == "start the new job")
+    #expect(MemoryRules.intention(in: "If I have to sit through one more meeting I'll scream.") == nil, "a condition, not a plan")
 }
 
 @Test func aNameInTwoEntriesIsAPersonWithTheNewestSentenceAsEvidence() throws {
@@ -150,7 +151,7 @@ private func people(_ entries: [String]) -> [String] { texts(derived(entries).fi
     #expect(mind(["theme:family"]) == ["theme:learning", "theme:nature", "theme:money", "theme:sleep", "theme:work"])
 }
 
-private func rows(_ entries: [String], now: Date = .now) -> [Observation] {
+private func rows(_ entries: [String], now: Date = .now) -> [MemoryObservation] {
     entries.enumerated().flatMap { i, t in
         MemoryRules.observe(entryId: "e\(i)", field: "body", text: t, localDay: "d\(i)").map { o in
             var o = o
@@ -305,9 +306,9 @@ private func rows(_ entries: [String], now: Date = .now) -> [Observation] {
     _ = try await write(l, p, "Then Maya called and we laughed about the launch at work.", at: ago(1))
     var list = try await memories(l)
     #expect(texts(list).contains("Work has been on your mind."))
-    try await l.addUserMemory(Observation(entryId: nil, source: .user, kind: .line, key: "theme:work", label: "Work is a lot right now.", localDay: "d"))
-    try await l.addUserMemory(Observation(entryId: nil, source: .user, kind: .line, key: "theme:work", label: "Work is calmer now.", localDay: "d"))
-    try await l.addUserMemory(Observation(entryId: nil, source: .user, kind: .line, key: "user:1", label: "I work nights.", localDay: "d"))
+    try await l.addUserMemory(MemoryObservation(entryId: nil, source: .user, kind: .line, key: "theme:work", label: "Work is a lot right now.", localDay: "d"))
+    try await l.addUserMemory(MemoryObservation(entryId: nil, source: .user, kind: .line, key: "theme:work", label: "Work is calmer now.", localDay: "d"))
+    try await l.addUserMemory(MemoryObservation(entryId: nil, source: .user, kind: .line, key: "user:1", label: "I work nights.", localDay: "d"))
     _ = try await write(l, p, "Work again, a long meeting.")
     list = try await memories(l)
     let work = try #require(list.first { $0.key == "theme:work" })
@@ -319,6 +320,16 @@ private func rows(_ entries: [String], now: Date = .now) -> [Observation] {
     #expect(try await l.run("SELECT * FROM observation WHERE label='I work nights.'").isEmpty, "what the person wrote is deleted, not kept")
     _ = try await write(l, p, "Maya came over. Maya stayed for dinner.")
     #expect(try await !memories(l).contains { $0.key == "person:maya" })
+}
+
+@Test func aQuoteInATranscriptPlaysFromItsWord() {
+    let words = [TranscriptWord(text: "I", startMs: 0, durMs: 100, confidence: nil), TranscriptWord(text: " walked", startMs: 200, durMs: 300, confidence: nil),
+                 TranscriptWord(text: "home.", startMs: 600, durMs: 300, confidence: nil), TranscriptWord(text: "Maya", startMs: 1500, durMs: 300, confidence: nil)]
+    let text = Pipeline.join(words)
+    #expect(text == "I walked home. Maya")
+    #expect(Pipeline.startMs(atUTF16: (text as NSString).range(of: "Maya").location, in: words) == 1500)
+    #expect(Pipeline.startMs(atUTF16: (text as NSString).range(of: "home").location, in: words) == 600)
+    #expect(Pipeline.startMs(atUTF16: 0, in: words) == 0)
 }
 
 // MARK: The model rung
@@ -385,5 +396,12 @@ private func memoryAI(_ reply: String) -> SaroAI {
     let all = a.keys.flatMap { x in a.keys.filter { $0 > x }.map { dist(x, $0) } }
     #expect(dist("person:maya", "theme:work") < all.reduce(0, +) / Double(all.count))
     #expect(KnowledgeGraph.weekly(g.nodes[0].mentions).reduce(0, +) == g.nodes[0].mentions.count)
+    // With label boxes, no two boxes overlap.
+    let box = SIMD2(0.6, 0.25)
+    let spaced = g.layout(extents: Dictionary(uniqueKeysWithValues: g.nodes.map { ($0.id, box) }))
+    for x in spaced.keys { for y in spaced.keys where y > x {
+        let d = spaced[x]! - spaced[y]!
+        #expect(abs(d.x) >= 2 * box.x - 1e-6 || abs(d.y) >= 2 * box.y - 1e-6, "\(x) overlaps \(y)")
+    } }
 }
 
