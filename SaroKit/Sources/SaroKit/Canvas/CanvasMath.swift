@@ -22,6 +22,18 @@ public enum CanvasMath {
         }
     }
 
+    /// A card at its stored width and height (nil: the default). With no height, a moment or still keeps its picture's
+    /// proportions over the 48 pt footer as the width changes, as the web's content-sized cards do.
+    public static func size(_ kind: EntryKind, w: Double?, h: Double?) -> CGSize {
+        let base = size(kind), width = w.map { CGFloat($0) } ?? base.width
+        if let h { return CGSize(width: width, height: h) }
+        switch kind {
+        case .moment: return CGSize(width: width, height: width * momentMediaHeight / base.width + 48)
+        case .still: return CGSize(width: width, height: width * stillMediaHeight / base.width + 48)
+        case .voice, .reflection, .music: return CGSize(width: width, height: base.height)
+        }
+    }
+
     public static func radius(_ kind: EntryKind) -> CGFloat {
         switch kind {
         case .moment, .reflection: 28
@@ -73,6 +85,78 @@ public enum CanvasMath {
         guard let lo = mine.first, let hi = mine.last else { return nil }
         return snap(mine, to: cards, reach: reach)
             ?? snap([lo, hi], to: rhythmLines(axis: axis, from: lo - rhythmReach, to: hi + rhythmReach, level: level), reach: rhythmReach)
+    }
+
+    // MARK: Resizing (cardGeometry.ts)
+
+    public enum Handle: CaseIterable, Sendable {
+        case nw, n, ne, e, se, s, sw, w
+
+        /// -1 (the handle moves the left/top edge), 1 (right/bottom) or 0 (that axis doesn't change).
+        public var sides: (x: CGFloat, y: CGFloat) {
+            switch self {
+            case .nw: (-1, -1)
+            case .n: (0, -1)
+            case .ne: (1, -1)
+            case .e: (1, 0)
+            case .se: (1, 1)
+            case .s: (0, 1)
+            case .sw: (-1, 1)
+            case .w: (-1, 0)
+            }
+        }
+    }
+
+    public struct ResizeSpec: Sendable, Equatable {
+        public let minW, maxW, minH, maxH: CGFloat
+        /// Media keeps its proportions unless Shift frees it; text and music resize freely.
+        public let keepsAspect: Bool
+    }
+
+    /// A voice note doesn't resize; it opens in place instead.
+    public static func resizeSpec(_ kind: EntryKind) -> ResizeSpec? {
+        switch kind {
+        case .moment: ResizeSpec(minW: 240, maxW: 960, minH: 150, maxH: 800, keepsAspect: true)
+        case .still: ResizeSpec(minW: 160, maxW: 800, minH: 160, maxH: 960, keepsAspect: true)
+        case .reflection: ResizeSpec(minW: 260, maxW: 800, minH: 120, maxH: 960, keepsAspect: false)
+        case .music: ResizeSpec(minW: 220, maxW: 560, minH: 72, maxH: 200, keepsAspect: false)
+        case .voice: nil
+        }
+    }
+
+    /// Where a card's box goes when `handle` is dragged by `d` (world points) from `start`; the opposite edge stays put.
+    /// Kept proportions scale the box uniformly, a corner following the pointer's projection on the diagonal. The edge
+    /// that decides the size snaps (world x or y in, snapped out); the other follows the proportions.
+    public static func resize(_ start: CGRect, _ handle: Handle, by d: CGSize, spec: ResizeSpec, free: Bool = false,
+                              snapX: (CGFloat) -> CGFloat = { $0 }, snapY: (CGFloat) -> CGFloat = { $0 }) -> CGRect {
+        let (sx, sy) = handle.sides
+        var w = start.width, h = start.height
+        let clamp = { (v: CGFloat, lo: CGFloat, hi: CGFloat) in min(max(v, lo), hi) }
+        if spec.keepsAspect && !free {
+            var k = if sx != 0 && sy != 0 {
+                ((w + sx * d.width) * w + (h + sy * d.height) * h) / (w * w + h * h)
+            } else if sx != 0 { (w + sx * d.width) / w } else { (h + sy * d.height) / h }
+            if sx != 0 {
+                let edge = sx > 0 ? start.minX + w * k : start.maxX - w * k, snapped = snapX(edge)
+                if snapped != edge { k = (sx > 0 ? snapped - start.minX : start.maxX - snapped) / w }
+            } else if sy != 0 {
+                let edge = sy > 0 ? start.minY + h * k : start.maxY - h * k, snapped = snapY(edge)
+                if snapped != edge { k = (sy > 0 ? snapped - start.minY : start.maxY - snapped) / h }
+            }
+            let lo = max(spec.minW / w, spec.minH / h), hi = min(spec.maxW / w, spec.maxH / h)
+            k = lo <= hi ? clamp(k, lo, hi) : lo
+            (w, h) = (w * k, h * k)
+        } else {
+            if sx != 0 {
+                let edge = snapX(sx > 0 ? start.maxX + d.width : start.minX + d.width)
+                w = clamp(sx > 0 ? edge - start.minX : start.maxX - edge, spec.minW, spec.maxW)
+            }
+            if sy != 0 {
+                let edge = snapY(sy > 0 ? start.maxY + d.height : start.minY + d.height)
+                h = clamp(sy > 0 ? edge - start.minY : start.maxY - edge, spec.minH, spec.maxH)
+            }
+        }
+        return CGRect(x: sx < 0 ? start.maxX - w : start.minX, y: sy < 0 ? start.maxY - h : start.minY, width: w, height: h)
     }
 
     // MARK: The uneven guide rhythm (cardGeometry.ts)
