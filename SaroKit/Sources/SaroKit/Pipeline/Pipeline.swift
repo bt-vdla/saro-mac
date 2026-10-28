@@ -8,6 +8,8 @@ public struct DayPayload: Codable, Sendable, Hashable {
     public var entryIds: [String]
     /// The counted, quoted narrative and last-inferred line; nil in readings stored before it existed.
     public var narrative: Narrative?
+    /// Who chose the question when it isn't the reading's own: 'curated' once Refresh question picked it from Saro's list.
+    public var questionGenerator: String?
 }
 
 /// Where a day stands for its reading (§13.2 whole-day rules).
@@ -296,7 +298,8 @@ public actor Pipeline {
                                                     contextSize: nil, promptVersion: SaroAI.dayPromptVersion, tokensIn: nil, modelCalls: 0, latencyMs: 0))
         }
         if prov.status == "rate_limited" { return nil } // deferred (§11.7): the next readDay asks again
-        if let locked = await answeredQuestion(day) { reading.question = locked }
+        let locked = await answeredQuestion(day)
+        if let locked { reading.question = locked.question }
         let narrative = DayNarrative.draft(day: day, entries: told, recent: await recentNarrativeEntries(before: day), avoidTitle: avoid)
         // Layer 3 (SR-08): a hit holds every entry the reading drew on, so the whole day is held and nothing is stored.
         if prov.status == "output_gate" || SafetyGate.phraseHit(reading.prose + "\n" + (narrative?.prose ?? "")) {
@@ -311,14 +314,16 @@ public actor Pipeline {
         // Stored unmarked when the model's assets went missing mid-ladder: the model never read this day.
         let inputHash = modelOK && prov.status != "assetsUnavailable" ? marked : unmarked
         let picked = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
-        let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId), narrative: narrative)
+        let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId), narrative: narrative,
+                                 questionGenerator: locked.flatMap { $0.generator == "curated" ? "curated" : nil })
         var run = AIRun(feature: "day_reading", executor: prov.executor, status: prov.status)
         run.guardrails = prov.guardrails
         run.ladderRung = prov.rung.rawValue
         run.osBuild = prov.osBuild
         run.variant = prov.variant
         run.contextSize = prov.contextSize
-        run.sampling = seed.map { "random:\($0)" } ?? "greedy"
+        // The heuristic twin samples nothing, a refresh included.
+        run.sampling = prov.executor == "heuristic" ? nil : seed.map { "random:\($0)" } ?? "greedy"
         run.promptVersion = prov.promptVersion
         run.inputHash = inputHash
         run.tokensIn = prov.tokensIn

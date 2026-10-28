@@ -436,3 +436,28 @@ private let work = [
     try await l.setTurnAnswer(id: turn.id, answer: "A walk.", verdict: "safety_hold")
     #expect(await p.dayStatus(still.localDay) == .held)
 }
+
+@Test func aCuratedQuestionAndAHeuristicRefreshKeepHonestProvenance() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let e = Entry(kind: .reflection, body: "Long day at work. The deadline moved again.")
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    #expect(await p.readDay(e.localDay, force: true, seed: 42)?.questionGenerator == nil)
+    // The heuristic twin sampled nothing, though the refresh asked with a seed.
+    let run = try #require(try await l.run("SELECT sampling FROM ai_run WHERE feature='day_reading' ORDER BY created_at DESC LIMIT 1").first)
+    #expect(run.str("sampling") == nil)
+
+    let refreshed = try #require(await p.refreshQuestion(e.localDay))
+    #expect(refreshed.questionGenerator == "curated")
+    let q = try #require(refreshed.reading.question)
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: q, generator: "curated", localDay: e.localDay)
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: "More room.", verdict: "clear")
+    // A later reading keeps the answered question, and says it was Saro's list's.
+    let more = Entry(kind: .reflection, body: "Called my sister about the family dinner.")
+    try await l.insertEntry(more)
+    await p.process(entryId: more.id) {}
+    let next = try #require(await p.readDay(e.localDay))
+    #expect(next.reading.question == q && next.questionGenerator == "curated")
+}

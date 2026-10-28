@@ -167,7 +167,9 @@ struct NoticedView: View {
 
     @ViewBuilder private var provenance: some View {
         if model.dayStatus == .ready, let r = model.dayReading {
-            Text(r.generator == "heuristic" ? "In your words · no model" : "On-device · \(model.ai.variant)")
+            // A question picked from Saro's list after a refresh isn't the model's.
+            let curated = r.generator != "heuristic" && r.payload.questionGenerator == "curated" ? " · question from Saro’s list" : ""
+            Text(r.generator == "heuristic" ? "In your words · no model" : "On-device · \(model.ai.variant)\(curated)")
                 .monoCaps(9, tracking: 0.12).foregroundStyle(Tok.ink4)
         }
     }

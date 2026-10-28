@@ -297,8 +297,8 @@ final class ReflectionModel {
         }
         do {
             let open = try await model.ledger.turns(day: day, kind: .dailyQuestion).last { $0.question == question }
-            let turn = open ?? ReflectionTurn(kind: .dailyQuestion, question: question, generator: model.dayReading?.generator ?? "heuristic",
-                                              localDay: day, aiRunId: model.dayReading?.runId)
+            let by = model.dayReading?.payload.questionGenerator ?? model.dayReading?.generator ?? "heuristic"
+            let turn = open ?? ReflectionTurn(kind: .dailyQuestion, question: question, generator: by, localDay: day, aiRunId: model.dayReading?.runId)
             if open == nil { try await model.ledger.insertTurn(turn) }
             try await model.ledger.setTurnAnswer(id: turn.id, answer: text, verdict: verdict.verdict)
         } catch {

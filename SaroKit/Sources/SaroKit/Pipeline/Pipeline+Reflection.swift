@@ -13,9 +13,9 @@ extension Pipeline {
         return turns.compactMap(\.answerVerdict) + [try? await ledger.dayState(day).moodNoteVerdict].compactMap { $0 ?? nil }
     }
 
-    /// An answered daily question is the person's, so it stays through every re-read (CONTRACT §4).
-    func answeredQuestion(_ day: String) async -> String? {
-        try? await ledger.turns(day: day, kind: .dailyQuestion).last { $0.answer != nil }?.question
+    /// An answered daily question is the person's, so it stays through every re-read (CONTRACT §4), with who chose it.
+    func answeredQuestion(_ day: String) async -> ReflectionTurn? {
+        try? await ledger.turns(day: day, kind: .dailyQuestion).last { $0.answer != nil }
     }
 
     /// The day's entries as the narrative reads them, oldest first: those the gate cleared for their current text, with
@@ -64,7 +64,8 @@ extension Pipeline {
     }
 
     /// Refresh question (ai.ts demoRefreshQuestion): an answered pair is archived, and a curated question asked neither
-    /// today nor in the last 7 days takes its place, in a new snapshot of the same reading.
+    /// today nor in the last 7 days takes its place, in a new snapshot of the same reading marked as curated, so the
+    /// panel never shows Saro's list under the model's name.
     public func refreshQuestion(_ day: String) async -> DayPayload? {
         guard await dayStatus(day) == .ready, let last = try? await ledger.latestSnapshot(kind: "day_reading", day: day),
               var payload = try? JSONDecoder().decode(DayPayload.self, from: Data(last.payload.utf8)) else { return nil }
@@ -75,6 +76,7 @@ extension Pipeline {
         payload.reading.question = Heuristics.pickQuestion(themes: Heuristics.analyzeText(corpus).themes,
                                                            seed: Heuristics.seed("\(day)\n\(corpus)\n\(exclude.count)"),
                                                            exclude: exclude, tone: await ai.tone)
+        payload.questionGenerator = "curated"
         guard let json = try? JSONEncoder().encode(payload), let text = String(data: json, encoding: .utf8) else { return nil }
         do {
             try await ledger.insertSnapshot(InsightSnapshot(kind: "day_reading", day: day, aiRunId: last.aiRunId, generator: last.generator,
