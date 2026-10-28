@@ -69,6 +69,8 @@ enum SettingsSnapshots {
             ("text150-canvas", {
                 p.setContentSize(NSSize(width: 1320, height: 860))
                 p.contentView = NSHostingView(rootView: RootView().environment(model).environment(prefs).comfortEnvironment())
+                // The knows-* steps leave What Saro knows up.
+                model.pane = .day
                 model.openEntryID = nil
                 model.insight = .spine
             }),
