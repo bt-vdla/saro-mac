@@ -581,6 +581,18 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
     }
 
+    /// SR-13: a held day shows none of Saro's words, the question a voice note answered included.
+    @Test func bookLeavesOutSarosPromptOnAHeldDay() async throws {
+        let l = try freshLedger()
+        let page = try await seed(l)
+        let voice = try #require(try await l.entries(day: "2026-10-26").first { $0.kind == .voice })
+        try await l.insertTurn(ReflectionTurn(kind: .prompt, question: "What stood out today?", generator: "heuristic", localDay: "2026-10-26", entryId: voice.id))
+        func prompts() async throws -> [String] { try await l.bookDays(year: 2026).flatMap(\.pieces).compactMap(\.prompt) }
+        #expect(try await prompts() == ["What stood out today?"])
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(page.body!), safetyVersion: "t", layer: 1, verdict: "safety_hold", reasonCode: "x"))
+        #expect(try await prompts().isEmpty)
+    }
+
     /// SR-15, FR-MEM-03: importing an export made before a hold, or before a forget, brings back none of what they deleted.
     @Test func importingAnOlderExportBringsBackNothingAHoldOrForgetDeleted() async throws {
         let l = try freshLedger()

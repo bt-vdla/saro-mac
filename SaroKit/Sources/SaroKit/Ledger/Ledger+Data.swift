@@ -150,6 +150,12 @@ extension Ledger {
     public func bookDays(year: Int) throws -> [Book.Day] {
         let prefix = "\(year)-"
         var days: [String: [Book.Piece]] = [:]
+        let held = Set(try db.run("""
+            SELECT e.local_day AS d FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
+            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict = 'safety_hold'
+            UNION SELECT local_day AS d FROM reflection_turn WHERE answer_verdict = 'safety_hold'
+            UNION SELECT local_day AS d FROM day_state WHERE mood_note_verdict = 'safety_hold'
+            """).compactMap { $0.str("d") })
         for e in try db.run("SELECT * FROM live_entry WHERE local_day LIKE ? ORDER BY captured_at", [.text(prefix + "%")]).map(Entry.init) {
             let minutes = Rhythm.EntryTime(localDay: e.localDay, capturedAt: e.capturedAt, tzId: e.tzId).minutes
             let piece: Book.Piece? = switch e.kind {
@@ -157,18 +163,14 @@ extension Ledger {
             case .still: Book.Piece(kind: .still, minutes: minutes, title: e.titleUser, body: Book.paragraphs(e.captionUser))
             case .moment, .voice:
                 Book.Piece(kind: e.kind == .moment ? .moment : .echo, minutes: minutes, title: e.titleUser,
-                           prompt: try db.run("SELECT question FROM reflection_turn WHERE entry_id=? AND kind='prompt' LIMIT 1", [.text(e.id)]).first?.str("question"),
+                           // The question is Saro's: a held day shows none of Saro's words (SR-13).
+                           prompt: held.contains(e.localDay) ? nil
+                               : try db.run("SELECT question FROM reflection_turn WHERE entry_id=? AND kind='prompt' LIMIT 1", [.text(e.id)]).first?.str("question"),
                            body: Book.paragraphs(try e.mediaId.map { Pipeline.join(try transcript(mediaId: $0)) }))
             case .music: nil
             }
             if let piece { days[e.localDay, default: []].append(piece) }
         }
-        let held = Set(try db.run("""
-            SELECT e.local_day AS d FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
-            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict = 'safety_hold'
-            UNION SELECT local_day AS d FROM reflection_turn WHERE answer_verdict = 'safety_hold'
-            UNION SELECT local_day AS d FROM day_state WHERE mood_note_verdict = 'safety_hold'
-            """).compactMap { $0.str("d") })
         // The letter the day keeps now (a rewrite unkeeps the old one), as Reflection kept it.
         for s in try db.run("""
             SELECT s.* FROM insight_snapshot s JOIN day_state d ON d.letter_kept_snapshot_id = s.id WHERE s.kind='letter' AND d.local_day LIKE ?
