@@ -80,6 +80,12 @@ public enum Sky {
         night.at(24, [0.86, 0.22]),
     ]
 
+    /// The local time of day, 0–24, to the minute.
+    public static func localHour(_ date: Date, calendar: Calendar = .current) -> Double {
+        let c = calendar.dateComponents([.hour, .minute], from: date)
+        return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60
+    }
+
     /// Night palette from 8 pm to 6 am local time.
     public static func isNight(_ hour: Double) -> Bool {
         let h = wrap(hour)
