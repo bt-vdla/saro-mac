@@ -8,7 +8,7 @@ struct VoicePill: View {
     let inSession: Bool
     /// Growing out of the Voice button, which is its entrance.
     var grows = false
-    /// The first reflection's question, on a card riding 16 pt above the pill (FirstEntry.tsx).
+    /// The first reflection's question, on a card 16 pt above the pill (FirstEntry.tsx); it rises in with the pill.
     var prompt: String?
     let toggle: () -> Void
     let done: () -> Void
@@ -24,17 +24,19 @@ struct VoicePill: View {
 
     var body: some View {
         let step: AnyTransition = reduceMotion ? .opacity : AnyTransition(BlurFade())
-        ZStack {
-            if let message { messageStep(message).transition(step) } else { recordingStep.transition(step) }
+        VStack(spacing: 16) {
+            if let prompt { promptCard(prompt) }
+            ZStack {
+                if let message { messageStep(message).transition(step) } else { recordingStep.transition(step) }
+            }
+            .animation(CaptureMotion.out(0.2), value: message)
+            .frame(maxWidth: .infinity)
+            .background(Night.surface.opacity(0.95))
+            .background(.frosted(solid: Night.surface))
+            .clipShape(.rect(cornerRadius: 28))
+            .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
+            .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
         }
-        .animation(CaptureMotion.out(0.2), value: message)
-        .frame(maxWidth: .infinity)
-        .background(Night.surface.opacity(0.95))
-        .background(.frosted(solid: Night.surface))
-        .clipShape(.rect(cornerRadius: 28))
-        .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
-        .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
-        .overlay(alignment: .top) { if let prompt { promptCard(prompt).alignmentGuide(.top) { $0[.bottom] + 16 } } }
         .environment(\.colorScheme, .dark)
         .offset(y: appeared || grows || reduceMotion ? 0 : 16)
         .scaleEffect(appeared || grows || reduceMotion ? 1 : 0.96, anchor: .bottom)
