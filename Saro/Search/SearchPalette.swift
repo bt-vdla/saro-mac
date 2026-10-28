@@ -844,12 +844,12 @@ struct SearchPalette: View {
         }
     }
 
-    /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to load. A clicked row
-    /// is where the entry's flight into its detail starts (day view coordinates); a key opens it from its card.
+    /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to land (a day that
+    /// lands after the entry opened would close it). A clicked row is where the entry's flight into its detail starts
+    /// (day view coordinates); a key opens it at once.
     private static func open(_ h: SearchHit, in model: AppModel, from: CGRect? = nil) {
-        model.go(to: h.localDay)
         Task {
-            if model.entry(h.entryId) == nil { await model.reload() }
+            await model.land(on: h.localDay)
             model.reflection.flightSource = from
             model.openEntryID = h.entryId
         }
