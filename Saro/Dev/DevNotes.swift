@@ -18,19 +18,21 @@ struct DevNotes {
         case .canvas:
             DevNotes(
                 name: "Day canvas",
-                does: "One free canvas per local day. Every entry of the day is a card you can pan around, zoom, move, select and arrange.",
-                built: ["Two-finger pan, pinch or ⌘-scroll zoom", "Press-and-hold (~120 ms) then drag moves a card; positions saved per day",
-                        "Marquee select on empty canvas", "Contextual toolbar for a selection: Stack ⌘S, Grid ⌘G, Delete",
-                        "Day navigation: ⌘[ ⌘] and Today ⌘T", "Drop or paste a still onto the canvas",
-                        "Double-click (or Return) opens a card; it morphs open on the BRD springs and closes back into its card",
-                        "Zoom controls ⌘- ⌘0 ⌘=, a dot grid that moves with the canvas",
-                        "Launch with -SaroDemo YES for a throwaway journal of synthetic entries"],
-                stubbed: ["Collections / folders with the pocket animation (FR-CAN-05)", "Notes pinned to an image (FR-CAN-04)",
-                          "Search side panel (FR-CAN-08)", "Self-ticking first-run checklist (FR-CAN-10)",
-                          "Week / month / year time lens (FR-DAY-06)"],
-                issues: ["The press-and-hold timing hasn't been tried on a real trackpad (BRD section 15 open question)",
-                         "Overnight, gestures were checked by build and window screenshots only; nobody clicked them (B-05)",
-                         "Zooming far in scales cards as layers, so text can look soft above 150%"],
+                does: "One free canvas per local day, built to the web overnight build: a lit ground, cards that fly open, floating chrome (Monolith + search top-left, the insight spine right, one glass bar below).",
+                built: ["Cards drawn to the web specs: moment, turns stack with ghost layers, voice orb + pill, still, reflection; 'title · time' footer",
+                        "Click opens (a log-space flight over an 85% ground scrim with blur); ⌘/⇧-click selects; Return opens the selection",
+                        "Drag after 4 pt: lift to 1.02, tilt with velocity (±3°), glide on release (velocity × 0.12) on the release spring",
+                        "Two-finger pan, pinch and ⌘-scroll zoom (0.2-3×); the day stays framed until you move it; Recenter (⌘0)",
+                        "Marquee on empty canvas and the contextual toolbar: Stack ⌘S, Grid ⌘G, Delete",
+                        "Chevrons slide the whole day (viewport + 32 pt, surface spring); ⌘[ ⌘] switch instantly; tomorrow leans 24 pt and comes back",
+                        "The glass bar: History (days sidebar), date + 7-day mood ribbon, Moment ⌘N, Voice ⇧⌘N, Still, Write ⌥⌘W, Recenter",
+                        "Lit ground: the web's WebGL shader ported to Metal, keyed to the hour; palette follows the clock (B-18)",
+                        "Drop, paste or pick photos as stills; -SaroDemo YES opens a throwaway journal of synthetic entries"],
+                stubbed: ["The uneven drag grid and snap guides (web DragGuides)", "Resize handles", "Motion blur on flights",
+                          "Collections / folders (FR-CAN-05)", "Notes pinned to an image (FR-CAN-04)", "Time lens, day replay (FR-DAY-06)"],
+                issues: ["Overnight, gestures and motion were checked from builds and off-screen snapshots only; nobody has clicked or flicked them on a trackpad yet",
+                         "Zooming far in scales cards as layers, so text can look soft above 150%",
+                         "A day sliding out re-reads titles from the new day for its last frames (cards keep their places)"],
                 brd: ["FR-CAN-01", "FR-CAN-02", "FR-CAN-03", "FR-CAN-06", "FR-CAN-11", "FR-DAY-01", "FR-DAY-03", "FR-DAY-05", "DR-10"])
         case .sidebar:
             DevNotes(
@@ -117,7 +119,8 @@ struct DevNotes {
             DevNotes(
                 name: "What Saro noticed",
                 does: "Saro's reading of the day, made on this Mac from per-entry readings (title, summary, mood, quotes by index), only for entries the safety gate cleared.",
-                built: ["Per-entry reading on the guardrail ladder (permissive JSON, then guided, then heuristic)",
+                built: ["The 64 pt spine on the right (mood dot, letter mark); click or ⌥⌘I opens the 360 pt panel; Esc folds it",
+                        "Per-entry reading on the guardrail ladder (permissive JSON, then guided, then heuristic)",
                         "Day reading by map-reduce over stored readings", "Four states: clear, technical hold, safety hold, model unavailable"],
                 stubbed: ["Adjust the day's mood and answer the daily question (FR-REF-05)", "Refresh narrative or mood (FR-REF-11)"],
                 issues: ["The narrative eval gate (D-13) isn't built: a model narrative shows if it passes the drift check",
@@ -128,7 +131,8 @@ struct DevNotes {
             DevNotes(
                 name: "Evening letter",
                 does: "The day's letter, typeset from the verified day reading with links back to the quotes. No model-written prose (B-11).",
-                built: ["Typeset letter from the day reading (⌥⌘L from the inspector)", "Quotes link back to their entry", "Keep (stored as a 'letter' snapshot)"],
+                built: ["The insight surface grows from the spine to the panel to the letter on the surface spring", "Typeset in Newsreader from the day reading",
+                        "Quotes link back to their entry", "Keep (stored as a 'letter' snapshot)"],
                 stubbed: ["Rewrite and Write back (FR-REF-08)", "Close the day early and the letter notification (FR-REF-09)"],
                 issues: [],
                 brd: ["FR-REF-08", "FR-REF-09", "SR-13"])
