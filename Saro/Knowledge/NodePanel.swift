@@ -58,6 +58,7 @@ struct NodePanel: View {
             if renaming {
                 TextField("Name", text: $name)
                     .textFieldStyle(.plain).font(Typo.serif(24, .medium)).focused($nameFocused)
+                    .writingToolsBehavior(.disabled)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Tok.surfaceAlt, in: .rect(cornerRadius: Radius.control))
                     .overlay(RoundedRectangle(cornerRadius: Radius.control).strokeBorder(Tok.sage, lineWidth: 1.5))

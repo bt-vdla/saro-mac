@@ -133,7 +133,7 @@ private struct MemorySwitch: View {
             Text("Memory").font(Typo.ui(13, .medium)).foregroundStyle(Tok.ink2)
             Toggle("Memory", isOn: Binding(get: { !(model.profile?.memoryPaused ?? false) },
                                            set: { on in Task { await model.setMemoryPaused(!on) } }))
-                .toggleStyle(.switch).controlSize(.small).labelsHidden().tint(Tok.sage)
+                .toggleStyle(.sage).labelsHidden()
                 .accessibilityLabel("Memory")
                 .accessibilityHint("When off, Saro won’t learn anything new. What’s here stays.")
         }
