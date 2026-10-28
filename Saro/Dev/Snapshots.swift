@@ -201,7 +201,7 @@ enum Snapshots {
                 }),
                 ("loaderror", { model.loadFailed = true }),
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
-                ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
+                ("grow", { p.contentView = NSHostingView(rootView: GrowGallery().environment(model)) }),
                 ("capture-pieces", { p.contentView = NSHostingView(rootView: CaptureGallery().environment(model)) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
                 // Onboarding, each step hosted on its own flow (the demo journal itself skips onboarding).
