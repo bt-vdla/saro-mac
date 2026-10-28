@@ -78,8 +78,10 @@ public actor Pipeline {
     }
 
     /// A typed title after the words, so their offsets hold; a song's title is already its words.
-    public static func titled(_ words: String, _ e: Entry) -> String {
-        guard e.kind != .music, let t = e.titleUser?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return words }
+    public static func titled(_ words: String, _ e: Entry) -> String { titled(words, title: e.titleUser, kind: e.kind) }
+
+    static func titled(_ words: String, title: String?, kind: EntryKind) -> String {
+        guard kind != .music, let t = title?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return words }
         return words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? t : words + "\n" + t
     }
 

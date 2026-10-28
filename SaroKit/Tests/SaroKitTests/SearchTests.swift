@@ -189,3 +189,17 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     ]
     for (text, day) in cases { #expect(LocalDay.parse(text, now: now) == day, "\(text)") }
 }
+
+@Test func aTitleTypedSinceTheGateLeavesTheEntryUncheckedInSearch() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: "Words of my own.")
+    try await l.insertEntry(e)
+    try await annotate(l, e, title: "Grief", summary: "A hard anniversary.", verdicts: ["clear"])
+    #expect(try await l.search("anniversary").map(\.entryId) == [e.id])
+    // A typed title is gated with the words (SR-01): unchecked until they are gated together; the reading of the words stands.
+    try await l.updateEntryText(id: e.id, body: "Words of my own.", titleUser: "Tuesday", captionUser: nil)
+    #expect(try await l.search("anniversary").isEmpty)
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256("Words of my own.\nTuesday"), safetyVersion: "1", layer: 1,
+                                               verdict: "clear", reasonCode: "clear"))
+    #expect(try await l.search("anniversary").map(\.entryId) == [e.id])
+}
