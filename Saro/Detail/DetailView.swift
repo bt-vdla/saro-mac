@@ -411,10 +411,7 @@ private struct TitleField: View {
     private func save() {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard t != (entry.titleUser ?? "") else { return }
-        Task {
-            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: t.isEmpty ? nil : t, captionUser: entry.captionUser)
-            await model.reload()
-        }
+        Task { await model.saveText(entry, body: entry.body, title: t.isEmpty ? nil : t, caption: entry.captionUser) }
     }
 }
 

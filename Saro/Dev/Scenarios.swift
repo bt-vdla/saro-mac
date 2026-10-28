@@ -534,7 +534,7 @@ final class Scenarios {
         var p: [String] = []
         if e.body != text { p.append("\(Self.short(id)) body isn't the last edit") }
         let v = (try? await ledger.verdicts(day: e.localDay))?[id]
-        if v?.textSha256 != sha256(text) { p.append("\(Self.short(id)) wasn't gated on its last edit (status \(e.processingStatus))") }
+        if v?.textSha256 != sha256(Pipeline.titled(text, e)) { p.append("\(Self.short(id)) wasn't gated on its last edit (status \(e.processingStatus))") }
         if v?.verdict == "clear" || v?.verdict == "unavailable_clear" {
             if (try? await ledger.hasAnnotation(entryId: id, inputHash: sha256(text))) != true { p.append("\(Self.short(id)) wasn't read on its last edit") }
             if e.localDay == model.day, !model.isDayHeld, model.annotations[id] == nil { p.append("\(Self.short(id)) reading doesn't show") }
@@ -546,7 +546,7 @@ final class Scenarios {
         guard let e = try? await ledger.entry(id) else { return ["\(Self.short(id)) is gone"] }
         let v = (try? await ledger.verdicts(day: e.localDay))?[id]
         var p: [String] = []
-        if v?.textSha256 != sha256(text) { p.append("the still's note wasn't gated (status \(e.processingStatus))") }
+        if v?.textSha256 != sha256(Pipeline.titled(text, e)) { p.append("the still's note wasn't gated (status \(e.processingStatus))") }
         if v?.verdict == "clear", (try? await ledger.hasAnnotation(entryId: id, inputHash: sha256(text))) != true { p.append("the still's note wasn't read") }
         return p
     }
@@ -573,7 +573,8 @@ final class Scenarios {
                         p.append("\(tag) points at no media row")
                     }
                 }
-                let text = await self.text(e)
+                let words = await self.text(e)
+                let text = Pipeline.titled(words, e)
                 texts[e.id] = text
                 let v = verdicts[e.id]
                 if v?.verdict == "safety_hold" {
@@ -586,7 +587,8 @@ final class Scenarios {
                 if v == nil || v?.textSha256 != sha256(text) {
                     if e.processingStatus != ProcessingStatus.transcriptUnavailable { p.append("\(tag) isn't gated on its current text") }
                 } else if v?.verdict == "clear" || v?.verdict == "unavailable_clear",
-                          (try? await ledger.hasAnnotation(entryId: e.id, inputHash: sha256(text))) != true {
+                          !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                          (try? await ledger.hasAnnotation(entryId: e.id, inputHash: sha256(words))) != true {
                     p.append("\(tag) is clear but has no reading of its current text")
                 }
             }
@@ -631,7 +633,7 @@ final class Scenarios {
         return p
     }
 
-    /// The text the gate reads, as `Pipeline.text(for:)` builds it.
+    /// The words the model reads, as `Pipeline.words(for:)` builds them; the gate reads them with the title.
     private func text(_ e: Entry) async -> String {
         switch e.kind {
         case .reflection: return e.body ?? ""

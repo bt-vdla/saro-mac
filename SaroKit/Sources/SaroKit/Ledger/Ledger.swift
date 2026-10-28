@@ -85,14 +85,17 @@ public actor Ledger {
                    [body.sql, titleUser.sql, captionUser.sql, .text(status), .text(Date.now.iso), .text(id)])
     }
 
-    /// Nil when the gated text is unchanged; a recording's text is its transcript, not these fields, and a song's is its
-    /// title and artist, not its link.
+    /// Nil when the gated text is unchanged. A typed title is gated with the words (SR-01); a song's words are its title
+    /// and artist, not its link, and a recording's are its transcript, which no edit empties.
     static func statusAfterEdit(_ old: Entry, body: String?, titleUser: String?, captionUser: String?) -> String? {
-        guard old.kind != .moment, old.kind != .voice else { return nil }
-        let (was, now) = old.kind == .music ? ([old.titleUser, old.captionUser], [titleUser, captionUser]) : ([old.body, old.captionUser], [body, captionUser])
+        let (was, now): ([String?], [String?]) = switch old.kind {
+        case .music: ([old.titleUser, old.captionUser], [titleUser, captionUser])
+        case .moment, .voice: ([old.titleUser], [titleUser])
+        case .reflection, .still: ([old.body, old.captionUser, old.titleUser], [body, captionUser, titleUser])
+        }
         guard was != now else { return nil }
         let empty = now.compactMap { $0 }.joined().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return empty ? ProcessingStatus.done : ProcessingStatus.pending
+        return empty && old.kind != .moment && old.kind != .voice ? ProcessingStatus.done : ProcessingStatus.pending
     }
 
     public func setProcessingStatus(id: String, _ status: String) throws {

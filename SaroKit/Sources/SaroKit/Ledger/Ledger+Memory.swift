@@ -210,11 +210,11 @@ extension Ledger {
         try db.run("SELECT at FROM memory_tombstone WHERE key_sha256='all'").first?.date("at")
     }
 
-    /// Whether this text of the entry was learned from, or deliberately passed over, by this extractor version.
+    /// Whether these words of the entry were learned from, or deliberately passed over, by this extractor version.
     public func memoryLearned(entryId: String, textSha256: String, extractor: String) throws -> Bool {
         try !db.run("""
             SELECT 1 FROM ai_run r JOIN ai_run_input i ON i.ai_run_id = r.id
-            WHERE r.feature=? AND r.extractor_version=? AND r.input_hash=? AND i.entry_id=? LIMIT 1
+            WHERE r.feature=? AND r.extractor_version=? AND i.text_sha256=? AND i.entry_id=? LIMIT 1
             """, [.text(Self.memoryFeature), .text(extractor), .text(textSha256), .text(entryId)]).isEmpty
     }
 

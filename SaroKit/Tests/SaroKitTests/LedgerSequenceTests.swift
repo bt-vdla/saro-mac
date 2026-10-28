@@ -103,8 +103,9 @@ func randomOperationSequencesKeepTheLedgerConsistent(seed: UInt64) async throws 
             m.undo[id] = before.body
             m.entries[id]?.body = body
             m.entries[id]?.titleUser = title
-            let expected = before.kind == .voice || before.body == body ? before.processingStatus
-                : (body ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? ProcessingStatus.done : ProcessingStatus.pending
+            // The title is gated with the words; a recording's words are its transcript, which no edit empties.
+            let expected = before.titleUser == title && (before.kind == .voice || before.body == body) ? before.processingStatus
+                : before.kind == .voice || !blank(body) || !blank(title) ? ProcessingStatus.pending : ProcessingStatus.done
             #expect(try await l.entry(id)?.processingStatus == expected, "seed \(seed) step \(step): edit status")
         case 32..<40:
             op = "trash"

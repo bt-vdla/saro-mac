@@ -243,14 +243,17 @@ final class AppModel {
         // Only what was checked and read from the entry's current text shows (§13.2): an edit is unchecked until gated.
         for e in d.entries {
             guard let v = d.verdicts[e.id] else { d.annotations[e.id] = nil; continue }
-            if let text = Self.typedText(e), sha256(text) != v.textSha256 {
+            // The words and any typed title, as the gate read them; nil while a still's hold stands as it is.
+            if let text = await pipeline.gatedText(of: e), sha256(text) != v.textSha256 {
                 // A stale all-clear allows nothing; a stale hold still hides the AI text and keeps the hold shown, until
                 // the text is emptied: then nothing is left to hold, as the pipeline's day status already counts it.
                 let emptied = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 if emptied || v.verdict == "clear" || v.verdict == "unavailable_clear" { d.verdicts[e.id] = nil }
                 d.annotations[e.id] = nil
-            } else if d.annotations[e.id] != nil, (try? await ledger.hasAnnotation(entryId: e.id, inputHash: v.textSha256)) != true {
-                d.annotations[e.id] = nil
+            } else if d.annotations[e.id] != nil {
+                // A reading is of the words alone: a title is gated, never read.
+                let words = await pipeline.wordsHash(of: e) ?? ""
+                if (try? await ledger.hasAnnotation(entryId: e.id, inputHash: words)) != true { d.annotations[e.id] = nil }
             }
         }
         for e in d.entries { if let id = e.mediaId, let a = try await ledger.media(id) { d.media[id] = a } }
@@ -259,18 +262,6 @@ final class AppModel {
         let live = Set(d.entries.map(\.id))
         d.reading?.payload.quotes.removeAll { !live.contains($0.entryId) }
         return d
-    }
-
-    /// The text the gate reads from a typed entry (as `Pipeline.text(for:)` does). ponytail: nil for a recording, whose
-    /// transcript of record is never edited, so only its annotation is matched; hash the transcript if editing lands.
-    private static func typedText(_ e: Entry) -> String? {
-        switch e.kind {
-        case .reflection: e.body ?? ""
-        case .music: Pipeline.songText(e)
-        // Uncaptioned, a still's text is Saro's description, matched through its annotation like a recording's.
-        case .still: e.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-        case .moment, .voice: nil
-        }
     }
 
     private func apply(_ d: DayData) {
@@ -565,6 +556,7 @@ final class AppModel {
             process(e.id)
         }
         for id in await memory.unlearned() { process(id) }
+        for id in await pipeline.ungatedTitles() { process(id) }
         await regateWaiting()
         await reload()
     }

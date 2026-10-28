@@ -145,17 +145,28 @@ func tempLedger() throws -> Ledger {
     let moment = Entry(kind: .moment, processingStatus: ProcessingStatus.transcriptUnavailable)
     for e in [page, still, moment] { try await l.insertEntry(e) }
     func status(_ e: Entry) async throws -> String? { try await l.entry(e.id)?.processingStatus }
-    // A title alone isn't gated text.
+    // A title is the person's words too, gated with the page (SR-01).
+    try await l.updateEntryText(id: page.id, body: "Tea with Ravi.", titleUser: "Tea")
+    #expect(try await status(page) == ProcessingStatus.pending)
+    try await l.setProcessingStatus(id: page.id, ProcessingStatus.done)
     try await l.updateEntryText(id: page.id, body: "Tea with Ravi.", titleUser: "Tea")
     #expect(try await status(page) == ProcessingStatus.done)
     try await l.updateEntryText(id: page.id, body: "Tea with Ravi, then rain.", titleUser: "Tea")
     #expect(try await status(page) == ProcessingStatus.pending)
     try await l.updateEntryText(id: page.id, body: " \n", titleUser: "Tea")
+    #expect(try await status(page) == ProcessingStatus.pending)
+    try await l.updateEntryText(id: page.id, body: " \n", titleUser: nil)
     #expect(try await status(page) == ProcessingStatus.done)
     try await l.updateEntryText(id: still.id, body: nil, titleUser: nil, captionUser: "The river")
     #expect(try await status(still) == ProcessingStatus.pending)
-    try await l.updateEntryText(id: moment.id, body: nil, titleUser: "Walk", captionUser: "x")
+    // A recording's caption isn't its text; its title is, and its transcript stays when the title goes.
+    try await l.updateEntryText(id: moment.id, body: nil, titleUser: nil, captionUser: "x")
     #expect(try await status(moment) == ProcessingStatus.transcriptUnavailable)
+    try await l.updateEntryText(id: moment.id, body: nil, titleUser: "Walk", captionUser: "x")
+    #expect(try await status(moment) == ProcessingStatus.pending)
+    try await l.setProcessingStatus(id: moment.id, ProcessingStatus.done)
+    try await l.updateEntryText(id: moment.id, body: nil, titleUser: nil, captionUser: "x")
+    #expect(try await status(moment) == ProcessingStatus.pending)
 }
 
 @Test func onlyEmptyPagesAreDiscarded() async throws {

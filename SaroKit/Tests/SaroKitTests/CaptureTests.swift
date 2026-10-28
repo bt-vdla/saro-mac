@@ -480,3 +480,162 @@ private func sampleBuffer(_ pcm: AVAudioPCMBuffer, at frame: Int64) throws -> CM
     #expect(FollowUps.phraseless.contains(FollowUps.unquoted("What did “\(phrase) feel like?", seed: 2)))
     #expect(FollowUps.unquoted("What made the walk feel long?", seed: 0) == "What made the walk feel long?")
 }
+
+// MARK: A typed title is gated with the words, never read or quoted (SR-01, SR-17)
+
+@Test func aPagesTitleIsGatedWithItsWordsAndNeverQuoted() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let body = "Walked home the long way by the river after work. The water was high and loud."
+    let page = Entry(kind: .reflection, body: body)
+    try await l.insertEntry(page)
+    await p.process(entryId: page.id) {}
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    let reads = try await rowCount(l, "ai_run", "feature='entry_reading'")
+
+    // A title-only edit is an edit: gated with the words, which aren't read again.
+    try await l.updateEntryText(id: page.id, body: body, titleUser: "The river path")
+    #expect(try await l.entry(page.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: page.id) {}
+    let titled = try #require(try await l.entry(page.id))
+    #expect(try await l.verdicts(day: page.localDay)[page.id]?.textSha256 == sha256(body + "\nThe river path"))
+    #expect(await p.gatedText(of: titled) == body + "\nThe river path")
+    #expect(try await rowCount(l, "ai_run", "feature='entry_reading'") == reads)
+    #expect(try await l.hasAnnotation(entryId: page.id, inputHash: try #require(await p.wordsHash(of: titled))))
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    let day = try #require(await p.readDay(page.localDay))
+    #expect(!day.quotes.isEmpty && day.quotes.allSatisfy { $0.field == "body" && $0.utf16To <= body.utf16.count })
+    try await expectVerbatim(day, l)
+
+    // A held title holds the day: no reading, letter or mood, and nothing generated is kept (SR-13, SR-15).
+    try await l.updateEntryText(id: page.id, body: body, titleUser: "No point anymore")
+    await p.process(entryId: page.id) {}
+    #expect(try await l.verdicts(day: page.localDay)[page.id]?.verdict == "safety_hold")
+    #expect(await p.dayStatus(page.localDay) == .held)
+    #expect(await p.readDay(page.localDay) == nil)
+    #expect(await p.dayMood(page.localDay) == nil)
+    #expect(try await l.annotations(day: page.localDay)[page.id] == nil)
+
+    // Retitled, the words are read again, and the day with them.
+    try await l.updateEntryText(id: page.id, body: body, titleUser: "The river path")
+    await p.process(entryId: page.id) {}
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    #expect(await p.readDay(page.localDay) != nil)
+}
+
+@Test func aTitleAloneIsGatedButLeavesNothingToRead() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let page = Entry(kind: .reflection, body: "Walked home the long way by the river after work.")
+    let bare = Entry(kind: .reflection, titleUser: "No point anymore", body: "", localDay: page.localDay)
+    try await l.insertEntry(page)
+    try await l.insertEntry(bare)
+    await p.process(entryId: page.id) {}
+    await p.process(entryId: bare.id) {}
+    #expect(await p.dayStatus(page.localDay) == .held)
+
+    try await l.updateEntryText(id: bare.id, body: "", titleUser: "Tuesday")
+    #expect(try await l.entry(bare.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: bare.id) {}
+    #expect(try await l.verdicts(day: page.localDay)[bare.id]?.verdict == "clear")
+    #expect(try await l.annotations(day: page.localDay)[bare.id] == nil)
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    #expect(try #require(await p.readDay(page.localDay)).entryIds == [page.id])
+
+    try await l.updateEntryText(id: bare.id, body: "", titleUser: nil)
+    #expect(try await l.entry(bare.id)?.processingStatus == ProcessingStatus.done)
+    #expect(await p.dayStatus(page.localDay) == .ready)
+}
+
+@Test func aStillsTitleIsGatedWithItsDescriptionWhichStaysItsReading() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let s = try await stillEntry(l)
+    await p.process(entryId: s.id) {}
+    #expect(await p.dayStatus(s.localDay) == .ready)
+
+    try await l.updateEntryText(id: s.id, body: nil, titleUser: "Sunday in the park")
+    #expect(try await l.entry(s.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: s.id) {}
+    let e = try #require(try await l.entry(s.id))
+    let c = try #require(try await l.stillCaption(entryId: s.id))
+    #expect(try await l.verdicts(day: s.localDay)[s.id]?.textSha256 == sha256(c.gatedText! + "\nSunday in the park"))
+    #expect(try await rowCount(l, "ai_run", "feature='still_caption'") == 1)
+    #expect(try await l.hasAnnotation(entryId: s.id, inputHash: try #require(await p.wordsHash(of: e))))
+    #expect(try #require(await p.readDay(s.localDay)).entryIds == [s.id])
+
+    // A held title holds the still and its day, and the description goes with the hold (SR-15).
+    try await l.updateEntryText(id: s.id, body: nil, titleUser: "No point anymore")
+    await p.process(entryId: s.id) {}
+    #expect(await p.dayStatus(s.localDay) == .held)
+    #expect(await p.readDay(s.localDay) == nil)
+    #expect(try await l.stillCaption(entryId: s.id)?.caption == nil)
+}
+
+@Test func aRecordingsTitleIsGatedWithItsTranscript() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let asset = MediaAsset(fileName: "2026-10-28/s/part-1.mov", kind: .video, origin: "recorded", state: "ready")
+    let m = Entry(kind: .moment, mediaId: asset.id)
+    try await l.insertMedia(asset)
+    try await l.insertEntry(m)
+    let said = "the long walk home by the river".split(separator: " ")
+    try await l.setTranscript(mediaId: asset.id, words: said.enumerated().map { TranscriptWord(text: String($1), startMs: $0 * 300, durMs: 250, confidence: 0.9) },
+                              extractorVersion: "t")
+    await p.process(entryId: m.id) {}
+    #expect(await p.dayStatus(m.localDay) == .ready)
+
+    try await l.updateEntryText(id: m.id, body: nil, titleUser: "No point anymore")
+    #expect(try await l.entry(m.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: m.id) {}
+    #expect(await p.dayStatus(m.localDay) == .held)
+
+    // Cleared, a recording still has its words to gate.
+    try await l.updateEntryText(id: m.id, body: nil, titleUser: nil)
+    #expect(try await l.entry(m.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: m.id) {}
+    #expect(await p.dayStatus(m.localDay) == .ready)
+}
+
+@Test func aRecordingTitledBeforeTitlesWereGatedIsSweptUp() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let asset = MediaAsset(fileName: "2026-10-28/s/part-1.mov", kind: .video, origin: "recorded", state: "ready")
+    let m = Entry(kind: .moment, titleUser: "No point anymore", mediaId: asset.id, processingStatus: ProcessingStatus.done)
+    let untitled = Entry(kind: .reflection, body: "Walked home the long way by the river after work.", localDay: m.localDay)
+    try await l.insertMedia(asset)
+    try await l.insertEntry(m)
+    try await l.insertEntry(untitled)
+    try await l.setTranscript(mediaId: asset.id, words: [TranscriptWord(text: "River", startMs: 0, durMs: 300, confidence: 0.9)], extractorVersion: "t")
+    // As an older build left it: the transcript gated, the title never.
+    try await l.insertVerdict(SafetyVerdictRow(entryId: m.id, textSha256: sha256("River"), safetyVersion: SafetyGate.version, layer: 2,
+                                               verdict: "clear", reasonCode: "clear"))
+    await p.process(entryId: untitled.id) {}
+    #expect(await p.ungatedTitles() == [m.id])
+    await p.process(entryId: m.id) {}
+    #expect(await p.ungatedTitles().isEmpty)
+    #expect(await p.dayStatus(m.localDay) == .held)
+}
+
+@Test func aSilentRecordingsTitleHoldsUntilItIsCleared() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let page = Entry(kind: .reflection, body: "Walked home the long way by the river after work.")
+    let asset = MediaAsset(fileName: "2026-10-28/s/part-1.m4a", kind: .audio, origin: "recorded", state: "ready")
+    let v = Entry(kind: .voice, titleUser: "No point anymore", localDay: page.localDay, mediaId: asset.id, processingStatus: ProcessingStatus.done)
+    try await l.insertEntry(page)
+    try await l.insertMedia(asset)
+    try await l.insertEntry(v)
+    await p.process(entryId: page.id) {}
+    let gated = try #require(try await p.text(for: v))
+    #expect(gated.text == "No point anymore" && gated.field == "title_user")
+    try await l.insertVerdict(SafetyVerdictRow(entryId: v.id, textSha256: sha256(gated.text), safetyVersion: SafetyGate.version, layer: 1,
+                                               verdict: "safety_hold", reasonCode: "phrase"))
+    #expect(await p.dayStatus(page.localDay) == .held)
+
+    try await l.updateEntryText(id: v.id, body: nil, titleUser: nil)
+    let cleared = try #require(try await l.entry(v.id))
+    #expect(try await p.text(for: cleared) == nil)
+    #expect(await p.gatedText(of: cleared) == "")
+    #expect(await p.dayStatus(page.localDay) == .ready)
+}
