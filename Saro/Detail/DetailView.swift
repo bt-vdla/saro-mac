@@ -117,17 +117,16 @@ private struct MediaDetail: View {
     var body: some View {
         GeometryReader { geo in
             if entry.kind == .moment {
-                // Two columns from the web's VideoPlayerModal: [1fr, min(420, 40%)].
-                HStack(alignment: .top, spacing: 28) {
+                // Two columns from the web's VideoPlayerModal: [1fr, min(420, 40%)]. The video is black and flush with
+                // the sheet's left, top and bottom edges; the sheet's own radius clips its corners.
+                HStack(spacing: 0) {
                     playerArea
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .background(.black, in: .rect(cornerRadius: Radius.card))
-                        .clipShape(.rect(cornerRadius: Radius.card))
-                        .elevation(.float)
-                        .frame(maxHeight: .infinity, alignment: .center)
-                    side.frame(width: min(420, geo.size.width * 0.4))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.black)
+                    side
+                        .padding(.horizontal, 32).padding(.top, 32).padding(.bottom, 24)
+                        .frame(width: min(420, geo.size.width * 0.4))
                 }
-                .padding(.leading, 32).padding(.trailing, 20).padding(.vertical, 28)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     side(player: true)
