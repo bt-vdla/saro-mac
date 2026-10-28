@@ -67,6 +67,12 @@ struct RecorderView: View {
             if available, !ending, !saving { await capture.prepare(kind, for: surface, model: model) }
         }
         .onAppear {
+            if !compact {
+                // A field that had the keys (a card edited in place, an answer, the music field) lets them go, so Space, R
+                // and K reach the recorder instead of being typed, unseen, into it. An edit in place commits as it was.
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                if CaptureUI.shared.musicOpen { CaptureUI.shared.musicOpen = false }
+            }
             appeared = true
             // Without a flight it is already there, so turning Reduce Motion off later can't fold it into the button.
             guard from != nil else { grown = 1; landed = true; return }
