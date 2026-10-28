@@ -675,7 +675,7 @@ final class AppModel {
         for e in missing {
             top += 1
             if let sid = e.sessionId, let mate = (Array(layouts.values) + added).first(where: { $0.stackId == sid }) {
-                added.append(CardLayout(entryId: e.id, x: mate.x, y: mate.y, z: top, stackId: sid))
+                added.append(CardLayout(entryId: e.id, x: mate.x, y: mate.y, z: top, stackId: sid, userPlaced: mate.userPlaced))
             } else {
                 added.append(CardLayout(entryId: e.id, x: 0, y: 0, z: top, stackId: e.sessionId))
                 loose.append(e)
@@ -713,8 +713,10 @@ final class AppModel {
     /// The window's width changed: the cards nobody moved follow the day's layout for the new visible area (B-002); the
     /// ones moved by hand stay where they were put. Height alone changes nothing. A stack moves as one card.
     func relayout(for visible: CGRect) {
-        let auto = entries.filter { layouts[$0.id].map { !$0.userPlaced } ?? false }
         let key = { (e: Entry) in self.layouts[e.id]?.stackId ?? e.id }
+        // A stack is hand-placed if any of its turns is: it is drawn where its top turn sits.
+        let moved = Set(entries.filter { layouts[$0.id]?.userPlaced ?? true }.map(key))
+        let auto = entries.filter { !moved.contains(key($0)) }
         var cards: [String: [Entry]] = [:], order: [String] = []
         for e in auto {
             if cards[key(e)] == nil { order.append(key(e)) }
