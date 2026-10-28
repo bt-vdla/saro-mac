@@ -240,11 +240,22 @@ extension Ledger {
                    [.text(entryId), .text(textSha256)]).first?.date("at")
     }
 
-    /// Open commitments from reflection's v4 table, a carried one on each day it was carried to.
+    /// Open commitments from reflection's v4 table, a carried one on each day it was carried to. None set on a held day or
+    /// carried from one (SR-13, SR-16), by `active_observation`'s three holds, since memory says them in Saro's voice.
     public func openCommitments() throws -> [OpenCommitment] {
         try db.run("""
-            SELECT text, created_at FROM commitment
-            WHERE completed_at IS NULL AND let_go_on_day IS NULL AND deleted_at IS NULL ORDER BY created_at
+            WITH RECURSIVE line(id, day, up) AS (
+              SELECT id, for_day, carried_from_id FROM commitment
+              UNION ALL SELECT l.id, c.for_day, c.carried_from_id FROM line l JOIN commitment c ON c.id = l.up)
+            SELECT c.text, c.created_at FROM commitment c
+            WHERE c.completed_at IS NULL AND c.let_go_on_day IS NULL AND c.deleted_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM line l WHERE l.id = c.id AND (
+                EXISTS (SELECT 1 FROM live_entry h JOIN safety_verdict v ON v.entry_id = h.id
+                        WHERE h.local_day = l.day AND v.verdict = 'safety_hold'
+                          AND v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = h.id))
+                OR EXISTS (SELECT 1 FROM reflection_turn t WHERE t.local_day = l.day AND t.answer_verdict = 'safety_hold')
+                OR EXISTS (SELECT 1 FROM day_state d WHERE d.local_day = l.day AND d.mood_note_verdict = 'safety_hold')))
+            ORDER BY c.created_at
             """).compactMap { r in r.str("text").map { OpenCommitment(text: $0, createdAt: r.date("created_at") ?? .distantPast) } }
     }
 

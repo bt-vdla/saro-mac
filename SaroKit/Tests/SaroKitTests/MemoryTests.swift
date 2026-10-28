@@ -261,6 +261,31 @@ private func rows(_ entries: [String], now: Date = .now) -> [MemoryObservation] 
     #expect(try await texts(work()).contains("You’re working on “Book the dentist”."))
 }
 
+@Test func whatYoureWorkingOnNeverSaysAHeldDaysCommitmentOrAPhraseHit() async throws {
+    let l = try tempLedger()
+    let day = { LocalDay.adding(-$0, to: LocalDay.today()) }
+    try await l.addCommitment("kill myself tonight", day: day(0))
+    try await l.addCommitment("Call Maya back", day: day(0))
+    let run = try #require(try await l.addCommitment("Run the 5k", day: day(2)))
+    _ = try await l.carry([run.id], to: day(1))
+    try await l.addCommitment("Book the dentist", day: day(3))
+    try await l.addCommitment("Water the plants", day: day(4))
+    let work = { Set(try await texts(memories(l).filter { $0.group == .work })) }
+    #expect(try await work() == ["You’re working on “Call Maya back”.", "You’re working on “Run the 5k”.",
+                                 "You’re working on “Book the dentist”.", "You’re working on “Water the plants”."])
+
+    // A day held later takes its commitments, and their carried copies, out of memory: an entry, a mood note, an answer.
+    let held = Entry(kind: .reflection, body: "x", capturedAt: .now.addingTimeInterval(-2 * 86_400), localDay: day(2))
+    try await l.insertEntry(held)
+    try await l.insertVerdict(SafetyVerdictRow(entryId: held.id, textSha256: sha256("x"), safetyVersion: SafetyGate.version, layer: 2,
+                                               verdict: "safety_hold", reasonCode: "t"))
+    try await l.setUserMood(day: day(3), label: .calm, note: "x", verdict: "safety_hold")
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: "q", generator: "heuristic", localDay: day(4))
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: "x", verdict: "safety_hold")
+    #expect(try await work() == ["You’re working on “Call Maya back”."])
+}
+
 @Test func carriedCommitmentsAreOneAndAboutYouReadsAsSentences() {
     let c = [OpenCommitment(text: "Call Maya back about the weekend", createdAt: ago(3)),
              OpenCommitment(text: "Call Maya back about the weekend.", createdAt: ago(1))]

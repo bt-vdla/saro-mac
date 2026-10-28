@@ -125,11 +125,13 @@ public enum MemoryList {
             out.append(memory(key, "You’ve often felt \(rs[0].label.lowercased()) lately.", .feelings, rs, label: rs[0].label))
         }
 
-        // A commitment carried over to a new day is the same commitment.
+        // A commitment carried over to a new day is the same commitment. Words that trip the phrase gate are never set in
+        // Saro's voice (SR-13), as carry-over's prompt leaves them out too.
+        // ponytail: phrase layer only; commitments get the full gate once a schema migration gives them a verdict column.
         let since = { (d: Date) in forgotAllAt.map { d > $0 } ?? true && !pauses.contains { $0.contains(d) } }
         var seen: [String: (text: String, at: [Date])] = [:]
         var order: [String] = []
-        for c in commitments where since(c.createdAt) {
+        for c in commitments where since(c.createdAt) && !SafetyGate.phraseHit(c.text) {
             let text = c.text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: #"[.!?]+$"#, with: "", options: .regularExpression)
             let key = "commitment:" + text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
             guard !text.isEmpty else { continue }
