@@ -10,6 +10,10 @@ enum Snapshots {
     private static var panel: NSPanel?
     /// Holds the day's first card a little off its place, so the drag grid can be seen.
     static let hold = Notification.Name("SaroSnapshotHold")
+    /// Opens the busiest node of What Saro knows' graph.
+    static let pickNode = Notification.Name("SaroSnapshotPickNode")
+    /// Shows Why on the first person in What Saro knows' list.
+    static let showWhy = Notification.Name("SaroSnapshotShowWhy")
 
     static func runIfRequested(_ model: AppModel) {
         guard panel == nil, let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
@@ -17,6 +21,7 @@ enum Snapshots {
                         backing: .buffered, defer: false)
         p.contentView = NSHostingView(rootView: RootView().environment(model))
         panel = p
+        Task { await MemoryDemo.seed(model) }
         let dark = UserDefaults.standard.bool(forKey: "SaroSnapshotDark")
         p.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
@@ -99,6 +104,14 @@ enum Snapshots {
                         await model.reload()
                     }
                 }),
+                ("knows", {
+                    UserDefaults.standard.set("graph", forKey: "saro.knows.mode")
+                    model.pane = .knows
+                }),
+                ("knows-node", { NotificationCenter.default.post(name: pickNode, object: nil) }),
+                ("knows-list", { UserDefaults.standard.set("list", forKey: "saro.knows.mode") }),
+                ("knows-why", { NotificationCenter.default.post(name: showWhy, object: nil) }),
+                ("knows-search", { model.memory.query = "anxious" }),
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
