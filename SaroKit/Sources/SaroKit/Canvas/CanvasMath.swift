@@ -170,6 +170,18 @@ public enum CanvasMath {
         }
     }
 
+    /// A morph flight's box at progress `v` (morph.ts, MorphLayer.tsx): its size moves in log space and its centre in a
+    /// straight line, so growing many times over looks even.
+    public static func flightBox(from: CGRect, to: CGRect, v: CGFloat) -> CGRect {
+        let size = CGSize(width: from.width * pow(to.width / from.width, v), height: from.height * pow(to.height / from.height, v))
+        return CGRect(center: CGPoint(x: from.midX + (to.midX - from.midX) * v, y: from.midY + (to.midY - from.midY) * v), size: size)
+    }
+
+    /// What a flight leaves fades out from 5% to 55% of the way; what it reaches is in by 35%.
+    public static func flightFades(_ v: Double) -> (leaving: Double, arriving: Double) {
+        (1 - min(max((v - 0.05) / 0.5, 0), 1), min(max(v / 0.35, 0), 1))
+    }
+
     /// Deterministic ±12 pt jitter from an id.
     static func jitter(_ id: String) -> CGPoint {
         let h = id.utf8.reduce(UInt64(1469598103934665603)) { ($0 ^ UInt64($1)) &* 1099511628211 }

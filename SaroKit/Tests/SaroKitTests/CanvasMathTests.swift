@@ -69,3 +69,23 @@ import Testing
     let other = CGRect(x: 131, y: 0, width: 100, height: 100)
     #expect(snap([-82, 23, 126], CanvasMath.cardLines([other], axis: 0))?.at == 131)
 }
+
+@Test func flightGrowsEvenlyOutOfItsButton() {
+    let button = CGRect(x: 100, y: 700, width: 68, height: 52), frame = CGRect(x: 24, y: 24, width: 1272, height: 812)
+    #expect(CanvasMath.flightBox(from: button, to: frame, v: 0) == button)
+    let end = CanvasMath.flightBox(from: button, to: frame, v: 1)
+    #expect(abs(end.minX - 24) < 1e-9 && abs(end.minY - 24) < 1e-9 && abs(end.width - 1272) < 1e-9 && abs(end.height - 812) < 1e-9)
+    // Halfway the size is the geometric mean and the centre the midpoint.
+    let mid = CanvasMath.flightBox(from: button, to: frame, v: 0.5)
+    #expect(abs(mid.width - (68 * 1272).squareRoot()) < 1e-9 && abs(mid.height - (52 * 812).squareRoot()) < 1e-9)
+    #expect(abs(mid.midX - (button.midX + frame.midX) / 2) < 1e-9 && abs(mid.midY - (button.midY + frame.midY) / 2) < 1e-9)
+}
+
+@Test func flightCrossfadesAsTheWebDoes() {
+    #expect(CanvasMath.flightFades(0) == (1, 0))
+    #expect(CanvasMath.flightFades(0.05).leaving == 1)
+    #expect(abs(CanvasMath.flightFades(0.3).leaving - 0.5) < 1e-12)
+    #expect(CanvasMath.flightFades(0.35).arriving == 1)
+    #expect(CanvasMath.flightFades(0.55).leaving == 0)
+    #expect(CanvasMath.flightFades(1) == (0, 1))
+}
