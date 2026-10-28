@@ -24,8 +24,9 @@ public struct TextSignals: Sendable, Hashable {
 public enum Heuristics {
     public static let maxCandidates = 24
 
-    // ai.ts's WORD_SOURCE, widened from Latin to every script so Devanagari entries get candidates too.
-    private static let wordRegex = try! NSRegularExpression(pattern: #"[\p{L}\p{M}\p{N}]+(?:['’-][\p{L}\p{M}\p{N}]+)*"#)
+    // ai.ts's WORD_SOURCE, widened from Latin to every script so Devanagari entries get candidates too. A word starts on
+    // a letter or digit, so it never begins inside a character such as the keycap "#️⃣".
+    private static let wordRegex = try! NSRegularExpression(pattern: #"[\p{L}\p{N}][\p{L}\p{M}\p{N}]*(?:['’-][\p{L}\p{M}\p{N}]+)*"#)
     private static let sentenceRegex = try! NSRegularExpression(pattern: #"^.*?[.!?](?=\s|$)"#)
     private static let rawSentenceRegex = try! NSRegularExpression(pattern: #"(?s)\S(?:.*?(?:[.!?](?=\s|\z)|\S(?=\s*\z)))?"#)
     private static let titleClauseRegex = try! NSRegularExpression(pattern: #"[^,;:—–()]+"#)
@@ -108,13 +109,14 @@ public enum Heuristics {
 
     private static func capitalize(_ s: String) -> String { s.prefix(1).uppercased() + s.dropFirst() }
 
-    /// The first sentence, whitespace collapsed, cut at a word boundary to `max` UTF-16 units.
+    /// The first sentence, whitespace collapsed, cut at a word boundary (or else a whole character) to `max` UTF-16 units.
     public static func firstSentence(_ text: String, max: Int = 160) -> String {
         let clean = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let sentence = sentenceRegex.firstMatch(in: clean, range: all(clean)).map { (clean as NSString).substring(with: $0.range) } ?? clean
         let ns = sentence as NSString
         if ns.length <= max { return sentence }
-        let cut = ns.substring(to: max - 1) as NSString
+        var units = 0
+        let cut = String(sentence.prefix { units += $0.utf16.count; return units < max }) as NSString
         let space = cut.range(of: " ", options: .backwards).location
         let kept = space != NSNotFound && space > max / 3 ? cut.substring(to: space) : cut as String
         return kept.replacingOccurrences(of: #"[\s,;:.!?-]+$"#, with: "", options: .regularExpression) + "…"
