@@ -7,8 +7,8 @@ struct RootView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if model.profile == nil {
-                LitGround().ignoresSafeArea().overlay { ToastHost() }
+            if model.profile == nil || LaunchProgress.shared.demo != nil {
+                LaunchView()
             } else if model.showsOnboarding {
                 OnboardingView().ignoresSafeArea(.container, edges: .top).overlay { ToastHost() }
             } else {
@@ -20,7 +20,7 @@ struct RootView: View {
                     Group {
                         switch model.pane {
                         case .day: DayView()
-                        case .trash: TrashView()
+                        case .trash: TrashPanel(style: .pane)
                         case .decisions:
                             #if DOGFOOD
                             DecisionsView()
@@ -44,6 +44,9 @@ struct RootView: View {
         }
         #endif
         .searchPalette(isPresented: $model.searchOpen)
+        .shellSheets()
+        .overlay { LockScreen() }
+        .background(ScreenShare())
     }
 }
 

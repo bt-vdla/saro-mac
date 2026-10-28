@@ -40,8 +40,10 @@ struct SaroApp: App {
                     .task { Scenarios.runIfRequested(model) }
                     #endif
             case .failure(let error):
-                ContentUnavailableView("Saro couldn't open its journal", systemImage: "externaldrive.badge.exclamationmark",
-                                       description: Text(error.localizedDescription))
+                RecoveryView(error: error) {
+                    boot = AppModel.boot()
+                    if case .success(let model) = boot { CapturePanelController.shared.install(model) }
+                }
             }
         }
         .defaultSize(width: 1320, height: 860)
@@ -58,10 +60,23 @@ struct SaroApp: App {
         }
 
         Settings {
-            if case .success(let model) = boot { SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment() }
+            if case .success(let model) = boot {
+                SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment().overlay { LockScreen() }
+            }
         }
         .defaultSize(width: 920, height: 720)
         .windowResizability(.contentMinSize)
+
+        Window("About Saro", id: "about") { AboutView().comfortEnvironment() }
+            .windowResizability(.contentSize)
+            .windowStyle(.hiddenTitleBar)
+            .restorationBehavior(.disabled)
+        Window("Keyboard Shortcuts", id: "shortcuts") { ShortcutsView().comfortEnvironment() }
+            .defaultSize(width: 720, height: 620)
+            .restorationBehavior(.disabled)
+        Window("Acknowledgements", id: "acknowledgements") { AcknowledgementsView().comfortEnvironment() }
+            .defaultSize(width: 600, height: 640)
+            .restorationBehavior(.disabled)
 
         SaroMenuBar()
     }
@@ -91,6 +106,15 @@ struct SaroCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About Saro") { openWindow(id: "about") }
+        }
+        CommandGroup(after: .appSettings) {
+            Button("Lock Saro") { Locker.shared.lock() }
+                .keyboardShortcut("l", modifiers: [.control, .command])
+                .disabled(!PrefsStore.shared.lockEnabled || Locker.shared.locked)
+        }
+        CommandMenu("Entry") { EntryCommands(model: model).disabled(Locker.shared.locked) }
         CommandMenu("Go") {
             Group {
                 Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
@@ -102,7 +126,7 @@ struct SaroCommands: Commands {
                 Divider()
                 Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option])
             }
-            .disabled(model.showsOnboarding)
+            .disabled(model.showsOnboarding || Locker.shared.locked)
         }
         CommandGroup(after: .toolbar) {
             Group {
@@ -123,7 +147,7 @@ struct SaroCommands: Commands {
                 Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
                     .disabled(!model.reflection.canRefresh)
             }
-            .disabled(model.showsOnboarding)
+            .disabled(model.showsOnboarding || Locker.shared.locked)
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") {
@@ -131,13 +155,18 @@ struct SaroCommands: Commands {
                 openWindow(id: "main")
                 model.safetyCardRequested = true
             }
+            Button("Keyboard Shortcuts") { openWindow(id: "shortcuts") }.keyboardShortcut("/", modifiers: .command)
+            Button("Privacy") { model.open(DeepLink.settings("data").url) }
+            Button("Acknowledgements") { openWindow(id: "acknowledgements") }
         }
         CommandGroup(after: .importExport) {
             Group {
+                Button("Export Day as Image…") { Task { await model.exportDayImage() } }
+                    .disabled(model.pane != .day || model.entries.isEmpty)
                 Button("Export Everything…") { Task { await model.exportEverything() } }
                 Button("Import…") { Task { await model.importJournal() } }
             }
-            .disabled(model.showsOnboarding)
+            .disabled(model.showsOnboarding || Locker.shared.locked)
         }
     }
 }
