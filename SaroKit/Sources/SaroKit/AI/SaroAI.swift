@@ -59,7 +59,7 @@ public actor SaroAI {
     private let permissive = SystemLanguageModel(guardrails: .permissiveContentTransformations)
     private var warm: LanguageModelSession?
     /// Tests only: answers every prompt (classifier and both rungs) in the model's place, with the model's status.
-    private let stub: (@Sendable (String) async throws -> String)?
+    let stub: (@Sendable (String) async throws -> String)?
     private let stubStatus: Status?
 
     public init() { (stub, stubStatus) = (nil, nil) }
