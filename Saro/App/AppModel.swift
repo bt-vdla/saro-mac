@@ -283,9 +283,10 @@ final class AppModel {
 
     /// Switches day. Pointer-driven changes slide (the caller animates); keys switch instantly (the frequency rule).
     func go(to day: String, animation: Animation? = nil) {
+        // Counted even when it stays put: ⌘[ then ⌘T must cancel the ⌘[ still loading.
+        navigation += 1
         guard day != self.day || pane != .day else { return }
         let target = day
-        navigation += 1
         let ticket = navigation
         Task {
             let data = try? await load(target)
