@@ -129,12 +129,18 @@ func randomOperationSequencesKeepTheLedgerConsistent(seed: UInt64) async throws 
             let version = Int.random(in: 0..<5, using: &rng) == 0 ? "2" : "1"
             try await gate(l, &m, id, sha: sha, version: version, verdictKinds.randomElement(using: &rng)!, at: "seed \(seed) step \(step)")
         case 62..<74:
-            // As the pipeline does: gate unless a cached verdict covers this text, then read what the verdict lets through.
+            // As the pipeline does: gate unless a cached verdict covers this text (restating it if an older one), then read
+            // what the verdict lets through.
             op = "process"
             guard let id = pick(m.live, &rng) else { continue }
             let text = m.text(id), sha = sha256(text)
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            var v = try await l.cachedVerdict(entryId: id, textSha256: sha, safetyVersion: "1")?.verdict
+            let cached = try await l.cachedVerdict(entryId: id, textSha256: sha, safetyVersion: "1")
+            var v = cached?.verdict
+            if let cached, try await l.verdicts(day: m.entries[id]!.localDay)[id]?.id != cached.id {
+                // Text edited back to a version gated before: the pipeline restates that verdict as the newest.
+                try await gate(l, &m, id, sha: sha, version: "1", cached.verdict, at: "seed \(seed) step \(step)")
+            }
             if v == nil {
                 let gated = Int.random(in: 0..<3, using: &rng) == 0 ? verdictKinds.randomElement(using: &rng)! : "clear"
                 try await gate(l, &m, id, sha: sha, version: "1", gated, at: "seed \(seed) step \(step)")

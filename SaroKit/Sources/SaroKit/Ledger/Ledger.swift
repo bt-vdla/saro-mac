@@ -333,14 +333,11 @@ public actor Ledger {
         return Dictionary(rows.map(SafetyVerdictRow.init).map { ($0.entryId, $0) }, uniquingKeysWith: { $1 })
     }
 
-    /// The entry's newest verdict, if it was made for exactly this text and gate version (SR-17, SR-18). An older match
-    /// doesn't count: text edited back to what it once was is gated again, so the newest verdict, which the day's state
-    /// reads, is always the current text's.
+    /// A cached verdict for exactly this text and gate version (SR-17, SR-18), even an older one: text edited back to a
+    /// version gated before reuses its verdict, which the pipeline then restates as the entry's newest.
     public func cachedVerdict(entryId: String, textSha256: String, safetyVersion: String) throws -> SafetyVerdictRow? {
-        try db.run("""
-            SELECT * FROM safety_verdict WHERE rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id=?)
-              AND text_sha256=? AND safety_version=?
-            """, [.text(entryId), .text(textSha256), .text(safetyVersion)]).first.map(SafetyVerdictRow.init)
+        try db.run("SELECT * FROM safety_verdict WHERE entry_id=? AND text_sha256=? AND safety_version=? ORDER BY rowid DESC LIMIT 1",
+                   [.text(entryId), .text(textSha256), .text(safetyVersion)]).first.map(SafetyVerdictRow.init)
     }
 
     public func insertSnapshot(_ s: InsightSnapshot) throws {

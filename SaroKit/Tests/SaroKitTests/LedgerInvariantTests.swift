@@ -256,19 +256,18 @@ private func fillEveryTable(_ l: Ledger) async throws -> Entry {
     #expect(try await l.entryIDs(withLatestVerdictIn: ["clear"]).isEmpty)
 }
 
-@Test func onlyTheNewestVerdictIsCachedForItsTextAndVersion() async throws {
+@Test func cachedVerdictMatchesEntryTextAndVersion() async throws {
     let l = try tempLedger()
     let a = try await page(l, "Watered the fern."), b = try await page(l, "Watered the fern.")
     try await verdict(l, a, "clear", sha: "s1", version: "1")
-    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "1")?.verdict == "clear")
     try await verdict(l, a, "technical_hold", sha: "s2", version: "1")
-    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s2", safetyVersion: "1")?.verdict == "technical_hold")
-    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "1") == nil)
     try await verdict(l, a, "unavailable_caution", sha: "s1", version: "2")
+    // An older verdict for the same text still counts as cached (SR-17); the pipeline restates it as the newest.
+    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "1")?.verdict == "clear")
+    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s2", safetyVersion: "1")?.verdict == "technical_hold")
     #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "2")?.verdict == "unavailable_caution")
-    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "1") == nil)
-    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s2", safetyVersion: "1") == nil)
-    #expect(try await l.cachedVerdict(entryId: b.id, textSha256: "s1", safetyVersion: "2") == nil)
+    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s2", safetyVersion: "2") == nil)
+    #expect(try await l.cachedVerdict(entryId: b.id, textSha256: "s1", safetyVersion: "1") == nil)
     #expect(try await l.verdicts(day: a.localDay)[a.id]?.verdict == "unavailable_caution")
     #expect(try await l.verdicts(day: a.localDay)[b.id] == nil)
 }
