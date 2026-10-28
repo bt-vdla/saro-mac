@@ -311,7 +311,17 @@ public actor Pipeline {
 
     public func latestDayReading(_ day: String) async -> (payload: DayPayload, generator: String, runId: String?)? {
         guard let s = try? await ledger.latestSnapshot(kind: "day_reading", day: day),
-              let p = try? JSONDecoder().decode(DayPayload.self, from: Data(s.payload.utf8)) else { return nil }
+              var p = try? JSONDecoder().decode(DayPayload.self, from: Data(s.payload.utf8)) else { return nil }
+        // A reading older than an edit (its successor deferred) keeps only the quotes still verbatim in the text (§11.6).
+        var kept: [Candidate] = []
+        for q in p.quotes {
+            guard let e = try? await ledger.entry(q.entryId), e.trashedAt == nil, let src = try? await text(for: e), src.field == q.field
+            else { continue }
+            let ns = src.text as NSString
+            if q.utf16From >= 0, q.utf16From <= q.utf16To, q.utf16To <= ns.length,
+               ns.substring(with: NSRange(location: q.utf16From, length: q.utf16To - q.utf16From)) == q.text { kept.append(q) }
+        }
+        p.quotes = kept
         return (p, s.generator, s.aiRunId)
     }
 }
