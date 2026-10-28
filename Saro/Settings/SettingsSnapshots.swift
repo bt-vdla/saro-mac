@@ -64,7 +64,13 @@ enum SettingsSnapshots {
                 p.contentView = NSHostingView(rootView: DataSection().padding(32).frame(width: 760, height: 2400, alignment: .top).background(Tok.bg)
                     .environment(model).environment(prefs).comfortEnvironment())
             }),
+            // A name the gate held: nothing kept, the resources under the field.
+            ("settings-you-held", {
+                YouSection.sampleHeld = .name
+                host(.you)
+            }),
             ("text150-settings", {
+                YouSection.sampleHeld = nil
                 prefs.textScale = 1.5
                 host(.you)
             }),

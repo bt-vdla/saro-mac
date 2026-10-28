@@ -907,6 +907,22 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         await until(.seconds(4)) { save.state == .idle }
         #expect(save.state == .idle)
     }
+
+    /// A held name calls its write off: neither ✓ Saved nor Couldn't save · Retry. A write that fails still offers Retry.
+    @Test func aCalledOffWriteShowsNothing() async {
+        struct Broke: Error {}
+        let save = Autosave(), landed = Landed()
+        save.run { throw Broke() }
+        await until(.seconds(2)) { save.state == .failed }
+        #expect(save.state == .failed)
+        save.run {
+            landed.count += 1
+            throw CancellationError()
+        }
+        await until(.seconds(2)) { landed.count == 1 }
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(save.state == .idle)
+    }
 }
 
 @Suite struct NamesTests {

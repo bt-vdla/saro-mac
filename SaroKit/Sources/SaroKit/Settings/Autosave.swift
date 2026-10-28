@@ -1,7 +1,8 @@
 import Observation
 
 /// A card's saves, in order (PersonalizationSheet.tsx useAutosave): the ✓ Saved tick shows only once the latest write
-/// has returned, and leaves after 2.2 s; Couldn't save · Retry shows only when a write throws. Only the writes queue:
+/// has returned, and leaves after 2.2 s; Couldn't save · Retry shows only when a write throws (a CancellationError, a
+/// write called off, shows neither). Only the writes queue:
 /// the tick's 2.2 s never holds the next write back.
 @MainActor @Observable
 public final class Autosave {
@@ -30,6 +31,9 @@ public final class Autosave {
                     try? await Task.sleep(for: .seconds(2.2))
                     if id == seq, state == .saved { state = .idle }
                 }
+            } catch is CancellationError {
+                // A write called off (a name the gate held) kept nothing on purpose: no tick, and no Retry.
+                if id == seq { state = .idle }
             } catch {
                 if id == seq { state = .failed }
             }
