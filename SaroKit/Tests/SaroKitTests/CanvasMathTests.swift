@@ -113,3 +113,35 @@ import Testing
         }
     }
 }
+
+// Reference boxes from the web's resizeRect (node), x/y the top-left as there.
+@Test func resizeMatchesTheWeb() throws {
+    let video = try #require(CanvasMath.resizeSpec(.moment)), text = try #require(CanvasMath.resizeSpec(.reflection))
+    let m = CGRect(x: 100, y: 50, width: 420, height: 284), r = CGRect(x: -20, y: 10, width: 360, height: 212)
+    func same(_ a: CGRect, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> Bool {
+        abs(a.minX - x) < 1e-9 && abs(a.minY - y) < 1e-9 && abs(a.width - w) < 1e-9 && abs(a.height - h) < 1e-9
+    }
+    let resize = { (s: CGRect, h: CanvasMath.Handle, dx: CGFloat, dy: CGFloat, spec: CanvasMath.ResizeSpec) in
+        CanvasMath.resize(s, h, by: CGSize(width: dx, height: dy), spec: spec)
+    }
+    #expect(same(resize(m, .se, 100, 10, video), 100, 50, 493.263413419644, 333.5400224075688))
+    #expect(same(resize(m, .nw, -60, -20, video), 49.54562429976346, 15.883231669363852, 470.45437570023654, 318.11676833063615))
+    #expect(same(resize(m, .e, 2000, 0, video), 100, 50, 960, 649.1428571428571))
+    #expect(same(resize(m, .n, 0, 300, video), 100, 171.71428571428572, 240, 162.28571428571428))
+    #expect(same(CanvasMath.resize(m, .se, by: CGSize(width: 100, height: 10), spec: video, free: true), 100, 50, 520, 294))
+    #expect(same(CanvasMath.resize(m, .e, by: CGSize(width: 37, height: 0), spec: video, snapX: { ($0 / 50).rounded() * 50 }),
+                 100, 50, 450, 304.2857142857143))
+    #expect(same(resize(r, .w, -50, 0, text), -70, 10, 410, 212))
+    #expect(same(resize(r, .sw, 500, 900, text), 80, 10, 260, 960))
+    #expect(same(CanvasMath.resize(r, .n, by: CGSize(width: 0, height: -33), spec: text, snapY: { ($0 / 40).rounded() * 40 }),
+                 -20, -40, 360, 262))
+    #expect(CanvasMath.resizeSpec(.voice) == nil)
+}
+
+@Test func storedSizesAndContentHeights() {
+    for kind in EntryKind.allCases { #expect(CanvasMath.size(kind, w: nil, h: nil) == CanvasMath.size(kind)) }
+    #expect(CanvasMath.size(.moment, w: 840, h: nil) == CGSize(width: 840, height: CanvasMath.momentMediaHeight * 2 + 48))
+    #expect(CanvasMath.size(.still, w: 130, h: nil) == CGSize(width: 130, height: CanvasMath.stillMediaHeight / 2 + 48))
+    #expect(CanvasMath.size(.reflection, w: 500, h: nil) == CGSize(width: 500, height: 212))
+    #expect(CanvasMath.size(.moment, w: 500, h: 600) == CGSize(width: 500, height: 600))
+}
