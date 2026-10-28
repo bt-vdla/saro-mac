@@ -100,12 +100,14 @@ struct CardFace: View {
     var selected = false
     /// A voice note open in place: the card takes the player's own size.
     var open = false
+    /// The card's box while its handle is dragged; else its stored size.
+    var size: CGSize?
     @State private var hover = false
     @State private var discHover = false
 
     var body: some View {
         content
-            .frame(width: open ? nil : size.width, height: open ? nil : size.height)
+            .frame(width: open ? nil : box.width, height: open ? nil : box.height)
             .overlay {
                 if selected && entry.kind != .voice {
                     RoundedRectangle(cornerRadius: radius + 4).strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4)
@@ -118,7 +120,7 @@ struct CardFace: View {
             .accessibilityAddTraits(.isButton)
     }
 
-    private var size: CGSize { CanvasMath.size(entry.kind) }
+    private var box: CGSize { size ?? model.size(of: entry) }
     private var radius: CGFloat { CanvasMath.radius(entry.kind) }
     private var ready: Bool { model.media[entry.mediaId ?? ""]?.state == "ready" }
 
@@ -151,38 +153,40 @@ struct CardFace: View {
                         .padding(.trailing, 12).padding(.bottom, 10)
                 }
             }
-            .frame(width: size.width, height: CanvasMath.momentMediaHeight)
+            .frame(width: box.width, height: box.height - 48)
             .clipShape(UnevenRoundedRectangle(topLeadingRadius: radius - 1, topTrailingRadius: radius - 1))
             CardMeta(entry: entry).padding(.horizontal, 16).frame(maxHeight: .infinity)
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: box.width, height: box.height)
         .cardSurface(radius: radius, tint: Tok.moment)
     }
 
     private var still: some View {
         VStack(spacing: 0) {
             MediaThumb(url: model.mediaURL(for: entry), kind: .still, ready: ready)
-                .frame(width: size.width, height: CanvasMath.stillMediaHeight)
+                .frame(width: box.width, height: box.height - 48)
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: radius - 1, topTrailingRadius: radius - 1))
             CardMeta(entry: entry).padding(.horizontal, 14).frame(maxHeight: .infinity)
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: box.width, height: box.height)
         .cardSurface(radius: radius, tint: nil, hover: hover)
     }
 
     private var reflection: some View {
         let (title, body) = model.titleAndBody(entry)
+        // Given its own height, the page fills it; otherwise its words stop at 128 pt, as on the web.
+        let sized = box.height != CanvasMath.size(entry.kind).height
         return VStack(alignment: .leading, spacing: 8) {
             Text(title).font(Typo.ui(15, .semibold)).foregroundStyle(Tok.reflectionInk).lineLimit(2)
             Text(body.isEmpty ? "Empty page" : body)
                 .font(Typo.ui(13)).lineSpacing(2.5).foregroundStyle(body.isEmpty ? Tok.ink4 : Tok.ink2)
-                .frame(maxWidth: .infinity, maxHeight: 128, alignment: .topLeading)
+                .frame(maxWidth: .infinity, maxHeight: sized ? .infinity : 128, alignment: .topLeading)
                 .clipped()
-            Spacer(minLength: 0)
+            if !sized { Spacer(minLength: 0) }
             CardMeta(entry: entry, showTitle: false)
         }
         .padding(.horizontal, 20).padding(.vertical, 16)
-        .frame(width: size.width, height: size.height)
+        .frame(width: box.width, height: box.height)
         .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3)
     }
 }
@@ -320,6 +324,88 @@ extension View {
             .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Tok.rim.opacity(0.6), lineWidth: 1))
             .overlay { if let tint { RoundedRectangle(cornerRadius: radius).strokeBorder(tint.opacity(tintOpacity), lineWidth: 1) } }
             .elevation(hover ? .overlay : .panel)
+    }
+}
+
+/// A card's eight resize handles (CanvasCard.tsx), drawn in the card's own space at the same size on screen at any zoom:
+/// 8 pt dots on the corners and 18 × 5 pills on the edges, on 44 pt corner and 12 pt edge targets that sit mostly outside
+/// the card, so they never cover its own controls. While one is dragged, a quiet outline in the guides' hue and the size.
+struct ResizeHandles: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let size: CGSize
+    let zoom: CGFloat
+    let active: CanvasMath.Handle?
+    let onDrag: (CanvasMath.Handle, CGSize) -> Void
+    let onEnd: () -> Void
+    @State private var hovered: CanvasMath.Handle?
+
+    var body: some View {
+        let k = 1 / zoom
+        ZStack {
+            if active != nil { Rectangle().strokeBorder(Tok.guide.opacity(0.6), lineWidth: 1.5 * k).padding(-1.5 * k) }
+            ForEach(CanvasMath.Handle.allCases, id: \.self) { handle($0, k) }
+            if let active { readout(active, k) }
+        }
+        .frame(width: size.width, height: size.height)
+        .accessibilityHidden(true)
+    }
+
+    private func handle(_ h: CanvasMath.Handle, _ k: CGFloat) -> some View {
+        let (sx, sy) = h.sides
+        let corner = sx != 0 && sy != 0, lit = active == h || hovered == h
+        // A target's centre sits this far out from the card's edge; its mark sits on the edge.
+        let out = (corner ? 14 : 2) * k
+        let along = { (side: CGFloat, length: CGFloat) -> (at: CGFloat, length: CGFloat) in
+            side == 0 ? (length / 2, length - 16 * k) : (length * (side + 1) / 2 + side * out, (corner ? 44 : 12) * k)
+        }
+        let x = along(sx, size.width), y = along(sy, size.height)
+        return Capsule()
+            .fill(active == h ? Tok.guide : Tok.surface)
+            .strokeBorder(active == h ? Tok.guide : Tok.sage, lineWidth: 1.5 * k)
+            .animation(Motion.easeOut(0.16), value: active == h)
+            .frame(width: (corner ? 8 : sy == 0 ? 5 : 18) * k, height: (corner ? 8 : sx == 0 ? 5 : 18) * k)
+            .elevation(.lift)
+            .scaleEffect(lit ? 1.25 : 1)
+            .animation(reduceMotion ? nil : Motion.easeOut(0.16), value: lit)
+            .offset(x: -sx * out, y: -sy * out)
+            .frame(width: x.length, height: y.length)
+            .contentShape(.rect)
+            .onHover { hovered = $0 ? h : hovered == h ? nil : hovered }
+            .pointerStyle(.frameResize(position: Self.position(h)))
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).onChanged { onDrag(h, $0.translation) }.onEnded { _ in onEnd() })
+            .position(x: x.at, y: y.at)
+            .zIndex(corner ? 2 : 1)
+    }
+
+    /// "W × H" in an ink chip off the dragged handle, 10 pt clear of the card.
+    private func readout(_ h: CanvasMath.Handle, _ k: CGFloat) -> some View {
+        let (sx, sy) = h.sides
+        return Text("\(Int(size.width.rounded())) × \(Int(size.height.rounded()))")
+            .font(Typo.mono(11, .regular).monospacedDigit())
+            .foregroundStyle(Tok.bg)
+            .frame(height: 16)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Tok.ink, in: .rect(cornerRadius: Radius.control))
+            .elevation(.lift)
+            .fixedSize()
+            .scaleEffect(k, anchor: UnitPoint(x: (1 - sx) / 2, y: (1 - sy) / 2))
+            .frame(width: 0, height: 0, alignment: Alignment(horizontal: sx > 0 ? .leading : sx < 0 ? .trailing : .center,
+                                                              vertical: sy > 0 ? .top : sy < 0 ? .bottom : .center))
+            .position(x: size.width * (sx + 1) / 2 + sx * 10 * k, y: size.height * (sy + 1) / 2 + sy * 10 * k)
+            .allowsHitTesting(false)
+    }
+
+    private static func position(_ h: CanvasMath.Handle) -> FrameResizePosition {
+        switch h {
+        case .nw: .topLeading
+        case .n: .top
+        case .ne: .topTrailing
+        case .e: .trailing
+        case .se: .bottomTrailing
+        case .s: .bottom
+        case .sw: .bottomLeading
+        case .w: .leading
+        }
     }
 }
 

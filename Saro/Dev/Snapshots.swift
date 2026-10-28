@@ -12,6 +12,8 @@ enum Snapshots {
     static let hold = Notification.Name("SaroSnapshotHold")
     /// Holds a trash flight this far along, so both its ends can be seen.
     static var trashFreeze: Double?
+    /// Starts (true) or ends (false) a resize of the day's first moment from its bottom-right handle.
+    static let resize = Notification.Name("SaroSnapshotResize")
     /// Opens ⌘K with its actions menu up on the first row.
     static var paletteActions = false
 
@@ -28,6 +30,12 @@ enum Snapshots {
             let steps: [(String, @MainActor () -> Void)] = [
                 ("canvas", { model.selection = [] }),
                 ("selected", { model.selection = Set(model.entries.prefix(2).map(\.id)) }),
+                // A moment part way through a resize from its corner, then let go, still selected.
+                ("resize", {
+                    model.selection = []
+                    NotificationCenter.default.post(name: resize, object: true)
+                }),
+                ("resized", { NotificationCenter.default.post(name: resize, object: false) }),
                 ("noticed", { model.selection = []; model.showNoticed = true }),
                 ("detail", { model.showNoticed = false; model.openEntryID = model.entries.first(where: { $0.kind == .reflection })?.id }),
                 ("still", { model.openEntryID = model.entries.first(where: { $0.kind == .still })?.id }),

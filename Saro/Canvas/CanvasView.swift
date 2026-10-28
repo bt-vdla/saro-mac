@@ -147,7 +147,7 @@ struct StageCard: Identifiable {
 extension AppModel {
     var stageCards: [StageCard] {
         items.map { item in
-            let size = item.isStack ? CanvasMath.stackSize : CanvasMath.size(item.top.kind)
+            let size = item.isStack ? CanvasMath.stackSize : self.size(of: item.top)
             return StageCard(item: item, center: position(of: item.top.id), size: size,
                              radius: item.isStack ? 18 : CanvasMath.radius(item.top.kind))
         }
@@ -210,6 +210,22 @@ struct DayStage: View {
     @State private var thrown: Set<String> = []
     /// The faces of cards flying to or from the Undo toast, taken while the day still has them.
     @State private var faces: [String: Image] = [:]
+    @State private var sizing: Sizing?
+    /// The card whose handles show because the pointer is on it, kept 150 ms after the pointer leaves.
+    @State private var hoverID: String?
+    @State private var unhover: Task<Void, Never>?
+
+    /// A card's box while one of its handles is dragged (world units).
+    private struct Sizing {
+        let id: String
+        let handle: CanvasMath.Handle
+        let start: CGRect
+        /// It had a height of its own when the drag began.
+        let sized: Bool
+        var rect: CGRect
+        var follows = false
+        var translation = CGSize.zero
+    }
 
     init(day: String, cards: [StageCard], size: CGSize) {
         self.day = day
@@ -224,7 +240,7 @@ struct DayStage: View {
         ZStack {
             background
             if let grid { DragGridLayer(grid: grid, camera: camera) }
-            ForEach(cards) { card($0) }
+            ForEach(cards) { card(live($0)) }
             if let sid = model.openStackID, isCurrent { fan(sid) }
             if let m = marquee {
                 RoundedRectangle(cornerRadius: 4).fill(Tok.ink.opacity(0.05))
@@ -252,9 +268,25 @@ struct DayStage: View {
             return true
         }
         .onChange(of: model.openEntryID) { _, id in if isCurrent { morph(to: id) } }
+        .onContinuousHover { phase in
+            guard case .active(let p) = phase else { return hover(nil) }
+            hover(cards.last { underPointer($0, p) }.flatMap { resizable($0) ? $0.id : nil })
+        }
+        // Shift and ⌥ change a resize without the pointer moving.
+        .onModifierKeysChanged(mask: [.shift, .option], initial: false) { _, keys in
+            guard let s = sizing, let c = cards.first(where: { $0.id == s.id }) else { return }
+            resize(c, s.handle, by: s.translation, shift: keys.contains(.shift), option: keys.contains(.option))
+        }
         #if DOGFOOD
         .onReceive(NotificationCenter.default.publisher(for: Snapshots.hold)) { _ in
             if isCurrent, let c = cards.first { hold(c, translation: CGSize(width: 37, height: 23), velocity: .zero) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Snapshots.resize)) { n in
+            guard isCurrent else { return }
+            if n.object as? Bool == false { return endResize() }
+            if let c = cards.first(where: { resizable($0) && $0.item.top.kind == .moment }) ?? cards.first(where: resizable) {
+                resize(c, .se, by: CGSize(width: 96, height: 30), shift: false, option: false)
+            }
         }
         #endif
         // Until the user pans, zooms or drags, the day stays framed as its cards arrive and settle; one flying into the
@@ -344,20 +376,29 @@ struct DayStage: View {
         let selected = !model.selection.isDisjoint(with: c.ids)
         let open = !c.item.isStack && model.openVoiceID == c.item.top.id
         let at = CGPoint(x: p.x + off.width, y: p.y + off.height)
-        return Group {
-            if c.item.isStack { StackFace(entries: c.item.entries, selected: selected) } else { CardFace(entry: c.item.top, selected: selected, open: open) }
+        return pose(Group {
+            if c.item.isStack {
+                StackFace(entries: c.item.entries, selected: selected)
+            } else {
+                CardFace(entry: c.item.top, selected: selected, open: open, size: c.size)
+            }
         }
         // An open voice note grows right and down from the card's top-left corner.
-        .frame(width: c.size.width, height: c.size.height, alignment: .topLeading)
-        .scaleEffect(moving && !reduceMotion ? 1.02 : 1)
-        .rotationEffect(.degrees(moving && !reduceMotion ? drag!.tilt : 0))
-        .animation(Motion.lift, value: moving)
-        .animation(Motion.small, value: drag?.tilt)
-        .modifier(ReplayLanding(shown: model.replay.shows(c.id), cue: model.replay.cues[c.id], reduceMotion: reduceMotion))
-        .scaleEffect(camera.zoom)
+        .frame(width: c.size.width, height: c.size.height, alignment: .topLeading), c, moving: moving)
         // Held or thrown only (useCardGesture.ts); an open voice note holds a scroller the shader can't draw.
         .modifier(MotionBlurred(position: at, coverage: c.size.width * c.size.height * camera.zoom * camera.zoom / (size.width * size.height),
                                 enabled: !open && (moving || !thrown.isDisjoint(with: c.ids))))
+        // Over the blur, so the handles stay crisp on a thrown card, as the web's sit beside the card it blurs.
+        .overlay {
+            if showsHandles(c) {
+                pose(ResizeHandles(size: c.size, zoom: camera.zoom, active: sizing?.id == c.id ? sizing?.handle : nil,
+                                   onDrag: { h, t in
+                                       let keys = NSEvent.modifierFlags
+                                       resize(c, h, by: t, shift: keys.contains(.shift), option: keys.contains(.option))
+                                   },
+                                   onEnd: endResize), c, moving: moving)
+            }
+        }
         .position(at)
         .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) || inFlight(c) ? 0 : 1)
         .zIndex(moving ? 10 : open ? 5 : 0)
@@ -392,7 +433,7 @@ struct DayStage: View {
         DragGesture(minimumDistance: 4)
             .onChanged { v in hold(c, translation: v.translation, velocity: v.velocity) }
             .onEnded { v in
-                guard let d = drag, var g = grid else { return }
+                guard let d = drag, let g = grid else { return }
                 let speed = hypot(v.velocity.width, v.velocity.height)
                 var total = d.offset
                 if speed > 20 && !reduceMotion {
@@ -402,13 +443,7 @@ struct DayStage: View {
                     total.height += glide.height + (s.y?.delta ?? 0) * camera.zoom
                 }
                 // ponytail: the grid retracts where the card was let go; the web's follows the glide until it lands.
-                let ended = Date.now
-                g.ended = ended
-                grid = g
-                Task {
-                    try? await Task.sleep(for: .seconds(DragGridLayer.retract))
-                    if grid?.ended == ended { grid = nil }
-                }
+                retractGrid()
                 thrown.formUnion(d.ids)
                 withAnimation(reduceMotion ? nil : speed > 1000 ? Motion.release : Motion.lift) {
                     model.move(d.ids, by: CGSize(width: total.width / camera.zoom, height: total.height / camera.zoom))
@@ -435,6 +470,108 @@ struct DayStage: View {
         grid = g
         drag = (ids, CGSize(width: t.width + (s.x?.delta ?? 0) * camera.zoom, height: t.height + (s.y?.delta ?? 0) * camera.zoom),
                 (velocity.width * 0.0012).clamped(to: -3...3))
+    }
+
+    private func retractGrid() {
+        guard var g = grid else { return }
+        let ended = Date.now
+        g.ended = ended
+        grid = g
+        Task {
+            try? await Task.sleep(for: .seconds(DragGridLayer.retract))
+            if grid?.ended == ended { grid = nil }
+        }
+    }
+
+    /// A held card's lift and tilt, its replay landing and the camera's zoom: its handles take them too, so they move as one.
+    private func pose(_ v: some View, _ c: StageCard, moving: Bool) -> some View {
+        v.scaleEffect(moving && !reduceMotion ? 1.02 : 1)
+            .rotationEffect(.degrees(moving && !reduceMotion ? drag!.tilt : 0))
+            .animation(Motion.lift, value: moving)
+            .animation(Motion.small, value: drag?.tilt)
+            .modifier(ReplayLanding(shown: model.replay.shows(c.id), cue: model.replay.cues[c.id], reduceMotion: reduceMotion))
+            .scaleEffect(camera.zoom)
+    }
+
+    // MARK: Resizing (CanvasCard.tsx, useCardGesture.ts)
+
+    private func resizable(_ c: StageCard) -> Bool { !c.item.isStack && CanvasMath.resizeSpec(c.item.top.kind) != nil }
+
+    /// On a hovered card, or a single selected one.
+    private func showsHandles(_ c: StageCard) -> Bool {
+        isCurrent && resizable(c) && (sizing?.id == c.id || hoverID == c.id || model.selection == c.ids)
+    }
+
+    /// On the card, or within its handles' reach: 8 pt off its edges, 36 off its corners.
+    private func underPointer(_ c: StageCard, _ p: CGPoint) -> Bool {
+        let r = screenRect(c)
+        guard resizable(c) else { return r.contains(p) }
+        let near = { (out: CGFloat) in (-8...36).contains(out) }
+        return r.insetBy(dx: -8, dy: -8).contains(p)
+            || (near(r.minX - p.x) || near(p.x - r.maxX)) && (near(r.minY - p.y) || near(p.y - r.maxY))
+    }
+
+    private func hover(_ id: String?) {
+        if let id {
+            unhover?.cancel()
+            unhover = nil
+            if hoverID != id { hoverID = id }
+        } else if hoverID != nil && unhover == nil {
+            unhover = Task {
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled else { return }
+                hoverID = nil
+                unhover = nil
+            }
+        }
+    }
+
+    /// The card being resized, at its live box.
+    private func live(_ c: StageCard) -> StageCard {
+        guard let s = sizing, s.id == c.id else { return c }
+        return StageCard(item: c.item, center: CGPoint(x: s.rect.midX, y: s.rect.midY), size: s.rect.size, radius: c.radius)
+    }
+
+    /// The opposite edge stays put and the moving one snaps as a dragged card's do (⌥ frees it); Shift frees a picture's
+    /// proportions. A card with no height of its own sets only its width when it keeps them or is only widened.
+    private func resize(_ c: StageCard, _ handle: CanvasMath.Handle, by t: CGSize, shift: Bool, option: Bool) {
+        guard let spec = CanvasMath.resizeSpec(c.item.top.kind) else { return }
+        if sizing == nil {
+            userMoved = true
+            model.selection = c.ids
+            let start = CGRect(center: c.center, size: c.size)
+            sizing = Sizing(id: c.id, handle: handle, start: start, sized: model.layouts[c.id]?.h != nil, rect: start)
+            grid = DragGrid(rect: start, others: cards.filter { $0.id != c.id }.map { CGRect(center: $0.center, size: $0.size) },
+                            zoom: camera.zoom)
+        }
+        guard var s = sizing, var g = grid else { return }
+        let reach = 6 / camera.zoom, rhythm = 3 / camera.zoom
+        var sx: CanvasMath.Snap?, sy: CanvasMath.Snap?
+        let next = CanvasMath.resize(s.start, s.handle, by: CGSize(width: t.width / camera.zoom, height: t.height / camera.zoom), spec: spec,
+                                     free: shift,
+                                     snapX: { x in
+                                         sx = option ? nil : CanvasMath.snap([x], cards: g.cardX, reach: reach, axis: 0, level: g.level, rhythmReach: rhythm)
+                                         return x + (sx?.delta ?? 0)
+                                     },
+                                     snapY: { y in
+                                         sy = option ? nil : CanvasMath.snap([y], cards: g.cardY, reach: reach, axis: 1, level: g.level, rhythmReach: rhythm)
+                                         return y + (sy?.delta ?? 0)
+                                     })
+        let side = s.handle.sides.y
+        s.follows = !s.sized && ((spec.keepsAspect && !shift) || side == 0)
+        let h = s.follows ? CanvasMath.size(c.item.top.kind, w: next.width, h: nil).height : next.height
+        s.rect = CGRect(x: next.minX, y: side < 0 ? s.start.maxY - h : next.minY, width: next.width, height: h)
+        s.translation = t
+        g.move(to: s.rect, x: sx, y: sy)
+        sizing = s
+        grid = g
+    }
+
+    private func endResize() {
+        guard let s = sizing else { return }
+        if s.rect != s.start { model.resize(s.id, to: s.rect, height: s.follows ? nil : s.rect.height) }
+        sizing = nil
+        retractGrid()
     }
 
     /// Where a moving box snaps (cardGeometry.ts): its left/centre/right and top/middle/bottom to the other cards' within
@@ -597,6 +734,7 @@ struct MorphFlight: View, @MainActor Animatable {
     let viewport: CGSize
     var v: Double
     var crossfadeOnly = false
+    @Environment(AppModel.self) private var model
     @State private var blur = MotionBlurTracker()
 
     var animatableData: Double {
@@ -610,7 +748,7 @@ struct MorphFlight: View, @MainActor Animatable {
         let box = crossfadeOnly ? to : CanvasMath.flightBox(from: safeFrom, to: to, v: t)
         let (w, h, cx, cy) = (box.width, box.height, box.midX, box.midY)
         let r = fromRadius + (toRadius - fromRadius) * t
-        let cardSize = CanvasMath.size(entry.kind)
+        let cardSize = model.size(of: entry)
         let fades = CanvasMath.flightFades(v)
         let source = fades.leaving
         let dest = crossfadeOnly ? v : fades.arriving

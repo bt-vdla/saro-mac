@@ -553,6 +553,8 @@ final class AppModel {
         layouts[id].map { CGPoint(x: $0.x, y: $0.y) } ?? .zero
     }
 
+    func size(of e: Entry) -> CGSize { CanvasMath.size(e.kind, w: layouts[e.id]?.w, h: layouts[e.id]?.h) }
+
     private func z(of item: CanvasItem) -> Int { item.entries.compactMap { layouts[$0.id]?.z }.max() ?? 0 }
 
     /// Gives every entry without a layout row a free spot; turns of one recording session join one stack.
@@ -560,7 +562,9 @@ final class AppModel {
         let missing = entries.filter { layouts[$0.id] == nil }
         guard !missing.isEmpty else { return }
         let kinds = Dictionary(entries.map { ($0.id, $0.kind) }, uniquingKeysWith: { a, _ in a })
-        var occupied = layouts.values.map { CGRect(center: CGPoint(x: $0.x, y: $0.y), size: CanvasMath.size(kinds[$0.entryId] ?? .moment)) }
+        var occupied = layouts.values.map {
+            CGRect(center: CGPoint(x: $0.x, y: $0.y), size: CanvasMath.size(kinds[$0.entryId] ?? .moment, w: $0.w, h: $0.h))
+        }
         var top = layouts.values.map(\.z).max() ?? 0
         var added: [CardLayout] = []
         for e in missing {
@@ -592,6 +596,18 @@ final class AppModel {
             changed.append(l)
         }
         persist(changed)
+    }
+
+    /// A card let go by its resize handle: its centre and width, and its height unless that follows its content.
+    func resize(_ id: String, to r: CGRect, height: CGFloat?) {
+        guard var l = layouts[id] else { return }
+        l.x = r.midX
+        l.y = r.midY
+        l.w = r.width
+        l.h = height.map(Double.init)
+        l.userPlaced = true
+        layouts[id] = l
+        persist([l])
     }
 
     /// Selected cards fly to the first one and settle as a pile (FR-CAN-03).
@@ -634,7 +650,7 @@ final class AppModel {
     /// A packed, bottom-aligned row (Grid, ⌘G). Stacked cards leave their stack.
     func grid(_ ids: Set<String>) {
         let members = entries.filter { ids.contains($0.id) }
-        let placed = CanvasMath.grid(members.map { (id: $0.id, center: position(of: $0.id), size: CanvasMath.size($0.kind)) })
+        let placed = CanvasMath.grid(members.map { (id: $0.id, center: position(of: $0.id), size: size(of: $0)) })
         var changed: [CardLayout] = []
         for (id, p) in placed {
             guard var l = layouts[id] else { continue }
