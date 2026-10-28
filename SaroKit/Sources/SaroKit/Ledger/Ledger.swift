@@ -5,7 +5,7 @@ import Foundation
 public actor Ledger {
     public nonisolated let rootURL: URL
     public nonisolated var mediaURL: URL { rootURL.appending(path: "Media", directoryHint: .isDirectory) }
-    private let db: SQLite
+    let db: SQLite
 
     /// `Application Support/Saro` inside the app container.
     public static var defaultRoot: URL {
