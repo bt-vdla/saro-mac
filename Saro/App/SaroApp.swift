@@ -184,8 +184,9 @@ struct SaroCommands: Commands {
         CommandGroup(after: .importExport) {
             Group {
                 Button("Import Media…") { model.pane = .day; model.pickMedia() }.keyboardShortcut(KeyboardShortcut(.importMedia))
+                    .disabled(model.lens != nil)
                 Button("Export Day as Image…") { Task { await model.exportDayImage() } }
-                    .disabled(model.pane != .day || model.entries.isEmpty)
+                    .disabled(model.pane != .day || model.entries.isEmpty || model.lens != nil)
                 Button("Export Everything…") { Task { await model.exportEverything() } }
             }
             .disabled(model.showsOnboarding || Locker.shared.locked)

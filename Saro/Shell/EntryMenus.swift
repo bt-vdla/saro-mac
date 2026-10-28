@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SaroKit
 import SwiftUI
 
@@ -237,7 +238,8 @@ enum CardMenuKeys {
     private static func open(for event: NSEvent, _ model: AppModel) -> Bool {
         // 109 is F10, 110 the PC keyboard's Menu key.
         guard event.keyCode == 110 || event.keyCode == 109 && event.modifierFlags.contains(.shift), !Locker.shared.locked,
-              model.pane == .day, !(event.window?.firstResponder is NSTextView) else { return false }
+              event.window != nil, event.window === JournalWindow.shared.window,
+              !(event.window?.firstResponder is NSTextView) else { return false }
         let targets = model.entryTargets
         guard !targets.isEmpty, let view = event.window?.contentView else { return false }
         let stack = targets.count > 1 && targets.allSatisfy { model.layouts[$0.id]?.stackId != nil }
@@ -281,6 +283,28 @@ enum CardMenuKeys {
             let run = run
             MainActor.assumeIsolated { run() }
         }
+    }
+}
+
+/// The journal's window, and whether it is the key one: the Entry menu and ⇧F10 act on its cards only from there, never
+/// from Settings, About, the capture panel, or a sheet or save panel over it. Observed, so the menu greys as focus moves.
+@Observable @MainActor
+final class JournalWindow {
+    // ponytail: one per process like ShellPanels; the journal is a single Window scene.
+    static let shared = JournalWindow()
+    /// Set by the journal's root view; a view leaving it doesn't clear it.
+    @ObservationIgnored weak var window: NSWindow? { didSet { refresh() } }
+    private(set) var isKey = true
+
+    private init() {
+        NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { JournalWindow.shared.refresh() }
+        }
+    }
+
+    private func refresh() {
+        guard let key = NSApp.keyWindow else { return }
+        if isKey != (key === window) { isKey = key === window }
     }
 }
 

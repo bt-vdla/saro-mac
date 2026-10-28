@@ -37,9 +37,10 @@ extension EntryKind {
 
 /// The card and Entry menus' actions (CanvasContextMenu.tsx, CanvasItemView.tsx).
 extension AppModel {
-    /// What the Entry menu acts on: the open entry, else the selection; nothing while the day isn't on screen.
+    /// What the Entry menu and ⇧F10 act on: the open entry, else the selection; nothing while the day isn't on screen, the
+    /// time lens or the moment frame covers it, or another window (Settings, a sheet, the capture panel) is key.
     var entryTargets: [Entry] {
-        guard pane == .day else { return [] }
+        guard pane == .day, lens == nil, recorderKind != .moment, JournalWindow.shared.isKey else { return [] }
         if let id = openEntryID, let e = entry(id) { return [e] }
         return entries.filter { selection.contains($0.id) }
     }

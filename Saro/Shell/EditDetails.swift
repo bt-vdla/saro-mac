@@ -3,6 +3,7 @@ import SwiftUI
 
 extension View {
     /// The shell's layer over the main window: Edit Details and Duplicate To ▸ Choose a Day, and "Preparing your day…".
+    /// It also tells the Entry menu which window is the journal's.
     func shellSheets() -> some View { modifier(ShellSheets()) }
 }
 
@@ -35,6 +36,8 @@ private struct ShellSheets: ViewModifier {
                 }
             }
             .animation(Motion.fade, value: DayImageProgress.shared.preparing)
+            .background(WindowReader(window: Binding(get: { JournalWindow.shared.window },
+                                                     set: { if let w = $0 { JournalWindow.shared.window = w } })))
     }
 }
 
