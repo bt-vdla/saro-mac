@@ -78,7 +78,11 @@ extension AppModel {
     func completeOnboarding() async { await saveProfile { $0.onboardingDoneAt = .now } }
 
     /// Settings → Replay Onboarding: the window goes back to the welcome door; the journal is untouched.
-    func replayOnboarding() async { await saveProfile { $0.onboardingDoneAt = nil } }
+    /// The quick-capture panel closes, its turn saved: nothing lands mid-onboarding, and the camera is free for Find your light.
+    func replayOnboarding() async {
+        CapturePanelController.shared.close()
+        await saveProfile { $0.onboardingDoneAt = nil }
+    }
 
     /// Pausing opens a memory_pause window and resuming closes it, in the profile's own write.
     func setMemoryPaused(_ paused: Bool) async { await saveProfile { $0.memoryPaused = paused } }

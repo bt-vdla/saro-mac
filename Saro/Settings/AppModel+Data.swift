@@ -118,8 +118,11 @@ extension AppModel {
     /// Erase everything on this Mac (DR-16): every row, recording, photo and backup, every scheduled reminder, and
     /// every preference. The window goes back to the welcome door.
     func eraseEverything() async throws {
-        // A delete still in its Undo window is written now, so it can't land in the new journal after the erase.
+        // A delete still in its Undo window is written now, and the quick-capture panel's recording saved and the panel
+        // closed, so neither can land in the new journal after the erase.
         await memory.commitPending()
+        _ = await CaptureController.shared.end(.panel)
+        CapturePanelController.shared.close()
         try await ledger.eraseAll()
         Reminders.shared.removeAll()
         reflection.reset()
