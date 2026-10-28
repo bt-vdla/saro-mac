@@ -20,6 +20,8 @@ enum Snapshots {
     static let pickNode = Notification.Name("SaroSnapshotPickNode")
     /// Shows Why on the first person in What Saro knows' list.
     static let showWhy = Notification.Name("SaroSnapshotShowWhy")
+    /// Set by a state whose work can outlast a step on a loaded Mac: its shot waits for this first, up to a minute.
+    static var ready: (@MainActor () -> Bool)?
 
     static func runIfRequested(_ model: AppModel) {
         guard panel == nil, let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
@@ -142,10 +144,16 @@ enum Snapshots {
                     // The panel left open above would cover the song and the page edited on its card.
                     model.insight = .spine
                     model.goToday()
+                    ready = { model.day == LocalDay.today() && model.dayStatus != .held }
                     Task {
                         try? await Task.sleep(for: .seconds(0.8))
-                        // The still held above is read again, which restates its clear verdict, so today isn't held.
-                        if let s = model.entries.first(where: { $0.kind == .still }) { model.process(s.id) }
+                        // The hold put on the still above is lifted as its gate would (its caption is clear), without
+                        // waiting behind the queue, so today isn't held.
+                        if let s = model.entries.first(where: { $0.kind == .still }), let text = await model.pipeline.gatedText(of: s) {
+                            try? await model.ledger.insertVerdict(SafetyVerdictRow(entryId: s.id, textSha256: sha256(text), safetyVersion: SafetyGate.version,
+                                                                                  layer: 1, verdict: "clear", reasonCode: "snapshot"))
+                            await model.reload()
+                        }
                         if let url = Music.link("https://music.apple.com/gb/album/a-night-at-the-opera/1440650428") { await model.newMusic(url: url, at: nil) }
                     }
                 }),
@@ -153,6 +161,7 @@ enum Snapshots {
                 ("capture-page", {
                     guard model.isDemo else { return }
                     model.openEntryID = nil
+                    ready = { model.openEntryID != nil }
                     Task {
                         guard let e = await model.newWriting(body: "Walked home the long way. The river was loud after the rain and I kept thinking about the move.")
                         else { return }
@@ -213,8 +222,9 @@ enum Snapshots {
                 ("capture-titleheld", {
                     guard model.isDemo else { return }
                     CaptureUI.shared.musicOpen = false
+                    let day = LocalDay.adding(-4, to: LocalDay.today())
+                    ready = { model.day == day && model.dayStatus == .held }
                     Task {
-                        let day = LocalDay.adding(-4, to: LocalDay.today())
                         let e = Entry(kind: .reflection, titleUser: "No point anymore", body: "Walked home the long way by the river after work.", localDay: day)
                         try? await model.ledger.insertEntry(e)
                         model.go(to: day)
@@ -377,6 +387,11 @@ enum Snapshots {
             let only = UserDefaults.standard.string(forKey: "SaroSnapshotOnly")
             for (name, apply) in steps + ShellSnapshots.galleries(p, model) + SettingsSnapshots.steps(p, model, dir) where only.map(name.hasPrefix) ?? true {
                 apply()
+                for _ in 0..<240 {
+                    guard let wait = ready, !wait() else { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                ready = nil
                 try? await Task.sleep(for: .seconds(2.5))
                 if let v = p.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
                     v.cacheDisplay(in: v.bounds, to: rep)
