@@ -749,7 +749,10 @@ final class AppModel {
         let items = order.compactMap { k in
             cards[k].map { m in DayLayout.Item(id: k, kind: m[0].kind, size: m.count > 1 ? CanvasMath.stackSize : size(of: m[0])) }
         }
-        let at = DayLayout.layoutDay(items, center: CGPoint(x: visible.midX, y: visible.midY), visible: visible.size)
+        // The hand-placed cards stay where they were put, so the others' new places keep off them.
+        let taken = self.items.filter { moved.contains(key($0.top)) && layouts[$0.top.id] != nil }
+            .map { CGRect(center: position(of: $0.top.id), size: $0.isStack ? CanvasMath.stackSize : size(of: $0.top)) }
+        let at = DayLayout.relayout(items, in: visible, avoiding: taken)
         var changed: [CardLayout] = []
         for e in auto {
             guard var l = layouts[e.id], let p = at[key(e)] else { continue }

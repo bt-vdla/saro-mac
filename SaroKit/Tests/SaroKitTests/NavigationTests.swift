@@ -669,6 +669,19 @@ private func extent(_ items: [DayLayout.Item], _ at: [String: CGPoint]) -> CGRec
     #expect(side.x >= 4024 || side.x + 360 <= -4024)
 }
 
+@Test func relayoutKeepsOffHandPlacedCards() throws {
+    let visible = CGRect(x: -644, y: -342, width: 1288, height: 684)
+    let items = layoutDay([(.reflection, 2), (.moment, 1), (.music, 1)])
+    let free = DayLayout.relayout(items, in: visible, avoiding: [])
+    #expect(free == DayLayout.layoutDay(items, center: .zero, visible: visible.size))
+    // A card left by hand right where the moment would go.
+    let moment = try #require(items.first { $0.kind == .moment })
+    let hand = CGRect(center: try #require(free[moment.id]), size: CGSize(width: 360, height: 200))
+    let at = DayLayout.relayout(items, in: visible, avoiding: [hand])
+    for i in items { #expect(!CGRect(center: at[i.id]!, size: i.size).intersects(hand)) }
+    #expect(at[moment.id] != free[moment.id])
+}
+
 @Test func arrowsMoveToTheNearestCardThatWay() {
     let cards: [(id: String, center: CGPoint)] = [("a", CGPoint(x: 0, y: 0)), ("right", CGPoint(x: 400, y: 20)), ("far", CGPoint(x: 900, y: 0)),
                                                   ("below", CGPoint(x: 30, y: 300)), ("diagonal", CGPoint(x: 300, y: 260))]

@@ -66,6 +66,24 @@ public enum DayLayout {
         return out
     }
 
+    /// `layoutDay` around `visible`'s middle for the cards nobody moved, keeping clear of the `taken` ones that were: a
+    /// card whose new place would touch one goes to the free spot nearest the middle instead, in view if there's room,
+    /// else in the area around it (the camera then fits the day); it stays only when even that is full.
+    public static func relayout(_ items: [Item], in visible: CGRect, avoiding taken: [CGRect]) -> [String: CGPoint] {
+        var at = layoutDay(items, center: CGPoint(x: visible.midX, y: visible.midY), visible: visible.size)
+        let rect = { (i: Item) in at[i.id].map { CGRect(center: $0, size: i.size) } }
+        let clashing = Set(items.filter { i in rect(i).map { r in taken.contains { $0.intersects(r) } } ?? false }.map(\.id))
+        var occupied = taken + items.filter { !clashing.contains($0.id) }.compactMap(rect)
+        let room = [visible, visible.insetBy(dx: -visible.width, dy: -visible.height)]
+        for i in items where clashing.contains(i.id) {
+            guard let corner = room.lazy.compactMap({ freeSpot(i.size, in: $0, avoiding: occupied) }).first else { continue }
+            let r = CGRect(origin: corner, size: i.size)
+            at[i.id] = CGPoint(x: r.midX, y: r.midY)
+            occupied.append(r)
+        }
+        return at
+    }
+
     private static func overlaps(_ a: CGRect, _ b: CGRect, _ gap: CGFloat) -> Bool { a.insetBy(dx: -gap, dy: -gap).intersects(b) }
 
     /// The spot nearest `center` (a top-left corner) where a card of `size` sits wholly in `visible` without touching any
