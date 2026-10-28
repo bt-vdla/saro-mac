@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import Synchronization
 
 @Generable
 struct EntryOut {
@@ -69,8 +70,12 @@ public actor SaroAI {
         (self.stub, stubStatus) = (stub, status)
     }
 
+    /// The Developer menu's Simulate Apple Intelligence Unavailable: every touchpoint takes its heuristic path.
+    public static let simulatedUnavailable = Mutex(false)
+
     public nonisolated var status: Status {
         if let stubStatus { return stubStatus }
+        if Self.simulatedUnavailable.withLock({ $0 }) { return .unavailable(reason: "simulated") }
         return switch base.availability {
         case .available: .available
         case .unavailable(let reason): .unavailable(reason: "\(reason)")
