@@ -6,6 +6,7 @@ import SwiftUI
 struct LetterView: View {
     @Environment(AppModel.self) private var model
     @State private var kept = false
+    @State private var shown = false
 
     var body: some View {
         Group {
@@ -26,23 +27,37 @@ struct LetterView: View {
         .task(id: model.day) { kept = (try? await model.ledger.latestSnapshot(kind: "letter", day: model.day)) != nil }
     }
 
+    /// EveningLetter.tsx: an italic salutation, the reading, then "In your words", "The day's mood" and
+    /// "For you to wonder", lines rising in on a 50 ms stagger.
     private func page(_ letter: Letter, payload: DayPayload) -> some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text(LocalDay.date(model.day)?.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)).uppercased() ?? model.day)
-                .font(Typo.mono(10.5)).foregroundStyle(Tok.ink3)
-            ForEach(Array(letter.paragraphs.enumerated()), id: \.offset) { _, p in
+            Text(LocalDay.date(model.day)?.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) ?? model.day)
+                .monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+            Text("This evening,").font(Typo.serif(28, italic: true)).foregroundStyle(Tok.ink)
+                .rise(0, shown)
+            ForEach(Array(letter.paragraphs.enumerated()), id: \.offset) { i, p in
                 Text(attributed(p, quotes: letter.quotes))
-                    .font(Typo.serif(19)).lineSpacing(6).foregroundStyle(Tok.ink)
+                    .font(Typo.serif(18)).lineSpacing(6).foregroundStyle(Tok.ink)
                     .fixedSize(horizontal: false, vertical: true)
+                    .rise(i + 1, shown)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(letter.mood.rawValue.uppercased()).font(Typo.mono(10.5)).foregroundStyle(Tok.sageTeal)
+            if !letter.quotes.isEmpty {
+                section("In your words", 3) {
+                    ForEach(letter.quotes, id: \.index) { q in
+                        Text(attributed("“\(q.text)”", quotes: [q])).font(Typo.serif(17, italic: true)).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            section("The day's mood", 4) {
+                Text(letter.mood.rawValue).font(Typo.serif(18, .medium)).foregroundStyle(MoodPalette.color(letter.mood))
                 Text(Letter.typeset(letter.mood.summary)).font(Typo.serif(17, italic: true)).foregroundStyle(Tok.ink2)
             }
             if let q = letter.question {
-                Text(Letter.typeset(q)).font(Typo.serif(19, italic: true)).foregroundStyle(Tok.voice)
+                section("For you to wonder", 5) {
+                    Text(Letter.typeset(q)).font(Typo.serif(21, italic: true)).foregroundStyle(Tok.voice).fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Text(letter.signOff).font(Typo.serif(17)).foregroundStyle(Tok.ink2)
+            Text(letter.signOff).font(Typo.serif(17)).foregroundStyle(Tok.ink2).rise(6, shown)
             HStack {
                 Button(kept ? "Kept" : "Keep this letter") { Task { await keep(payload) } }
                     .disabled(kept)
@@ -52,6 +67,15 @@ struct LetterView: View {
             .padding(.top, 8)
         }
         .padding(.horizontal, 48).padding(.vertical, 44)
+        .onAppear { withAnimation { shown = true } }
+    }
+
+    private func section<Content: View>(_ title: String, _ i: Int, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+            content()
+        }
+        .rise(i, shown)
     }
 
     /// The user's quoted words become links to the entry they came from.
@@ -61,8 +85,8 @@ struct LetterView: View {
             var part = AttributedString(seg.text)
             if let q = seg.quote {
                 part.link = URL(string: "saro://entry/\(q.entryId)")
-                part.foregroundColor = Tok.sageTeal
-                part.underlineStyle = .single
+                part.foregroundColor = Tok.voice
+                part.underlineStyle = Text.LineStyle(pattern: .solid, color: Tok.voice.opacity(0.35))
             }
             out += part
         }
@@ -75,5 +99,25 @@ struct LetterView: View {
                                                                generator: model.dayReading?.generator ?? "heuristic", inputHash: nil, payload: text))
         kept = true
         model.show(Toast("Letter kept"))
+    }
+}
+
+extension View {
+    /// The letter's lines rise 6 pt over 350 ms, 50 ms apart (EveningLetter.tsx). Reduce Motion keeps the fade only.
+    func rise(_ index: Int, _ shown: Bool) -> some View {
+        modifier(Rise(index: index, shown: shown))
+    }
+}
+
+private struct Rise: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let index: Int
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 6)
+            .animation(Motion.easeOut(0.35).delay(Double(index) * 0.05), value: shown)
     }
 }
