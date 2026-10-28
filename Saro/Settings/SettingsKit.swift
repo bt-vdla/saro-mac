@@ -154,23 +154,33 @@ private struct TightLabel: LabelStyle {
 }
 
 /// A 36×20 switch: sage when on, an ink-4 outline when off. Its row shows the label, so the switch draws none, and
-/// VoiceOver still hears a switch with that label.
+/// VoiceOver still hears a switch with that label. Tab reaches it and Space flips it, as a native switch.
 struct SageToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View { SageSwitch(configuration: configuration) }
+}
+
+private struct SageSwitch: View {
+    let configuration: ToggleStyleConfiguration
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var enabled
 
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 10) {
-            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                Capsule().fill(configuration.isOn ? Tok.sage : .clear)
-                Capsule().strokeBorder(configuration.isOn ? Tok.sage : Tok.ink4, lineWidth: 1)
-                Circle().fill(configuration.isOn ? Tok.onPrimary : Tok.ink4).frame(width: 14, height: 14).padding(3)
-            }
-            .frame(width: 36, height: 20)
-            .contentShape(.rect.inset(by: -10))
-            .onTapGesture { configuration.isOn.toggle() }
-            .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: configuration.isOn)
+    var body: some View {
+        let on = configuration.isOn
+        ZStack(alignment: on ? .trailing : .leading) {
+            Capsule().fill(on ? Tok.sage : .clear)
+            Capsule().strokeBorder(on ? Tok.sage : Tok.ink4, lineWidth: 1)
+            Circle().fill(on ? Tok.onPrimary : Tok.ink4).frame(width: 14, height: 14).padding(3)
         }
+        .frame(width: 36, height: 20)
+        .contentShape(.interaction, .rect.inset(by: -10))
+        .contentShape(.focusEffect, .capsule)
+        .onTapGesture { configuration.isOn.toggle() }
+        .focusable(enabled)
+        .onKeyPress(.space) {
+            configuration.isOn.toggle()
+            return .handled
+        }
+        .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: on)
         .opacity(enabled ? 1 : 0.5)
         .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
     }
