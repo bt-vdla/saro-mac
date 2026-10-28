@@ -43,6 +43,11 @@ struct DayView: View {
                     // The voice pill sits 8 pt above the bar; the moment frame fills the canvas.
                     RecorderView(kind: kind, origin: grows ? origins[kind] : nil) { model.recorderKind = nil }
                         .padding(.bottom, kind == .voice ? model.barClear + 8 : 0)
+                        // With Full Keyboard Access a focused button in it hands Esc up the view tree, past its visible Esc
+                        // button (Close, Not yet, Keep recording, Keep it, a step's Cancel), to the day: it goes to that button.
+                        .onExitCommand {
+                            if let e = NSApp.currentEvent, e.type == .keyDown { _ = e.window?.performKeyEquivalent(with: e) }
+                        }
                         // A window close or pane switch ends the session too; left set, the camera would come back on its own.
                         .onDisappear { model.recorderKind = nil }
                 }
@@ -59,7 +64,9 @@ struct DayView: View {
         }
         .clipped()
         .onGeometryChange(for: CGPoint.self) { $0.frame(in: .global).origin } action: { model.dayOrigin = $0 }
-        .focusable(model.lens == nil)
+        // While a recorder is up its key equivalents take Esc, Return and Space, so the canvas gives the keys up and can't
+        // take them back until it closes.
+        .focusable(model.lens == nil && model.recorderKind == nil)
         .focusEffectDisabled()
         .focused($focused)
         // Arrows walk to the nearest card that way, Tab and ⇧Tab through capture order; ⌥ nudges by 8 pt, saved once the
@@ -130,6 +137,7 @@ struct DayView: View {
         }
         // A closed recorder or music field leaves no field holding the keys; the bar's button may take them next.
         .onChange(of: model.recorderKind == nil && !CaptureUI.shared.musicOpen) { _, idle in if idle { focused = true } }
+        .onChange(of: model.recorderKind != nil) { _, up in if up { focused = false } }
         // So does an edit on a card that Return or Esc ended; a click that ended it leaves the keys where it put them.
         .onChange(of: CaptureUI.shared.editing == nil) { _, ended in if ended, NSApp.currentEvent?.type == .keyDown { focused = true } }
         .onChange(of: focused) { _, on in if !on { saveNudge() } }
