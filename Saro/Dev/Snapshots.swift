@@ -20,6 +20,7 @@ enum Snapshots {
         let dark = UserDefaults.standard.bool(forKey: "SaroSnapshotDark")
         p.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
+            await seedReflection(model)
             try? await Task.sleep(for: .seconds(UserDefaults.standard.double(forKey: "SaroSnapshotDelay").clamped(to: 5...120)))
             let steps: [(String, @MainActor () -> Void)] = [
                 ("canvas", { model.selection = [] }),
@@ -52,6 +53,12 @@ enum Snapshots {
                         model.open(DeepLink.entry("gone").url)
                     }
                 }),
+                // Reflection: the spine's commitment marks and carry ring, the question's editor, then its pieces.
+                ("reflection-spine", { model.goToday() }),
+                ("reflection-panel", {
+                    model.insight = .panel
+                    model.reflection.answerRequested = true
+                }),
                 // Stills (demo journal only): the user's caption over Saro's description, then that still held.
                 ("still-yours", {
                     guard model.isDemo else { return }
@@ -74,6 +81,7 @@ enum Snapshots {
                         await model.reload()
                     }
                 }),
+                ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
             ]
@@ -87,6 +95,51 @@ enum Snapshots {
             }
             NSApp.terminate(nil)
         }
+    }
+}
+
+/// The letter is due at once and the first week started two days ago; yesterday left two commitments open.
+@MainActor private func seedReflection(_ model: AppModel) async {
+    PrefsStore.shared.letterMinutes = 0
+    PrefsStore.shared.weekStartedOn = LocalDay.adding(-2, to: LocalDay.today())
+    let yesterday = LocalDay.adding(-1, to: LocalDay.today())
+    for text in ["Call Ravi about Pune.", "Book the dentist", "Walk home the long way"] {
+        _ = try? await model.ledger.addCommitment(text, day: yesterday)
+    }
+    for text in ["Send the onboarding notes to the team", "Water the plants", "Stretch before bed", "Read one chapter"] {
+        let c = try? await model.ledger.addCommitment(text, day: LocalDay.today())
+        if text == "Water the plants", let c { try? await model.ledger.setDone(c.id, true) }
+    }
+}
+
+/// Reflection's pieces that sit in popovers or below the panel's fold: Adjust emotion, the commitments card with its
+/// carry-over, and the first week's notes.
+private struct ReflectionGallery: View {
+    private static let week = [
+        WeekEntry(at: .now.addingTimeInterval(-2 * 86_400), words: "The launch slipped again and the team is tired.", quote: "the team is tired"),
+        WeekEntry(at: .now.addingTimeInterval(-86_400), words: "Slept badly, then the launch meeting ran over.", quote: "the launch meeting ran over"),
+        WeekEntry(at: .now, words: "Walked by the river after work. Felt lighter.", quote: "Walked by the river after work"),
+    ]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 32) {
+            AdjustMoodView(current: .reflective)
+                .background(Tok.paper, in: .rect(cornerRadius: Radius.sheet))
+                .elevation(.overlay)
+            VStack(spacing: 16) {
+                CommitmentsCard()
+                FirstWeekNoteView(note: WeekMilestones.checkIn(goal: "sleep more"))
+            }
+            .frame(width: 330)
+            VStack(spacing: 16) {
+                if let pattern = WeekMilestones.firstPattern(Self.week) { FirstWeekNoteView(note: pattern) }
+                FirstWeekNoteView(note: WeekMilestones.firstLetter(name: "Bharat", week: Self.week, carriesPattern: true))
+            }
+            .frame(width: 340)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Tok.bg)
     }
 }
 
