@@ -208,6 +208,7 @@ private struct MediaDetail: View {
                     if let s = sentences.first(where: { $0.text.contains(q) || q.contains($0.text) }) { player?.seek(ms: s.startMs) }
                 })
                 transcript
+                EntryActionsRow(entry: entry)
             }
             .padding(.vertical, 4)
         }
@@ -216,19 +217,7 @@ private struct MediaDetail: View {
 
     private var transcript: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Transcript").monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
-                Spacer()
-                if !sentences.isEmpty {
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(sentences.map(\.text).joined(separator: " "), forType: .string)
-                        model.show(Toast("Transcript copied"))
-                    }
-                    .font(Typo.ui(12, .medium)).buttonStyle(.plain).foregroundStyle(Tok.ink2)
-                    .padding(.horizontal, 12).frame(height: 28).background(Tok.ink.opacity(0.06), in: .capsule)
-                }
-            }
+            Text("Transcript").monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
             TranscriptLines(entry: entry, sentences: sentences, player: player)
         }
     }
@@ -301,9 +290,12 @@ private struct TitleField: View {
     private func save() {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard t != (entry.titleUser ?? "") else { return }
+        let e = entry
         Task {
-            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: t.isEmpty ? nil : t, captionUser: entry.captionUser)
-            await model.reload()
+            try? await model.saves.track(e.id) { [model] in
+                try await model.ledger.updateEntryText(id: e.id, body: e.body, titleUser: t.isEmpty ? nil : t, captionUser: e.captionUser)
+                await model.reload()
+            }
         }
     }
 }
@@ -357,9 +349,17 @@ private struct WritingEditor: View {
 
     private func save(process: Bool) async {
         let body = text
-        if body != (model.entry(entry.id)?.body ?? "") {
-            try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser)
-            await model.edited(entry.id)
+        let e = entry
+        // A save that fails keeps the text here and the dot red until a retry lands; nothing says it was saved.
+        if body != (model.entry(e.id)?.body ?? "") {
+            do {
+                try await model.saves.track(e.id) { [model] in
+                    try await model.ledger.updateEntryText(id: e.id, body: body, titleUser: e.titleUser)
+                    await model.edited(e.id)
+                }
+            } catch {
+                return
+            }
         }
         guard process else { return }
         if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { try? await model.ledger.discardIfEmpty(entry.id) }
@@ -565,11 +565,14 @@ struct StillBelow: View {
         // Saro's words left as they were stay Saro's (DR-04): only an edit becomes the user's caption.
         let mine = c.isEmpty || yours == nil && c == saros ? nil : c
         guard mine != yours else { return }
+        let e = entry
         Task {
-            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: mine)
-            await model.reload()
-            // Always: a cleared caption brings Saro's description back as the still's reading.
-            model.process(entry.id)
+            try? await model.saves.track(e.id) { [model] in
+                try await model.ledger.updateEntryText(id: e.id, body: e.body, titleUser: e.titleUser, captionUser: mine)
+                await model.reload()
+                // Always: a cleared caption brings Saro's description back as the still's reading.
+                model.process(e.id)
+            }
         }
     }
 }
