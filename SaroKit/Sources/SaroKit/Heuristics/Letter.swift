@@ -33,14 +33,15 @@ public struct Letter: Sendable, Hashable {
         public var quote: Candidate?
     }
 
-    /// Splits text so each quoted phrase (with its quote marks, when it has them) is its own segment.
+    /// Splits text, typeset or not, so each quoted phrase (with its quote marks, when it has them) is its own segment.
     public static func segments(_ text: String, quotes: [Candidate]) -> [Segment] {
         var out: [Segment] = []
         var rest = Substring(text)
         while true {
             var best: (range: Range<Substring.Index>, quote: Candidate)?
             for q in quotes {
-                guard let r = ["\"\(q.text)\"", "“\(q.text)”", q.text].lazy.compactMap({ rest.range(of: $0) }).first else { continue }
+                let needles = ["\"\(q.text)\"", "“\(q.text)”", q.text]
+                guard let r = (needles + needles.map(typeset)).lazy.compactMap({ rest.range(of: $0) }).first else { continue }
                 if best.map({ r.lowerBound < $0.range.lowerBound }) ?? true { best = (r, q) }
             }
             guard let best else { break }
