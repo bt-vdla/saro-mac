@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Speech
+import Synchronization
 
 public struct TranscriptResult: Sendable, Hashable {
     public var words: [TranscriptWord]
@@ -75,8 +76,14 @@ public enum Transcriber {
         return sentences
     }
 
-    /// `Locale.current` when the transcriber supports it, else en-US.
-    static func locale() async -> Locale? {
+    /// Settings → Comfort → Caption language, as a locale identifier; nil follows the Mac.
+    public static let preferredLocale = Mutex<String?>(nil)
+
+    /// The caption language when the transcriber supports it, else `Locale.current`, else en-US.
+    static func locale(preferred: String? = preferredLocale.withLock { $0 }) async -> Locale? {
+        if let preferred, let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: preferred)) {
+            return locale
+        }
         if let locale = await SpeechTranscriber.supportedLocale(equivalentTo: .current) { return locale }
         return await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en-US"))
     }

@@ -626,6 +626,12 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
     }
 }
 
+/// Settings → Comfort → Caption language: the transcript of record listens for it, and nil follows the Mac.
+@Test func transcriptsFollowTheCaptionLanguage() async {
+    #expect(await Transcriber.locale(preferred: "fr-FR")?.language.languageCode == "fr")
+    #expect(await Transcriber.locale(preferred: "xx-YY") == Transcriber.locale(preferred: nil))
+}
+
 @Suite struct SettingsAITests {
     let sentence = "You slept better on the nights you ran."
 

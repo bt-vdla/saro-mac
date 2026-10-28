@@ -1,4 +1,5 @@
 import AppKit
+import SaroKit
 import SwiftUI
 
 extension View {
@@ -16,6 +17,8 @@ private struct ComfortEnvironment: ViewModifier {
         content
             .environment(\._accessibilityReduceMotion, prefs.reduceMotionEffective)
             .environment(\._accessibilityReduceTransparency, prefs.reduceTransparencyEffective)
+            // ponytail: whichever root is up keeps the transcriber on the caption language; a PrefsStore hook if more of SaroKit needs prefs.
+            .onChange(of: prefs.captionLocale, initial: true) { _, id in Transcriber.preferredLocale.withLock { $0 = id } }
     }
 }
 
