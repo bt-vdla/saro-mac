@@ -62,7 +62,7 @@ import Testing
     try await l.insertEntry(e)
     await p.process(entryId: e.id) {}
     // The newest verdict was made for other text; editing the body must not count as checked, and the hold stands.
-    try await l.updateEntryText(id: e.id, body: "A quiet walk home.", titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: "A quiet walk home.", titleUser: nil, captionUser: nil)
     #expect(await p.dayStatus(e.localDay) == .held)
     #expect(await p.readDay(e.localDay) == nil)
 }
@@ -78,7 +78,7 @@ import Testing
     await p.process(entryId: still.id) {}
     #expect(await p.dayStatus(page.localDay) == .held)
     // Cleared with no further pass (the editor discards an empty page instead of processing it), then with one.
-    try await l.updateEntryText(id: page.id, body: "", titleUser: nil)
+    try await l.updateEntryText(id: page.id, body: "", titleUser: nil, captionUser: nil)
     try await l.updateEntryText(id: still.id, body: nil, titleUser: nil, captionUser: nil)
     #expect(await p.dayStatus(page.localDay) == .empty)
     await p.process(entryId: page.id) {}
@@ -141,7 +141,7 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     let e = Entry(kind: .reflection, body: chai)
     try await l.insertEntry(e)
     // The editor reopened and autosaved new text while the pass for the old text ran, then the app quit.
-    await p.process(entryId: e.id) { try? await l.updateEntryText(id: e.id, body: "I want to die.", titleUser: nil) }
+    await p.process(entryId: e.id) { try? await l.updateEntryText(id: e.id, body: "I want to die.", titleUser: nil, captionUser: nil) }
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
     #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     #expect(await p.dayStatus(e.localDay) == .working)

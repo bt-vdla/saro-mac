@@ -103,7 +103,7 @@ private func people(_ entries: [String]) -> [String] { texts(derived(entries).fi
     let e = try await write(l, p, "Dinner with my sister Maya was lovely. Work was a lot.", at: ago(1))
     // An edit leaves the first text's rows behind, retracted.
     let text = "Dinner with my sister Maya was lovely. Maya stayed late."
-    try await l.updateEntryText(id: e.id, body: text, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: text, titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(await p.learn(entryId: e.id))
     let count = { (sql: String) in try await l.run(sql, [.text(e.id)]).first?["n"] }
@@ -369,7 +369,7 @@ private func rows(_ entries: [String], now: Date = .now) -> [MemoryObservation] 
     #expect(await !p.learn(entryId: a.id), "the same text isn't read twice")
 
     // An edit retracts the old rows, pointing at their replacements, and learns again.
-    try await l.updateEntryText(id: a.id, body: "Dinner with my sister Maya. The garden was quiet.", titleUser: nil)
+    try await l.updateEntryText(id: a.id, body: "Dinner with my sister Maya. The garden was quiet.", titleUser: nil, captionUser: nil)
     await p.process(entryId: a.id) {}
     #expect(await p.learn(entryId: a.id))
     let now = try await l.standingObservations(entryId: a.id)

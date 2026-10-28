@@ -110,7 +110,7 @@ let vanishing = "Lately I keep picturing myself just vanishing and nobody notici
     #expect(await p.readDay(e.localDay) != nil)
 
     // An edit is unchecked until gated; layer 2 then holds it, and what was generated from the entry and its day goes (SR-15).
-    try await l.updateEntryText(id: e.id, body: vanishing, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: vanishing, titleUser: nil, captionUser: nil)
     #expect(await p.dayStatus(e.localDay) == .working)
     await p.process(entryId: e.id) {}
     let held = try await l.verdicts(day: e.localDay)[e.id]
@@ -120,7 +120,7 @@ let vanishing = "Lately I keep picturing myself just vanishing and nobody notici
     #expect(await p.dayStatus(e.localDay) == .held)
 
     // Back to the first text: its cached verdict stands again with no new classifier call (SR-17), and it is read again.
-    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(await log.count(.classify) == 2)
     #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "clear")
@@ -129,7 +129,7 @@ let vanishing = "Lately I keep picturing myself just vanishing and nobody notici
     #expect(await p.readDay(e.localDay) != nil)
 
     // Saving the same text again changes nothing.
-    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(await log.count(.classify) == 2)
     #expect(await log.count(.entry) == 2)
@@ -142,13 +142,13 @@ let vanishing = "Lately I keep picturing myself just vanishing and nobody notici
     let e = Entry(kind: .reflection, body: vanishing)
     try await l.insertEntry(e)
     await p.process(entryId: e.id) {}
-    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(await p.dayStatus(e.localDay) == .ready)
     #expect(await p.readDay(e.localDay) != nil)
 
     // The held words come back: the hold made for them is the entry's verdict again, so the day is held, not waiting.
-    try await l.updateEntryText(id: e.id, body: vanishing, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: vanishing, titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(await log.count(.classify) == 2)
     #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "safety_hold")
@@ -325,7 +325,7 @@ let vanishing = "Lately I keep picturing myself just vanishing and nobody notici
         try await l.insertEntry(e)
         await p.process(entryId: e.id) {}
     }
-    try await l.updateEntryText(id: emptied.id, body: "", titleUser: nil)
+    try await l.updateEntryText(id: emptied.id, body: "", titleUser: nil, captionUser: nil)
     _ = try await l.trash([trashed.id])
     #expect(try await l.verdicts(day: clear.localDay)[faint.id]?.verdict == "technical_hold")
     #expect(try await l.verdicts(day: clear.localDay)[bare.id] == nil)
@@ -377,7 +377,7 @@ let vanishing = "Lately I keep picturing myself just vanishing and nobody notici
     #expect(!before.quotes.isEmpty)
 
     // An edit is gated, but its reading and the day's are rate-limited: the older day reading is still the newest.
-    try await l.updateEntryText(id: e.id, body: "Rain all afternoon, so I stayed in.", titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: "Rain all afternoon, so I stayed in.", titleUser: nil, captionUser: nil)
     let limited = Pipeline(ledger: l, ai: stubAI { ask in
         guard ask == .classify else { throw rateLimited }
         return "NONE"

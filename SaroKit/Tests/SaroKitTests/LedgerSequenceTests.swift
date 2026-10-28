@@ -182,7 +182,7 @@ func randomOperationSequencesKeepTheLedgerConsistent(seed: UInt64) async throws 
             let editedSince = pass.kind == .reflection && Bool.random(using: &rng)
             if editedSince {
                 let body = (pass.body ?? "") + " " + vocabulary.randomElement(using: &rng)!
-                try await l.updateEntryText(id: id, body: body, titleUser: pass.titleUser)
+                try await l.updateEntryText(id: id, body: body, titleUser: pass.titleUser, captionUser: nil)
                 m.entries[id]?.body = body
             }
             let status = statuses.randomElement(using: &rng)!

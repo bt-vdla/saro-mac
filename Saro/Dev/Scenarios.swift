@@ -500,7 +500,7 @@ final class Scenarios {
     /// What the writing editor's autosave does, for a page the run treats as open.
     private func type(_ id: String, _ text: String) async {
         let e = try? await ledger.entry(id)
-        try? await ledger.updateEntryText(id: id, body: text, titleUser: e?.titleUser)
+        try? await ledger.updateEntryText(id: id, body: text, titleUser: e?.titleUser, captionUser: e?.captionUser)
         await model.edited(id)
     }
 

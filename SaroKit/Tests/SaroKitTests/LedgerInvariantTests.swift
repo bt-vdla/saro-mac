@@ -302,11 +302,11 @@ private func fillEveryTable(_ l: Ledger) async throws -> Entry {
     try await l.insertEntry(e)
     await p.process(entryId: e.id) {}
     #expect(await p.dayStatus(e.localDay) == .ready)
-    try await l.updateEntryText(id: e.id, body: chai + " Then the bus home.", titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: chai + " Then the bus home.", titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(await p.dayStatus(e.localDay) == .ready)
     // Undo, back to text gated two verdicts ago.
-    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(try await l.verdicts(day: e.localDay)[e.id]?.textSha256 == sha256(chai))
     #expect(await p.dayStatus(e.localDay) == .ready)
@@ -401,7 +401,7 @@ private func fillEveryTable(_ l: Ledger) async throws -> Entry {
     let body = "before\u{0}after"
     let e = try await page(l, body)
     #expect(try await l.entry(e.id)?.body == body)
-    try await l.updateEntryText(id: e.id, body: body + "\u{0}", titleUser: "a\u{0}b")
+    try await l.updateEntryText(id: e.id, body: body + "\u{0}", titleUser: "a\u{0}b", captionUser: nil)
     #expect(try await l.entry(e.id)?.body == body + "\u{0}")
     #expect(try await l.entry(e.id)?.titleUser == "a\u{0}b")
     #expect(try await l.run("SELECT length(CAST(body AS BLOB)) AS n FROM entry").first?["n"]?.int == body.utf8.count + 1)

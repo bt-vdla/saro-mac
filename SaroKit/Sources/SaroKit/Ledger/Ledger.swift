@@ -78,9 +78,10 @@ public actor Ledger {
                   e.mediaId.sql, .text(e.processingStatus), .text(Date.now.iso)])
     }
 
-    /// User edits only (DR-04): no AI path calls this. A changed page or caption goes back to pending, so the launch
-    /// sweep gates an edit that was saved but never processed; one emptied of text has nothing left to read.
-    public func updateEntryText(id: String, body: String?, titleUser: String?, captionUser: String? = nil) throws {
+    /// User edits only (DR-04): no AI path calls this. Every field is written as given, a nil caption too, so callers
+    /// say all three. A changed page or caption goes back to pending, so the launch sweep gates an edit that was saved
+    /// but never processed; one emptied of text has nothing left to read.
+    public func updateEntryText(id: String, body: String?, titleUser: String?, captionUser: String?) throws {
         guard let old = try entry(id) else { return }
         let status = Self.statusAfterEdit(old, body: body, captionUser: captionUser) ?? old.processingStatus
         try db.run("UPDATE entry SET body=?, title_user=?, caption_user=?, processing_status=?, updated_at=? WHERE id=?",

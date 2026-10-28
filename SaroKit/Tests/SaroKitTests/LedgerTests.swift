@@ -146,11 +146,11 @@ func tempLedger() throws -> Ledger {
     for e in [page, still, moment] { try await l.insertEntry(e) }
     func status(_ e: Entry) async throws -> String? { try await l.entry(e.id)?.processingStatus }
     // A title alone isn't gated text.
-    try await l.updateEntryText(id: page.id, body: "Tea with Ravi.", titleUser: "Tea")
+    try await l.updateEntryText(id: page.id, body: "Tea with Ravi.", titleUser: "Tea", captionUser: nil)
     #expect(try await status(page) == ProcessingStatus.done)
-    try await l.updateEntryText(id: page.id, body: "Tea with Ravi, then rain.", titleUser: "Tea")
+    try await l.updateEntryText(id: page.id, body: "Tea with Ravi, then rain.", titleUser: "Tea", captionUser: nil)
     #expect(try await status(page) == ProcessingStatus.pending)
-    try await l.updateEntryText(id: page.id, body: " \n", titleUser: "Tea")
+    try await l.updateEntryText(id: page.id, body: " \n", titleUser: "Tea", captionUser: nil)
     #expect(try await status(page) == ProcessingStatus.done)
     try await l.updateEntryText(id: still.id, body: nil, titleUser: nil, captionUser: "The river")
     #expect(try await status(still) == ProcessingStatus.pending)

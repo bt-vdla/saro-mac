@@ -445,7 +445,7 @@ final class AppModel {
 
     func saveWriting(id: String, body: String, title: String?) async {
         do {
-            try await ledger.updateEntryText(id: id, body: body, titleUser: title)
+            try await ledger.updateEntryText(id: id, body: body, titleUser: title, captionUser: entry(id)?.captionUser)
             await reload()
             process(id)
         } catch {

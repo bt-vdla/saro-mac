@@ -374,7 +374,7 @@ private struct WritingEditor: View {
     private func save(process: Bool) async {
         let body = text
         if body != (model.entry(entry.id)?.body ?? "") {
-            try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser)
+            try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser, captionUser: entry.captionUser)
             await model.edited(entry.id)
         }
         guard process else { return }

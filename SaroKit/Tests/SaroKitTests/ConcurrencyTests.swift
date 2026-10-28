@@ -107,7 +107,7 @@ actor Latch {
     let pass = Task { await p.process(entryId: e.id) {} }
     await reading.wait()
     let edit = "Had chai with Ravi after work, then walked home in the rain."
-    try await l.updateEntryText(id: e.id, body: edit, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: edit, titleUser: nil, captionUser: nil)
     await release.open()
     await pass.value
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
