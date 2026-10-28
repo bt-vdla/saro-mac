@@ -20,7 +20,7 @@ struct ProgressDock: View {
                 HStack(spacing: 0) {
                     ForEach(Self.titles.indices, id: \.self) { i in dot(i, active: active, reached: reached) }
                 }
-                Pill(index: active, slot: Self.slot, reduceMotion: reduceMotion)
+                ActivePill(index: active, slot: Self.slot, reduceMotion: reduceMotion)
             }
             chevron("Next step", symbol: "chevron.right", disabled: active >= Self.titles.count - 1 || active + 1 > reached) {
                 flow.next(nav, model: model)
@@ -94,7 +94,7 @@ private struct ChevronMark: View {
 
 /// The active pill. Moving right, its trailing edge leads on a quick spring and its leading edge follows on a slower
 /// one with a little overshoot; moving left, the other way round.
-private struct Pill: View {
+private struct ActivePill: View {
     let index: Int
     let slot: CGFloat
     let reduceMotion: Bool

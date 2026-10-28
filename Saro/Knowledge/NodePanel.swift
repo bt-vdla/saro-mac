@@ -185,45 +185,7 @@ private struct FlowRow<Item: Identifiable, Cell: View>: View {
     }
 
     var body: some View {
-        Flow(spacing: 6) { ForEach(items) { cell($0) } }
-    }
-}
-
-private struct Flow: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = arrange(proposal.width ?? .infinity, subviews)
-        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: rows.last.map { $0.y + $0.height } ?? 0)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var i = 0
-        for row in arrange(bounds.width, subviews) {
-            var x = bounds.minX
-            for _ in 0..<row.count {
-                let s = subviews[i].sizeThatFits(.unspecified)
-                subviews[i].place(at: CGPoint(x: x, y: bounds.minY + row.y), proposal: ProposedViewSize(s))
-                x += s.width + spacing
-                i += 1
-            }
-        }
-    }
-
-    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> [(count: Int, y: CGFloat, width: CGFloat, height: CGFloat)] {
-        var rows: [(count: Int, y: CGFloat, width: CGFloat, height: CGFloat)] = []
-        var (count, x, y, h) = (0, CGFloat(0), CGFloat(0), CGFloat(0))
-        for v in subviews {
-            let s = v.sizeThatFits(.unspecified)
-            if count > 0, x + s.width > width {
-                rows.append((count, y, x - spacing, h))
-                (count, x, y, h) = (0, 0, y + h + spacing, 0)
-            }
-            count += 1
-            x += s.width + spacing
-            h = max(h, s.height)
-        }
-        if count > 0 { rows.append((count, y, x - spacing, h)) }
-        return rows
+        Flow(spacing: 6, lineSpacing: 6) { ForEach(items) { cell($0) } }
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

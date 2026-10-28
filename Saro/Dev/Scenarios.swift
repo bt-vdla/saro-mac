@@ -472,8 +472,8 @@ final class Scenarios {
         let dir = URL.temporaryDirectory.appending(path: "scenario-export-\(UUID().uuidString)", directoryHint: .isDirectory)
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let dest = try await model.export(to: dir)
-            _ = try await model.export(to: dir) // a second export replaces the first
+            let dest = dir.appending(path: "Saro.saroexport", directoryHint: .isDirectory)
+            try await ledger.exportEverything(to: dest, prefs: PrefsStore.shared.export())
             let json = try JSONSerialization.jsonObject(with: Data(contentsOf: dest.appending(path: "saro.json"))) as? [String: Any] ?? [:]
             let rows = { (t: String) in json[t] as? [[String: Any]] ?? [] }
             let all = (try? await ledger.allEntries(includeTrashed: true)) ?? []

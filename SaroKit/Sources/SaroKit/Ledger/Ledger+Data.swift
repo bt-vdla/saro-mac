@@ -182,6 +182,8 @@ extension Ledger {
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         var out: [String: Any] = ["export_version": 1, "schema_version": try schemaVersion(), "exported_at": Date.now.iso]
         for t in try tableNames() { out[t] = try db.run("SELECT * FROM \(t)").map { $0.mapValues(\.json) } }
+        // What Saro knows, readable (import skips it: it's derived from the rows above).
+        out["memories"] = try memoriesForExport()
         if let prefs, let block = try? JSONSerialization.jsonObject(with: prefs) { out["prefs"] = block }
         try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appending(path: "saro.json"), options: .atomic)
         try await Self.copyTreeDetached(from: mediaURL, to: dir.appending(path: "Media", directoryHint: .isDirectory), progress: progress)

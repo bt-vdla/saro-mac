@@ -77,7 +77,7 @@ private struct Copy {
 }
 
 /// The question's serif heading, its last word in italic sage.
-private func questionText(_ lead: String, _ em: String) -> Text {
+@MainActor private func questionText(_ lead: String, _ em: String) -> Text {
     Text("\(lead)\(Text(em).font(Typo.serif(56, italic: true)).foregroundStyle(Tok.sage))").font(Typo.serif(56))
 }
 

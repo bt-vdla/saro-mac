@@ -59,7 +59,7 @@ extension SaroAI {
             decode: { _ in nil as [ExtractedObservation]? },
             guided: { attempt in
                 Self.picks(try await Self.ask(MemoryOut.self, base, Self.memoryInstructions,
-                                              attempt > 0 ? prompt + "\n\n" + Self.correction : prompt, stub),
+                                              attempt > 0 ? prompt + "\n\n" + Self.correction : prompt, Self.options, stub),
                            candidates: candidates, source: source)
             },
             prose: { picks in (picks ?? []).map { if case .person(let n) = $0.kind { n } else { $0.candidate.text } }.joined(separator: "\n") },
