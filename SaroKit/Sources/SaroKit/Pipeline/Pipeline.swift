@@ -271,7 +271,10 @@ public actor Pipeline {
         let (marked, unmarked) = (sha256(key + "\nmodel"), sha256(key))
         let last = try? await ledger.latestSnapshot(kind: "day_reading", day: day)
         let previous = last.flatMap { try? JSONDecoder().decode(DayPayload.self, from: Data($0.payload.utf8)) }
-        if !force, let last, last.inputHash == marked || !modelOK && last.inputHash == unmarked, let previous, previous.narrative != nil {
+        // Reused only while its narrative still quotes the words verbatim, as latestDayReading shows it: one it would drop
+        // is read again, so the day never sits on a reading the panel can't show.
+        if !force, let last, last.inputHash == marked || !modelOK && last.inputHash == unmarked, let previous,
+           await latestDayReading(day)?.payload.narrative != nil {
             return previous
         }
 

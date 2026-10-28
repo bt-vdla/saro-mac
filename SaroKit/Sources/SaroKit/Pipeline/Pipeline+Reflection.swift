@@ -37,7 +37,8 @@ extension Pipeline {
                                         utf16To: a.quoteTo ?? 0) }
             } : nil
             switch e.kind {
-            case .still: out.append(NarrativeEntry(id: e.id, kind: e.kind, day: day, label: src.text))
+            // Saro's description of a still is never quoted as the person's words: only their own caption is.
+            case .still: out.append(NarrativeEntry(id: e.id, kind: e.kind, day: day, label: src.field == Self.aiCaptionField ? nil : src.text))
             case .music: out.append(NarrativeEntry(id: e.id, kind: e.kind, day: day, label: e.titleUser))
             case .reflection, .moment, .voice:
                 out.append(NarrativeEntry(id: e.id, kind: e.kind, day: day, text: src.text, field: src.field, quote: quote))

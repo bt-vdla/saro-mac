@@ -184,6 +184,31 @@ func exported(_ l: Ledger) async throws -> String {
     #expect(try #require(await p.readDay(s.localDay)).entryIds.contains(s.id))
 }
 
+@Test func anUncaptionedStillLastKeepsTheDaysNarrativeAndAStaleOneIsReadAgain() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let page = Entry(kind: .reflection, body: "Walked home through the park after work.", capturedAt: .now.addingTimeInterval(-60))
+    try await l.insertEntry(page)
+    let s = try await stillEntry(l)
+    await p.process(entryId: page.id) {}
+    await p.process(entryId: s.id) {}
+    // The newest entry is the still: its line doesn't put Saro's description in the person's mouth, so the narrative,
+    // which shows only while its quotes are verbatim, stays.
+    let day = try #require(await p.readDay(s.localDay))
+    #expect(day.narrative?.lastInferred?.message == "You kept a still." && day.narrative?.lastInferred?.quote == nil)
+    #expect(await p.latestDayReading(s.localDay)?.payload.narrative != nil)
+
+    // A stored narrative that no longer quotes the words as they are is read again, not handed back.
+    var stale = day
+    stale.narrative?.lastInferred?.quote = Candidate(index: -2, entryId: s.id, field: "caption_user", text: "Not these words", utf16From: 0, utf16To: 15)
+    let last = try #require(try await l.latestSnapshot(kind: "day_reading", day: s.localDay))
+    try await l.insertSnapshot(InsightSnapshot(kind: "day_reading", day: s.localDay, aiRunId: last.aiRunId, generator: last.generator,
+                                               inputHash: last.inputHash, payload: String(decoding: try JSONEncoder().encode(stale), as: UTF8.self)))
+    #expect(await p.latestDayReading(s.localDay)?.payload.narrative == nil)
+    await p.readDay(s.localDay)
+    #expect(await p.latestDayReading(s.localDay)?.payload.narrative != nil)
+}
+
 @Test func aRiskPhraseInTheDescriptionHoldsTheStillAndStoresNothing() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: stillAI("A note on the fridge that says I want to die."))
