@@ -84,6 +84,8 @@ final class AppModel {
     var barClear: CGFloat = 84
     /// Days loaded ahead of a click (a hovered chevron, a picker day, the days either side), newest last.
     private var neighbours: [(day: String, data: DayData)] = []
+    /// The day a change is heading for while its rows load, so quick presses count on from it instead of repeating it.
+    private var heading: String?
     /// Bumped by every reload, so a day read ahead before a write can't land in the cache after it.
     private var neighboursVersion = 0
     var screen: ScreenID = .canvas
@@ -366,9 +368,11 @@ final class AppModel {
     func go(to day: String, animation: Animation? = nil) {
         // Counted even when it stays put: ⌘[ then ⌘T must cancel the ⌘[ still loading.
         navigation += 1
+        heading = nil
         guard day != self.day || pane != .day else { return }
         let target = day
         let ticket = navigation
+        heading = target
         if let armed = neighbours.last(where: { $0.day == target })?.data { return land(target, armed, animation: animation) }
         Task {
             let data = try? await load(target)
@@ -380,6 +384,7 @@ final class AppModel {
     }
 
     private func land(_ target: String, _ data: DayData, animation: Animation?) {
+        heading = nil
         withAnimation(animation) {
             slideDirection = target > self.day ? 1 : -1
             self.day = target
@@ -419,7 +424,7 @@ final class AppModel {
         }
     }
 
-    func slide(_ by: Int) { slide(to: LocalDay.adding(by, to: day)) }
+    func slide(_ by: Int) { slide(to: LocalDay.adding(by, to: heading ?? day)) }
 
     func slide(to day: String) {
         guard day <= LocalDay.today() else {
@@ -450,9 +455,9 @@ final class AppModel {
     }
 
     func goToday() { go(to: LocalDay.today()) }
-    func goPrevious() { go(to: LocalDay.adding(-1, to: day)) }
+    func goPrevious() { go(to: LocalDay.adding(-1, to: heading ?? day)) }
     func goNext() {
-        let next = LocalDay.adding(1, to: day)
+        let next = LocalDay.adding(1, to: heading ?? day)
         if next <= LocalDay.today() { go(to: next) }
     }
 
