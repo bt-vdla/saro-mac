@@ -27,8 +27,7 @@ struct NoticedView: View {
             }
             .scrollIndicators(.automatic)
             // Clicked, the panel takes focus, so ⌘C copies its summary and the arrows scroll it.
-            .focusable()
-            .focusEffectDisabled()
+            .keyScrolls()
         }
         .contextMenu { PanelMenu() }
         .onCopyCommand(perform: model.reflection.summary.map { text in
