@@ -27,7 +27,7 @@ final class DevMode {
             events = try await model.ledger.decisionEvents()
             notes = try await model.ledger.screenNotes()
         } catch {
-            model.show(Toast("Couldn't read decisions: \(error.localizedDescription)", style: .error))
+            model.show(.failed("Couldn't read decisions", error))
         }
     }
 
@@ -41,7 +41,7 @@ final class DevMode {
             model.show(Toast("Recorded \(decisionId)"))
             return true
         } catch {
-            model.show(Toast("Couldn't record \(decisionId): \(error.localizedDescription)", style: .error))
+            model.show(.failed("Couldn't record \(decisionId)", error))
             return false
         }
     }
@@ -55,7 +55,7 @@ final class DevMode {
             notes.append(n)
             return true
         } catch {
-            model.show(Toast("Couldn't save the note: \(error.localizedDescription)", style: .error))
+            model.show(.failed("Couldn't save the note", error))
             return false
         }
     }
@@ -93,7 +93,7 @@ final class DevMode {
             try markdown.write(to: dir.appending(path: DevExport.markdownName), atomically: true, encoding: .utf8)
             model.show(Toast("Exported decisions to \(dir.lastPathComponent)"))
         } catch {
-            model.show(Toast("Couldn't export: \(error.localizedDescription)", style: .error))
+            model.show(.failed("Couldn't export the decisions", error))
         }
     }
 
@@ -125,9 +125,89 @@ struct DevCommands: Commands {
         }
         CommandGroup(after: .help) {
             Button("Take the Tour") { DevMode.shared.startTour(model) }.disabled(model.showsOnboarding)
+        }
+        CommandMenu("Developer") {
+            @Bindable var flags = DevFlags.shared
+            Toggle("Simulate Apple Intelligence Unavailable", isOn: $flags.simulateAIUnavailable)
+            Toggle("Simulate Write Failures", isOn: $flags.simulateWriteFailures)
+            Toggle("Simulated Live Captions", isOn: $flags.simulatedCaptions)
+            Divider()
+            Toggle("Light Lab", isOn: $flags.lightLab).keyboardShortcut("l", modifiers: .option)
+            Divider()
             Button("Replay Onboarding") { Task { await model.replayOnboarding() } }.disabled(model.showsOnboarding)
+            Divider()
+            if model.isDemo {
+                Button("Reset Demo Journal…") { DevFlags.confirmReset(model) }
+                Button("Leave Demo Journal") { DevFlags.relaunch(demo: false) }
+            } else {
+                Button("Open Demo Journal") { DevFlags.relaunch(demo: true) }
+            }
         }
     }
+}
+
+/// The Developer menu's switches (ProfileMenuPanel.tsx's Demo section). They last for this launch only.
+@Observable @MainActor
+final class DevFlags {
+    static let shared = DevFlags()
+
+    /// Every tracked write fails, so the save status and the failure toasts can be seen.
+    var simulateWriteFailures = false
+    var simulateAIUnavailable = false { didSet { SaroAI.simulatedUnavailable.withLock { $0 = simulateAIUnavailable } } }
+    /// For capture's live captions, which show made-up words instead of listening.
+    var simulatedCaptions = false
+    var lightLab = UserDefaults.standard.string(forKey: "SaroHour") != nil
+
+    static var simulateWriteFailures: Bool { shared.simulateWriteFailures }
+
+    /// Open Demo Journal starts a new Saro on a throwaway journal (-SaroDemo YES); Leave starts one on the real journal.
+    static func relaunch(demo: Bool) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        config.arguments = demo ? ["-SaroDemo", "YES"] : []
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config) { _, error in
+            guard error == nil else { return }
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
+
+    static func confirmReset(_ model: AppModel) {
+        let alert = NSAlert()
+        alert.messageText = "Erase the demo journal and seed it again?"
+        alert.informativeText = "Only this launch's throwaway journal is erased. Your own journal isn't touched."
+        alert.addButton(withTitle: "Erase and Seed")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { await DemoJournal.reset(model) }
+    }
+}
+
+/// The Developer items at the foot of the account menu.
+struct DeveloperItems: View {
+    @Environment(AppModel.self) private var model
+    var focus: FocusState<Int?>.Binding
+    static let rows = [10, 11, 12, 13, 14, 15]
+
+    var body: some View {
+        let flags = DevFlags.shared
+        MenuDivider()
+        Text("DEVELOPER").font(Typo.mono(10)).tracking(1.1).foregroundStyle(Tok.ink3).padding(.horizontal, 12).padding(.vertical, 4)
+        MenuRow(check(flags.simulateWriteFailures, "Simulate write failures"), symbol: "externaldrive.badge.xmark", index: 10, focus: focus,
+                closes: false) { flags.simulateWriteFailures.toggle() }
+        MenuRow(check(flags.simulateAIUnavailable, "Simulate Apple Intelligence unavailable"), symbol: "bolt.slash", index: 11, focus: focus,
+                closes: false) { flags.simulateAIUnavailable.toggle() }
+        MenuRow(check(flags.simulatedCaptions, "Simulated live captions"), symbol: "captions.bubble", index: 12, focus: focus,
+                closes: false) { flags.simulatedCaptions.toggle() }
+        MenuRow("Light Lab", symbol: "sun.horizon", keys: "⌥L", index: 13, focus: focus) { flags.lightLab.toggle() }
+        MenuRow("Replay onboarding", symbol: "arrow.counterclockwise", index: 14, focus: focus) { Task { await model.replayOnboarding() } }
+        if model.isDemo {
+            MenuRow("Reset demo journal…", symbol: "eraser", index: 15, focus: focus) { DevFlags.confirmReset(model) }
+        } else {
+            MenuRow("Open demo journal", symbol: "flask", index: 15, focus: focus) { DevFlags.relaunch(demo: true) }
+        }
+    }
+
+    private func check(_ on: Bool, _ title: String) -> String { on ? "\(title) ✓" : title }
 }
 
 extension View {
@@ -163,6 +243,7 @@ private struct DevModeLayer: ViewModifier {
                     .padding(14)
                 }
             }
+            .overlay(alignment: .top) { if DevFlags.shared.lightLab { LightLab() } }
             .overlayPreferenceValue(TourAnchorKey.self) { TourOverlay(anchors: $0) }
             .animation(Motion.pick(Motion.open, reduce: reduceMotion), value: model.devNotesVisible)
             .task { await DevMode.shared.load(model) }

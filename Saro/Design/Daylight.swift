@@ -22,6 +22,14 @@ final class Daylight {
     /// the day. Nil goes back to the real clock.
     @ObservationIgnored var replayHour: Double? { didSet { if replayHour != oldValue { apply(fade: 0.45) } } }
 
+    /// The Light Lab's clock (or `-SaroHour 19.5`), standing in for the real one everywhere the ground and palette read it.
+    var pinnedHour: Double? = UserDefaults.standard.string(forKey: "SaroHour").flatMap(Double.init) {
+        didSet { if pinnedHour != oldValue { apply(fade: 0.45) } }
+    }
+
+    /// The hour the ground is lit for when nothing pins its own.
+    func hour(at date: Date) -> Double { pinnedHour ?? Sky.localHour(date) }
+
     @ObservationIgnored private var ticking = false
 
     /// Sets the palette and re-checks it on every minute. Call once at launch, before the first window shows.
@@ -42,7 +50,7 @@ final class Daylight {
     /// A slow dusk when the clock flips the palette, a quick fade when the person picks one.
     private func apply(fade: Double) {
         let next: NSAppearance? = switch mode {
-        case .clock: NSAppearance(named: Sky.isNight(replayHour ?? Sky.localHour(.now)) ? .darkAqua : .aqua)
+        case .clock: NSAppearance(named: Sky.isNight(replayHour ?? hour(at: .now)) ? .darkAqua : .aqua)
         case .system: nil
         case .light: NSAppearance(named: .aqua)
         case .dark: NSAppearance(named: .darkAqua)
