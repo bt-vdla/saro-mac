@@ -153,14 +153,24 @@ extension Pipeline {
         for day in (try? await ledger.reflectionDays(waiting: !all)) ?? [] {
             for t in (try? await ledger.turns(day: day, includeArchived: true)) ?? [] where all || t.answerVerdict?.hasPrefix("unavailable") == true {
                 guard let answer = t.answer else { continue }
-                guard let r = await check(answer) else { done = false; continue }
+                guard let r = await checkOnce(answer) else { done = false; continue }
                 if r.verdict != t.answerVerdict { try? await ledger.setTurnAnswer(id: t.id, answer: answer, verdict: r.verdict) }
             }
             guard let s = try? await ledger.dayState(day), let note = s.moodNote, let mood = s.moodUser,
                   all || s.moodNoteVerdict?.hasPrefix("unavailable") == true else { continue }
-            guard let r = await check(note) else { done = false; continue }
+            guard let r = await checkOnce(note) else { done = false; continue }
             if r.verdict != s.moodNoteVerdict { try? await ledger.setUserMood(day: day, label: mood, note: note, verdict: r.verdict) }
         }
         return done
+    }
+
+    /// `check`, once a launch for text the model can't read: Apple Intelligence coming back can't change that verdict
+    /// (SR-17), so a later pass reuses it instead of asking the classifier again, as an entry's cached verdict does.
+    private func checkOnce(_ text: String) async -> GateResult? {
+        let hash = sha256(text)
+        if let r = unreadable[hash] { return r }
+        let r = await check(text)
+        if r?.reasonCode == "unsupported_language" { unreadable[hash] = r }
+        return r
     }
 }

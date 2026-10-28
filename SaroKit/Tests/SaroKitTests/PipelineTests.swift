@@ -255,6 +255,26 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(r?.verdict == "unavailable_caution" && r?.reasonCode == "unsupported_language")
 }
 
+/// The person's own answers and mood notes in a language the model can't read are asked about once a launch, not again
+/// on every activation's re-gate: the verdict can't change while the model stays the same (SR-17).
+@Test func answersInAnUnsupportedLanguageAreCheckedOnceALaunch() async throws {
+    let l = try tempLedger()
+    let day = "2026-10-20"
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: "What stayed with you?", generator: "heuristic", localDay: day)
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: chai, verdict: "unavailable_clear")
+    try await l.setUserMood(day: day, label: .calm, note: "Slow tea in the garden.", verdict: "unavailable_clear")
+    let asked = CallLog()
+    let p = Pipeline(ledger: l, ai: stubAI { _ in
+        await asked.hitPermissive()
+        throw LanguageModelError.unsupportedLanguageOrLocale(.init(languageCode: .init("xx"), debugDescription: "test"))
+    })
+    for _ in 0..<3 { #expect(await p.regateReflections(all: false)) }
+    #expect(await asked.permissive == 2)
+    #expect(try await l.turns(day: day).first?.answerVerdict == "unavailable_clear")
+    #expect(try await l.dayState(day).moodNoteVerdict == "unavailable_clear")
+}
+
 @Test func heuristicReadingGivesWayOnceTheModelCanRun() async throws {
     let l = try tempLedger()
     let e = Entry(kind: .reflection, body: chai)

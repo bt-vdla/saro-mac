@@ -32,6 +32,8 @@ public actor Pipeline {
     let ai: SaroAI
     let gate: SafetyGate
     var stillsToDescribe: Set<String> = []
+    /// Answers and mood notes the model ran on and couldn't read (their language), by text hash: checked once a launch.
+    var unreadable: [String: GateResult] = [:]
 
     public init(ledger: Ledger, ai: SaroAI) {
         self.ledger = ledger
