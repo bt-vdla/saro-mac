@@ -6,25 +6,33 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView(columnVisibility: Binding(get: { model.sidebarVisible ? .all : .detailOnly },
-                                                      set: { model.sidebarVisible = $0 != .detailOnly })) {
-            Sidebar()
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
-        } detail: {
-            Group {
-                switch model.pane {
-                case .day: DayView()
-                case .trash: TrashView()
-                case .decisions:
-                    #if DOGFOOD
-                    DecisionsView()
-                    #else
-                    EmptyView()
-                    #endif
-                case .knows: Color.clear
+        Group {
+            if model.profile == nil {
+                LitGround().ignoresSafeArea().overlay { ToastHost() }
+            } else if model.showsOnboarding {
+                OnboardingView().ignoresSafeArea(.container, edges: .top)
+            } else {
+                NavigationSplitView(columnVisibility: Binding(get: { model.sidebarVisible ? .all : .detailOnly },
+                                                              set: { model.sidebarVisible = $0 != .detailOnly })) {
+                    Sidebar()
+                        .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
+                } detail: {
+                    Group {
+                        switch model.pane {
+                        case .day: DayView()
+                        case .trash: TrashView()
+                        case .decisions:
+                            #if DOGFOOD
+                            DecisionsView()
+                            #else
+                            EmptyView()
+                            #endif
+                        case .knows: Color.clear
+                        }
+                    }
+                    .overlayPreferenceValue(TrashFlightKey.self) { ToastHost(flying: $0) }
                 }
             }
-            .overlayPreferenceValue(TrashFlightKey.self) { ToastHost(flying: $0) }
         }
         .background(Tok.bg)
         .tint(Tok.sage)

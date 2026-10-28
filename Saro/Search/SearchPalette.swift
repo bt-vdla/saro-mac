@@ -181,6 +181,9 @@ struct SearchPalette: View {
             PaletteCommand(id: "export", title: "Export everything", symbol: "square.and.arrow.up", keywords: "backup download save data") { m in
                 Task { await m.exportEverything() }
             },
+            PaletteCommand(id: "onboarding", title: "Replay onboarding", symbol: "arrow.counterclockwise", keywords: "welcome about you first week setup start again") { m in
+                Task { await m.replayOnboarding() }
+            },
         ]
         #if DOGFOOD
         all += [

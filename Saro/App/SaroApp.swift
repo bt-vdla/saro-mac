@@ -89,29 +89,35 @@ struct SaroCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Go") {
-            Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
-            Divider()
-            Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
-            Button("Previous Day") { model.goPrevious() }.keyboardShortcut("[", modifiers: .command)
-            Button("Next Day") { model.goNext() }.keyboardShortcut("]", modifiers: .command)
+            Group {
+                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
+                Divider()
+                Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
+                Button("Previous Day") { model.goPrevious() }.keyboardShortcut("[", modifiers: .command)
+                Button("Next Day") { model.goNext() }.keyboardShortcut("]", modifiers: .command)
+            }
+            .disabled(model.showsOnboarding)
         }
         CommandGroup(after: .toolbar) {
-            Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
-            Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
-            Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
-            Divider()
-            Button("What Saro Noticed") {
-                model.pane = .day
-                model.insight = model.insight == .panel ? .spine : .panel
+            Group {
+                Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
+                Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
+                Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
+                Divider()
+                Button("What Saro Noticed") {
+                    model.pane = .day
+                    model.insight = model.insight == .panel ? .spine : .panel
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+                Button("Evening Letter") {
+                    model.pane = .day
+                    model.insight = model.insight == .letter ? .spine : .letter
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
+                Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
+                    .disabled(!model.reflection.canRefresh)
             }
-            .keyboardShortcut("i", modifiers: [.command, .option])
-            Button("Evening Letter") {
-                model.pane = .day
-                model.insight = model.insight == .letter ? .spine : .letter
-            }
-            .keyboardShortcut("l", modifiers: [.command, .option])
-            Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
-                .disabled(!model.reflection.canRefresh)
+            .disabled(model.showsOnboarding)
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") {
@@ -121,7 +127,7 @@ struct SaroCommands: Commands {
             }
         }
         CommandGroup(after: .importExport) {
-            Button("Export Everything…") { Task { await model.exportEverything() } }
+            Button("Export Everything…") { Task { await model.exportEverything() } }.disabled(model.showsOnboarding)
         }
     }
 }

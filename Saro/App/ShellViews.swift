@@ -61,6 +61,10 @@ struct SettingsView: View {
                 }
                 LabeledContent("Quick capture", value: "⌃⌘J from anywhere, or the menu bar")
                 LabeledContent("Writing Tools", value: "Off in Saro's editors")
+                Button("Replay Onboarding…") {
+                    openWindow(id: "main")
+                    Task { await model.replayOnboarding() }
+                }
             }
             .tabItem { Label("General", systemImage: "gearshape") }
 
