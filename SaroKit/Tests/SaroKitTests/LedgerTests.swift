@@ -73,7 +73,7 @@ func tempLedger() throws -> Ledger {
     try await l.insertVerdict(SafetyVerdictRow(entryId: held.id, textSha256: "h", safetyVersion: "1", layer: 2, verdict: "safety_hold", reasonCode: "t"))
     #expect(try await Set(l.annotations(day: held.localDay).keys) == [other.id])
     #expect(try await l.latestSnapshot(kind: "day_reading", day: held.localDay) == nil)
-    #expect(try await l.latestSnapshot(kind: "letter", day: held.localDay) != nil)
+    #expect(try await l.latestSnapshot(kind: "letter", day: held.localDay) == nil)
 }
 
 @Test func onlyReadingsMadeWithoutTheModelAreReadAgain() async throws {
