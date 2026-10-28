@@ -191,7 +191,7 @@ struct FindLightView: View {
                 .contentTransition(.opacity)
         }
         .buttonStyle(PrimaryStyle())
-        .keyboardShortcut(light.phase == .live ? .defaultAction : nil)
+        .returnPresses(when: light.phase == .live)
         .focused($primaryFocused)
         .opacity(hidden ? 0 : 1)
         .offset(y: hidden && !reduceMotion ? 6 : 0)
@@ -217,6 +217,7 @@ struct FindLightView: View {
     }
 
     private func go() {
+        guard !heldKey() else { return }
         switch light.phase {
         case .live: leave(.moment)
         case .voice: leave(.voice)

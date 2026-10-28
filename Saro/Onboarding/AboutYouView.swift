@@ -335,9 +335,12 @@ private struct FirstQuestionView: View {
             Text("These lines are free and confidential, and someone will listen.")
                 .font(Typo.ui(15)).foregroundStyle(Tok.ink2).padding(.top, 12).padding(.bottom, 20)
             SafetyCardView(compact: true).frame(maxWidth: 440)
-            Button { flow.accept(nil, model: model) } label: { Text("Continue").font(Typo.ui(14, .semibold)).frame(height: 44) }
+            Button {
+                guard !heldKey() else { return }
+                flow.accept(nil, model: model)
+            } label: { Text("Continue").font(Typo.ui(14, .semibold)).frame(height: 44) }
                 .buttonStyle(PrimaryStyle())
-                .keyboardShortcut(.defaultAction)
+                .returnPresses()
                 .padding(.top, 24)
         }
         .appear(appeared, y: 20, animation: Motion.small.delay(0.06), nav: flow.nav, reduce: reduceMotion)
@@ -361,7 +364,10 @@ private struct FirstQuestionView: View {
                 .appear(appeared, y: 20, animation: Motion.surface, nav: flow.nav, reduce: reduceMotion)
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 24) {
-                    Button { flow.accept(current.text, model: model) } label: {
+                    Button {
+                        guard !heldKey() else { return }
+                        flow.accept(current.text, model: model)
+                    } label: {
                         HStack(spacing: 8) {
                             Text("Answer it")
                             Text("→").accessibilityHidden(true)
@@ -370,7 +376,7 @@ private struct FirstQuestionView: View {
                         .frame(height: 44)
                     }
                     .buttonStyle(PrimaryStyle())
-                    .keyboardShortcut(.defaultAction)
+                    .returnPresses()
                     if candidates.count > 1 {
                         Button("Ask me something else") { withAnimation(reduceMotion ? nil : Motion.easeOut(0.16)) { index = i + 1 } }
                             .buttonStyle(LinkStyle())

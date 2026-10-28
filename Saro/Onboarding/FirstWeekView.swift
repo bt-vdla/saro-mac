@@ -286,11 +286,15 @@ struct FirstWeekView: View {
                 ReminderAsk(announce: { announcement = $0 })
                     .entering(progress(t, at: restAt + 0.08, duration: 0.35), y: 8)
                 HStack(spacing: 6) {
-                    Button { flow.go(.findLight, nav: pressedByKey() ? .key : .pointer, model: model) } label: {
+                    Button {
+                        guard !heldKey() else { return }
+                        flow.go(.findLight, nav: pressedByKey() ? .key : .pointer, model: model)
+                    } label: {
                         Text("Start \(day0 == "TONIGHT" ? "tonight’s" : "today’s") moment").font(Typo.ui(14, .semibold)).frame(height: 44)
                     }
                     .buttonStyle(PrimaryStyle())
-                    .keyboardShortcut(.defaultAction)
+                    // Return starts it once the week is at rest, not while it rises.
+                    .returnPresses(when: ready && entrance == nil && !editingTime)
                     Button { Task { await flow.finish(nil, model: model) } } label: {
                         Text("Later").font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink2).padding(.horizontal, 12).frame(height: 44).contentShape(.rect)
                     }
@@ -309,7 +313,7 @@ struct FirstWeekView: View {
             HStack(alignment: .center, spacing: 10) {
                 Text("\(FirstWeek.hourCopy(hour).part.rawValue), around").font(Typo.serif(28)).foregroundStyle(Tok.ink)
                 RitualTimePill(minutes: minutes, hour12: Self.hour12, onCommit: { commit($0, announce: FirstWeek.timeChange($0, hour12: Self.hour12)) },
-                               onRestore: restore)
+                               onRestore: restore, onEditing: { editingTime = $0 })
             }
             .padding(.top, 8)
             Group {
@@ -558,10 +562,11 @@ private struct RitualTimePill: View {
     let hour12: Bool
     let onCommit: (Int) -> Void
     let onRestore: () -> Void
+    let onEditing: (Bool) -> Void
     @State private var hover = false
 
     var body: some View {
-        PillField(minutes: minutes, hour12: hour12, onCommit: onCommit, onRestore: onRestore)
+        PillField(minutes: minutes, hour12: hour12, onCommit: onCommit, onRestore: onRestore, onEditing: onEditing)
             .frame(width: 104, height: 24)
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Tok.surfaceAlt.opacity(hover ? 0.85 : 0.6), in: .rect(cornerRadius: 20, style: .continuous))
@@ -582,11 +587,13 @@ private struct PillField: NSViewRepresentable {
     let hour12: Bool
     let onCommit: (Int) -> Void
     let onRestore: () -> Void
+    let onEditing: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let f = NSTextField()
+        let f = Field()
+        f.onFocus = { context.coordinator.parent.onEditing(true) }
         f.isBordered = false
         f.drawsBackground = false
         f.focusRingType = .none
@@ -602,6 +609,17 @@ private struct PillField: NSViewRepresentable {
     func updateNSView(_ f: NSTextField, context: Context) {
         context.coordinator.parent = self
         if f.currentEditor() == nil { f.stringValue = FirstWeek.clockLabel(minutes, hour12: hour12) }
+    }
+
+    /// Says when it takes focus, before anything is typed.
+    final class Field: NSTextField {
+        var onFocus: (() -> Void)?
+
+        override func becomeFirstResponder() -> Bool {
+            let ok = super.becomeFirstResponder()
+            if ok { onFocus?() }
+            return ok
+        }
     }
 
     @MainActor
@@ -623,6 +641,7 @@ private struct PillField: NSViewRepresentable {
         }
 
         func controlTextDidEndEditing(_ note: Notification) {
+            parent.onEditing(false)
             (note.object as? NSTextField)?.stringValue = FirstWeek.clockLabel(parent.minutes, hour12: parent.hour12)
         }
 

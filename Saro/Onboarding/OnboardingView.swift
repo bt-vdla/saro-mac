@@ -403,3 +403,29 @@ extension View {
 
 /// Whether the click that's running was a key press (Return, Space) rather than a pointer.
 @MainActor func pressedByKey() -> Bool { NSApp.currentEvent?.type == .keyDown }
+
+/// Whether it's a held key's repeat: a step's Return runs once per press.
+@MainActor func heldKey() -> Bool { NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false }
+
+extension View {
+    /// Return presses this button only once `ready` has held for `after` seconds (the screen has risen), so the
+    /// Return that brought the screen, doubled or held, never presses the next screen's button too.
+    func returnPresses(when ready: Bool = true, after: Double = 0.45) -> some View { modifier(ReturnPresses(ready: ready, after: after)) }
+}
+
+private struct ReturnPresses: ViewModifier {
+    let ready: Bool
+    let after: Double
+    @State private var armed = false
+
+    func body(content: Content) -> some View {
+        content
+            .keyboardShortcut(armed ? .defaultAction : nil)
+            .task(id: ready) {
+                armed = false
+                guard ready else { return }
+                try? await Task.sleep(for: .seconds(after))
+                armed = !Task.isCancelled
+            }
+    }
+}

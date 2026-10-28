@@ -93,8 +93,9 @@ struct SaroCommands: Commands {
                 Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
                 Divider()
                 Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
-                Button("Previous Day") { model.goPrevious() }.keyboardShortcut("[", modifiers: .command)
-                Button("Next Day") { model.goNext() }.keyboardShortcut("]", modifiers: .command)
+                // During onboarding ⌘[ and ⌘] are its own Previous and Next Step, so these give the keys up.
+                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("[", modifiers: .command))
+                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("]", modifiers: .command))
             }
             .disabled(model.showsOnboarding)
         }
