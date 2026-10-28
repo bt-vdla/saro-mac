@@ -8,8 +8,9 @@ extension Pipeline {
     /// Saro's words about a still: a digest title and summary, never a quote candidate and never read again.
     public static let aiCaptionField = "ai_caption"
 
-    /// The user's caption, else the cleared description. Nil while a description is held or waits for a check, so that
-    /// verdict is read as it stands whatever caption is written (the day stays held, SR-13).
+    /// The user's caption, else the cleared description. Nil while a description is held or waits for a check, however
+    /// its check came (described, re-gated or a day reading's layer 3), so that verdict is read as it stands whatever
+    /// caption is written (the day stays held, SR-13).
     func stillText(_ e: Entry) async throws -> (text: String, field: String, confidence: Double?)? {
         let last = try await ledger.stillCaption(entryId: e.id)
         if last?.standsHeld == true { return nil }
@@ -23,13 +24,15 @@ extension Pipeline {
 
     /// Describes a still with no description yet, one asked for again, or one that can now be told better: described
     /// without ever asking the model once the model can see, waiting for Apple Intelligence once it can run (SR-17), or
-    /// held by an older gate (SR-18). False when deferred by a rate limit (§11.7), which ends this pass.
+    /// held by an older gate (SR-18). Never while a hold stands on the still (SR-15). False when deferred by a rate limit
+    /// (§11.7), which ends this pass and keeps a Describe again for the next.
     func describeStillIfDue(_ entry: Entry, onStatus: @Sendable () async -> Void) async -> Bool {
         guard entry.kind == .still, let mid = entry.mediaId, let media = try? await ledger.media(mid), media.state == "ready" else { return true }
         let newest = (try? await ledger.verdicts(day: entry.localDay))?[entry.id]
-        let asked = stillsToDescribe.remove(entry.id) != nil && newest?.verdict != "safety_hold"
+        let heldNow = newest.map { EntryState(verdict: $0.verdict) == .safetyHold } ?? false
+        let asked = stillsToDescribe.remove(entry.id) != nil && !heldNow
         let last = try? await ledger.stillCaption(entryId: entry.id)
-        let due = asked || last == nil
+        let due = asked || last == nil && !heldNow
             || last?.status == "ok" && last?.executor == "heuristic" && last?.modelCalls == 0 && ai.canSee
             || last?.status == StillCaption.caution && ai.status == .available
             || last?.status == StillCaption.held && newest.map { $0.safetyVersion != SafetyGate.version } ?? true
@@ -39,12 +42,14 @@ extension Pipeline {
             try? await ledger.setProcessingStatus(s, startedFrom: entry)
             await onStatus()
         }
-        await status(ProcessingStatus.reading)
-        let url = ledger.url(for: media)
-        guard let d = await ai.describeStill(at: url) else {
+        func deferred() async -> Bool {
+            if asked { stillsToDescribe.insert(entry.id) }
             await status(ProcessingStatus.pending)
             return false
         }
+        await status(ProcessingStatus.reading)
+        let url = ledger.url(for: media)
+        guard let d = await ai.describeStill(at: url) else { return await deferred() }
         var run = AIRun(feature: "still_caption", executor: d.provenance.executor, status: d.provenance.status)
         run.guardrails = d.provenance.guardrails
         run.ladderRung = d.provenance.rung.rawValue
@@ -69,16 +74,14 @@ extension Pipeline {
         run.inputHash = hash
         let result = SafetyGate.phraseHit(text) ? GateResult(verdict: "safety_hold", layer: 3, reasonCode: "output_gate")
             : await gate.gate(text: text, transcriptConfidence: nil)
-        guard let result else {
-            await status(ProcessingStatus.pending)
-            return false
-        }
+        guard let result else { return await deferred() }
         let verdict = SafetyVerdictRow(entryId: entry.id, textSha256: hash, safetyVersion: SafetyGate.version, layer: result.layer,
                                        verdict: result.verdict, reasonCode: result.reasonCode)
         if result.verdict == "clear" || result.verdict == "unavailable_clear" {
             var a = EntryAnnotation(entryId: entry.id, aiRunId: run.id, generator: run.executor)
             (a.title, a.summary, a.caption) = (caption, caption, caption)
-            try? await ledger.insertStillCaption(run, input: input, annotation: a, tags: d.tags)
+            let captioned = !(entry.captionUser ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            try? await ledger.insertStillCaption(run, input: input, annotation: a, tags: d.tags, keepingReading: captioned)
             try? await ledger.insertVerdict(verdict)
         } else {
             // Nothing generated is stored for a held still (SR-15): the verdict first, so a crash re-describes it.
@@ -93,7 +96,7 @@ extension Pipeline {
     func keepStillCaptionCurrent(_ entryId: String, hash: String) async {
         guard (try? await ledger.hasAnnotation(entryId: entryId, inputHash: hash)) != true,
               let last = try? await ledger.stillCaption(entryId: entryId), last.caption != nil else { return }
-        try? await ledger.restoreStillCaption(runId: last.runId)
+        try? await ledger.restoreAnnotation(runId: last.runId)
     }
 
     /// The image a run read, by its file's hash: ai_run_input stores no content.

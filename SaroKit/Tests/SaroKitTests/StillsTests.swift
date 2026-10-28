@@ -231,6 +231,111 @@ func exported(_ l: Ledger) async throws -> String {
     #expect(try await l.entry(s.id)?.processingStatus == ProcessingStatus.done)
 }
 
+/// SR-13: a description held when its own text is checked again (here an SR-17 re-gate once the classifier is back, as
+/// after a SAFETY_VERSION bump) holds the day, though its run was cleared.
+@Test func aReGateHoldOnTheDescriptionHoldsTheDay() async throws {
+    let l = try tempLedger()
+    let checks = StillCalls()
+    let p = Pipeline(ledger: l, ai: SaroAI(stub: { prompt in
+        if prompt.hasPrefix(SaroAI.stillTask) { return json(["caption": "A path through a green park.", "tags": ["path", "park"]]) }
+        if prompt.hasSuffix("Label:") {
+            guard prompt.contains("green park") else { return "NONE" }
+            await checks.add()
+            if await checks.count == 1 { throw assetsMissing }
+            return "PASSIVE"
+        }
+        return echo(prompt.hasPrefix("Notes on today's entries") ? .day : .entry, prompt)
+    }))
+    let page = Entry(kind: .reflection, body: "Walked home through the park after work. The sky was pink over the trees.")
+    try await l.insertEntry(page)
+    let s = try await stillEntry(l)
+    await p.process(entryId: page.id) {}
+    await p.process(entryId: s.id) {}
+
+    #expect(await checks.count == 2)
+    let v = try #require(try await l.verdicts(day: s.localDay)[s.id])
+    #expect(v.verdict == "safety_hold" && v.layer == 2)
+    let c = try #require(try await l.stillCaption(entryId: s.id))
+    #expect(c.status == StillCaption.held && c.standsHeld && c.caption == nil)
+    #expect(try await p.text(for: try #require(try await l.entry(s.id))) == nil)
+    #expect(await p.dayStatus(s.localDay) == .held)
+    #expect(await p.readDay(s.localDay) == nil)
+    #expect(try await rowCount(l, "insight_snapshot") == 0)
+    #expect(!(try await exported(l)).contains("green park"))
+
+    // It stands whatever caption is written, and isn't described again until a newer gate.
+    try await l.updateEntryText(id: s.id, body: nil, titleUser: nil, captionUser: "The park.")
+    await p.describeAgain(s.id)
+    await p.process(entryId: s.id) {}
+    #expect(await p.dayStatus(s.localDay) == .held)
+    #expect(try await rowCount(l, "ai_run", "feature='still_caption'") == 1)
+}
+
+/// SR-15: a still held by its own caption (here one the migration queued) is never sent to the model.
+@Test func aStillHeldByItsCaptionIsNotDescribed() async throws {
+    let l = try tempLedger()
+    let calls = StillCalls()
+    let p = Pipeline(ledger: l, ai: stillAI(calls: calls))
+    let caption = "A note to myself: I want to die."
+    let s = try await stillEntry(l, caption: caption)
+    try await l.insertVerdict(SafetyVerdictRow(entryId: s.id, textSha256: sha256(caption), safetyVersion: SafetyGate.version, layer: 1,
+                                               verdict: "safety_hold", reasonCode: "phrase_hit"))
+    await p.process(entryId: s.id) {}
+    #expect(await calls.count == 0)
+    #expect(try await l.stillCaption(entryId: s.id) == nil)
+    #expect(await p.dayStatus(s.localDay) == .held)
+}
+
+/// A new description doesn't displace the reading of the user's own caption, so the unchanged caption isn't read again.
+@Test func describeAgainKeepsTheReadingOfTheUsersCaption() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI())
+    let s = try await stillEntry(l, caption: "Ravi's new flat in Pune, finally unpacked.")
+    await p.process(entryId: s.id) {}
+    let reading = try #require(try await l.annotations(day: s.localDay)[s.id])
+    #expect(try await rowCount(l, "ai_run", "feature='entry_reading'") == 1)
+
+    await p.describeAgain(s.id)
+    await p.process(entryId: s.id) {}
+    #expect(try await rowCount(l, "ai_run", "feature='still_caption'") == 2)
+    #expect(try await rowCount(l, "ai_run", "feature='entry_reading'") == 1)
+    let kept = try #require(try await l.annotations(day: s.localDay)[s.id])
+    #expect(kept.aiRunId == reading.aiRunId && kept.title == reading.title && kept.quote == reading.quote && kept.moodLabel == reading.moodLabel)
+    #expect(try await l.stillCaption(entryId: s.id)?.caption == "A path through a green park.")
+    let day = try #require(await p.readDay(s.localDay))
+    #expect(day.entryIds == [s.id] && day.quotes.allSatisfy { $0.field == "caption_user" })
+}
+
+actor Switch {
+    private(set) var on = false
+    func set(_ v: Bool) { on = v }
+}
+
+@Test func aDescribeAgainDeferredByARateLimitRunsOnTheNextPass() async throws {
+    let l = try tempLedger()
+    let limited = Switch()
+    let p = Pipeline(ledger: l, ai: SaroAI(stub: { prompt in
+        if prompt.hasPrefix(SaroAI.stillTask) {
+            if await limited.on { throw rateLimited }
+            return json(["caption": "A path through a green park.", "tags": ["path", "park"]])
+        }
+        if prompt.hasSuffix("Label:") { return "NONE" }
+        return echo(prompt.hasPrefix("Notes on today's entries") ? .day : .entry, prompt)
+    }))
+    let s = try await stillEntry(l)
+    await p.process(entryId: s.id) {}
+    await limited.set(true)
+    await p.describeAgain(s.id)
+    await p.process(entryId: s.id) {}
+    #expect(try await rowCount(l, "ai_run", "feature='still_caption'") == 1)
+    #expect(try await l.entry(s.id)?.processingStatus == ProcessingStatus.pending)
+
+    await limited.set(false)
+    await p.process(entryId: s.id) {}
+    #expect(try await rowCount(l, "ai_run", "feature='still_caption'") == 2)
+    #expect(try await l.entry(s.id)?.processingStatus == ProcessingStatus.done)
+}
+
 @Test func aRateLimitDefersTheDescription() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: stillAI(fail: rateLimited))
