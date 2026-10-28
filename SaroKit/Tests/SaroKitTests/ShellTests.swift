@@ -376,5 +376,7 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         let keyed = Dictionary(grouping: Shortcut.all) { "\($0.scope ?? "app")|\($0.keys)" }
         #expect(keyed.values.allSatisfy { $0.count == 1 }, "\(keyed.filter { $0.value.count > 1 }.keys)")
         #expect(Set(Shortcut.all.map(\.group)) == Set(Shortcut.Group.allCases))
+        // Keyboard Shortcuts draws each row by its id: two alike would draw the first twice.
+        #expect(Set(Shortcut.all.map(\.id)).count == Shortcut.all.count)
     }
 }

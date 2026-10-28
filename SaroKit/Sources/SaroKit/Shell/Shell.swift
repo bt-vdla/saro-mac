@@ -170,7 +170,7 @@ public struct Shortcut: Sendable, Hashable, Identifiable {
     public var keys: String
     /// Only while this is open; shortcuts with a scope may reuse keys of the app-wide ones.
     public var scope: String?
-    public var id: String { "\(group.rawValue)|\(title)" }
+    public var id: String { "\(group.rawValue)|\(title)|\(keys)" }
 
     init(_ group: Group, _ title: String, _ keys: String, scope: String? = nil) {
         (self.group, self.title, self.keys, self.scope) = (group, title, keys, scope)
