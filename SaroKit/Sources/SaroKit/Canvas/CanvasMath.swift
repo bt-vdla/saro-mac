@@ -48,20 +48,86 @@ public enum CanvasMath {
         return origin
     }
 
-    /// The nearest edge or centre alignment within `reach` on one axis: how far to move, the line it lands on, and the
-    /// cards that share that line (cardGeometry.ts snaps left/centre/right and top/middle/bottom to other cards).
-    public static func snap(_ mine: [CGFloat], to theirs: [(CGFloat, CGRect)], reach: CGFloat) -> (delta: CGFloat, at: CGFloat, rects: [CGRect])? {
-        var pick: (delta: CGFloat, at: CGFloat, rects: [CGRect])?
+    /// How far to move, the line it lands on, and the cards that share that line (none for the rhythm).
+    public typealias Snap = (delta: CGFloat, at: CGFloat, rects: [CGRect])
+
+    /// The nearest line to any of `mine` within `reach` on one axis.
+    public static func snap(_ mine: [CGFloat], to lines: [GuideLine], reach: CGFloat) -> Snap? {
+        var pick: Snap?
         for a in mine {
-            for (b, r) in theirs where abs(b - a) <= reach {
-                if let p = pick, abs((b - a) - p.delta) < 0.5 {
-                    pick?.rects.append(r)
-                } else if pick == nil || abs(b - a) < abs(pick!.delta) {
-                    pick = (b - a, b, [r])
+            for l in lines where abs(l.pos - a) <= reach {
+                if let p = pick, abs((l.pos - a) - p.delta) < 0.5 {
+                    if let r = l.card, !pick!.rects.contains(r) { pick?.rects.append(r) }
+                } else if pick == nil || abs(l.pos - a) < abs(pick!.delta) {
+                    pick = (l.pos - a, l.pos, l.card.map { [$0] } ?? [])
                 }
             }
         }
         return pick
+    }
+
+    /// One axis of a moving box (`mine` is left, centre, right or top, middle, bottom): other cards' lines catch any of
+    /// them within `reach`; failing that, the rhythm catches an edge within `rhythmReach` (cardGeometry.ts). The rhythm is
+    /// dense, so it only catches an edge that's very close: a card never feels notchy crossing the canvas.
+    public static func snap(_ mine: [CGFloat], cards: [GuideLine], reach: CGFloat, axis: Int, level: Int, rhythmReach: CGFloat) -> Snap? {
+        guard let lo = mine.first, let hi = mine.last else { return nil }
+        return snap(mine, to: cards, reach: reach)
+            ?? snap([lo, hi], to: rhythmLines(axis: axis, from: lo - rhythmReach, to: hi + rhythmReach, level: level), reach: rhythmReach)
+    }
+
+    // MARK: The uneven guide rhythm (cardGeometry.ts)
+
+    /// Empty canvas still shows structure: lines at a seeded order of these spacings per block, the same wherever and
+    /// whenever you look, because every block's order comes from its index.
+    public static let rhythm: [CGFloat] = [24, 40, 64, 104]
+
+    public struct GuideLine: Equatable, Sendable {
+        /// World x (a vertical line) or y (a horizontal one).
+        public let pos: CGFloat
+        /// 0–1, fixed per line: its reach and weight.
+        public let seed: Double
+        /// The card this line comes from (its edge or centre); nil for the rhythm.
+        public var card: CGRect?
+    }
+
+    /// The rhythm's density for a zoom: spacings double or halve so lines stay 40–80 screen points apart on average.
+    public static func rhythmLevel(zoom: CGFloat) -> Int { Int(ceil(log2(40 / (58 * zoom)))) }
+
+    /// Rhythm lines along one axis (0 = vertical lines at x, 1 = horizontal at y) with pos in from...to.
+    public static func rhythmLines(axis: Int, from: CGFloat, to: CGFloat, level: Int) -> [GuideLine] {
+        let unit = pow(2, CGFloat(level)), block = 232 * unit
+        var out: [GuideLine] = []
+        for k in stride(from: Int(floor(from / block)), through: Int(floor(to / block)), by: 1) {
+            var order = [0, 1, 2, 3]
+            for i in stride(from: 3, to: 0, by: -1) { order.swapAt(i, Int(hash(k, axis, level, i) * Double(i + 1))) }
+            var pos = CGFloat(k) * block
+            for i in 0..<4 {
+                if pos >= from && pos <= to { out.append(GuideLine(pos: pos, seed: hash(k, axis, level, 8 + i))) }
+                pos += rhythm[order[i]] * unit
+            }
+        }
+        return out
+    }
+
+    /// Alignment lines from other cards: their left, centre and right (axis 0) or top, middle and bottom.
+    public static func cardLines(_ rects: [CGRect], axis: Int) -> [GuideLine] {
+        rects.enumerated().flatMap { i, r in
+            (0..<3).map { j in
+                GuideLine(pos: (axis == 0 ? r.minX : r.minY) + (axis == 0 ? r.width : r.height) * CGFloat(j) / 2, seed: hash(i, axis, j, 7), card: r)
+            }
+        }
+    }
+
+    /// A deterministic 0–1 hash of a few integers, bit for bit the web's (so the grid sits where it does there).
+    static func hash(_ a: Int, _ b: Int, _ c: Int, _ d: Int) -> Double {
+        var h: UInt32 = 0x811c9dc5
+        for v in [a, b, c, d] {
+            h = (h ^ UInt32(truncatingIfNeeded: v)) &* 0x01000193
+            h ^= h >> 15
+            h = h &* 0x2c1b3c6d
+            h ^= h >> 12
+        }
+        return Double(h) / 4_294_967_296
     }
 
     /// The smallest rectangle around a set of cards (for fitting the camera to a day).

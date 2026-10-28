@@ -33,10 +33,39 @@ import Testing
 
 @Test func snapPicksTheNearestAlignment() {
     let other = CGRect(x: 100, y: 0, width: 200, height: 100)
-    let theirs = [(other.minX, other), (other.midX, other), (other.maxX, other)]
+    let theirs = CanvasMath.cardLines([other], axis: 0)
+    #expect(theirs.map(\.pos) == [100, 200, 300])
     // A card whose left edge is 4 pt right of the other's left edge snaps 4 pt left.
     let s = CanvasMath.snap([104, 204, 304], to: theirs, reach: 6)
-    #expect(s?.delta == -4 && s?.at == 100)
+    #expect(s?.delta == -4 && s?.at == 100 && s?.rects == [other])
     // Nothing within reach: no snap.
     #expect(CanvasMath.snap([120, 220, 320], to: theirs, reach: 6) == nil)
+}
+
+// Reference values from the web's cardGeometry.ts (node), so the grid lands where it does there.
+@Test func rhythmMatchesTheWeb() {
+    #expect(abs(CanvasMath.hash(0, 0, 0, 0) - 0.8140980841126293) < 1e-12)
+    #expect(abs(CanvasMath.hash(-3, 1, -2, 9) - 0.9983757685404271) < 1e-12)
+    #expect([0.2, 0.5, 0.69, 1, 1.4, 3].map { CanvasMath.rhythmLevel(zoom: $0) } == [2, 1, 0, 0, -1, -2])
+    let lines = CanvasMath.rhythmLines(axis: 0, from: -300, to: 500, level: 0)
+    #expect(lines.map(\.pos) == [-296, -272, -232, -128, -64, -24, 0, 24, 128, 192, 232, 256, 320, 360, 464])
+    #expect(abs(lines[0].seed - 0.16281321411952376) < 1e-12)
+    #expect(CanvasMath.rhythmLines(axis: 1, from: 0, to: 1000, level: 1).map(\.pos) == [0, 208, 336, 384, 464, 592, 640, 848, 928, 976])
+    #expect(CanvasMath.rhythmLines(axis: 0, from: -100, to: 100, level: -2).map(\.pos)
+        == [-100, -84, -58, -32, -16, -10, 0, 26, 36, 52, 58, 68, 94, 100])
+}
+
+@Test func rhythmCatchesOnlyCloseEdgesAndCardsWin() {
+    let snap = { (mine: [CGFloat], cards: [CanvasMath.GuideLine]) in
+        CanvasMath.snap(mine, cards: cards, reach: 6, axis: 0, level: 0, rhythmReach: 3)
+    }
+    // The rhythm has a line at 128: a right edge 2 pt short lands on it, with no card to draw the guide to.
+    let r = snap([-82, 23, 126], [])
+    #expect(r?.delta == 2 && r?.at == 128 && r?.rects.isEmpty == true)
+    // 4 pt off is too far for the rhythm, and a centre near a rhythm line doesn't count.
+    #expect(snap([-60, 36, 132], []) == nil)
+    #expect(snap([-77, 23, 123], []) == nil)
+    // Another card's edge within 6 pt wins over a nearer rhythm line.
+    let other = CGRect(x: 131, y: 0, width: 100, height: 100)
+    #expect(snap([-82, 23, 126], CanvasMath.cardLines([other], axis: 0))?.at == 131)
 }
