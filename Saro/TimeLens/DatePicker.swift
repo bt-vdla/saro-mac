@@ -11,6 +11,8 @@ struct DatePickerPanel: View {
     @State private var cursor = ""
     @State private var moods: [String: Mood] = [:]
     @FocusState private var focused: Bool
+    /// A day is read ahead once the pointer rests on it, so sweeping across the month doesn't read every day it passes.
+    @State private var arming: Task<Void, Never>?
 
     private var today: String { LocalDay.today() }
     private var counts: [String: Int] { Dictionary(model.days.map { ($0.day, $0.count) }, uniquingKeysWith: { a, _ in a }) }
@@ -115,7 +117,14 @@ struct DatePickerPanel: View {
         }
         .buttonStyle(PressStyle(hoverFill: !selected && !future, radius: 10))
         .disabled(future)
-        .onHover { if $0 && !future { model.arm(day) } }
+        .onHover { inside in
+            arming?.cancel()
+            guard inside, !future else { return }
+            arming = Task {
+                try? await Task.sleep(for: .milliseconds(120))
+                if !Task.isCancelled { model.arm(day) }
+            }
+        }
         .accessibilityLabel([d.formatted(.dateTime.weekday(.wide).month(.wide).day()), isToday ? "today" : nil, n > 0 ? "has entries" : nil,
                              selected ? "selected" : nil].compactMap { $0 }.joined(separator: ", "))
     }
