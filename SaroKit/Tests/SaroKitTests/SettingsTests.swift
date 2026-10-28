@@ -592,3 +592,50 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(try await l.schemaVersion() == Schema.migrations.count)
     }
 }
+
+@Suite struct SettingsAITests {
+    let sentence = "You slept better on the nights you ran."
+
+    @Test func toneRepliesThatDriftOrFailTheGateFallBackToTheRules() {
+        let reply = """
+        ```json
+        {"gentle": "It seems you slept better on the nights you ran. You are doing well.",
+         "neutral": "You slept better on the nights you ran.",
+         "direct": "Your sister says you slept better after the marathon in Paris.",
+         "contemplative": "You slept better on the nights you ran."}
+        ```
+        """
+        let tones = TonePreview.accept(reply, sentence: sentence)
+        #expect(tones[.gentle] == "It seems you slept better on the nights you ran. You are doing well.")
+        #expect(tones[.direct] == TonePreview.rewrite(sentence, tone: .direct))
+        #expect(tones[.contemplative] == TonePreview.rewrite(sentence, tone: .contemplative))
+        #expect(TonePreview.accept("not json", sentence: sentence) == TonePreview.ruled(sentence))
+        #expect(TonePreview.accept(#"{"gentle": "I want to kill myself"}"#, sentence: sentence) == TonePreview.ruled(sentence))
+    }
+
+    @Test func modelSettingsAreValidatedLikeTheRules() {
+        let v = values()
+        guard case .changes(let c, _, let proposed) = P.fromModel(#"{"key": "reminder", "value": "21:45"}"#, current: v) else { Issue.record("no change"); return }
+        #expect(summary(c) == ["reminder: Off → 9:45 pm"] && proposed.reminderOn)
+        #expect(P.fromModel(#"{"key": "textScale", "value": "130%"}"#, current: v) == .none)
+        #expect(P.fromModel(#"{"key": "focus", "value": "clarity, cooking"}"#, current: v) == .none)
+        #expect(P.fromModel(#"{"key": "delete", "value": "everything"}"#, current: v) == .none)
+        #expect(P.fromModel(#"{"key": "tone", "value": "gentle"}"#, current: v) == .alreadySet("Saro already talks this way: Gentle."))
+        #expect(P.fromModel(#"{"key": "tone", "value": "direct"}"#, current: values { $0.tone = nil }) == .none)
+        guard case .changes(let f, _, _) = P.fromModel(#"{"key": "focus", "value": "purpose, energy"}"#, current: v) else { Issue.record("no focus"); return }
+        #expect(summary(f) == ["focus: Clarity → Energy, Purpose"])
+    }
+}
+
+@Suite struct NamesTests {
+    @Test func capAndInitialsKeepGraphemesWhole() {
+        #expect(Names.cap("  Alex  ") == "Alex")
+        let long = String(repeating: "👩🏽‍🚀", count: 70)
+        #expect(Names.cap(long).count == 60 && Names.cap(long).unicodeScalars.last != "\u{200D}")
+        #expect(Names.cap(Names.cap(String(repeating: "a ", count: 40))) == Names.cap(String(repeating: "a ", count: 40)))
+        #expect(Names.initials("alex river rivers") == "AR")
+        #expect(Names.initials("Élodie") == "É")
+        #expect(Names.initials("👩🏽‍🚀 Sam") == "👩🏽‍🚀S")
+        #expect(Names.initials("   ") == "—")
+    }
+}

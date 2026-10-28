@@ -178,6 +178,12 @@ struct SearchPalette: View {
         #endif
         all += [
             PaletteCommand(id: "trash", title: "Trash", symbol: "trash", keywords: "deleted bin restore") { $0.pane = .trash },
+            PaletteCommand(id: "settings", title: "Settings…", symbol: "gearshape", keywords: "preferences tone reminder privacy text size say it",
+                           shortcut: "⌘,") { _ in WindowActions.openSettings() },
+            PaletteCommand(id: "profile", title: "Profile…", symbol: "person.crop.circle", keywords: "name called you account") { _ in
+                PrefsStore.shared.settingsSection = .you
+                WindowActions.openSettings()
+            },
             PaletteCommand(id: "export", title: "Export everything", symbol: "square.and.arrow.up", keywords: "backup download save data") { m in
                 Task { await m.exportEverything() }
             },

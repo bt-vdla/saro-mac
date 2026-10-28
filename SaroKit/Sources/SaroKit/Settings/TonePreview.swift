@@ -120,7 +120,8 @@ public enum TonePreview {
     /// `sentence` in Saro's `tone`: gentle softens and reassures, direct strips hedges, contemplative asks.
     public static func rewrite(_ sentence: String, tone: Tone) -> String {
         let s = sentence.jsReplace(#"\s+"#, with: " ").jsTrim
-        guard !s.isEmpty, tone != .neutral else { return s }
+        // Neutral is the sentence as written, only with its first letter capitalised as every other tone's is.
+        guard !s.isEmpty, tone != .neutral else { return upperFirst(s) }
         let question = s.hasSuffix("?")
         let core = trimEnd(s)
         switch tone {

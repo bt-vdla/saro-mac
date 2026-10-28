@@ -105,7 +105,7 @@ public enum ParseIntent {
     ]
     static let themeLabel: [SettingsValues.Appearance: String] = [.clock: "Follow the day", .system: "System", .light: "Light", .dark: "Dark"]
 
-    static func pct(_ scale: Double) -> String {
+    public static func pct(_ scale: Double) -> String {
         let p = scale * 100
         return p == p.rounded() ? "\(Int(p))%" : "\(p)%"
     }

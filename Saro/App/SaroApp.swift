@@ -32,6 +32,7 @@ struct SaroApp: App {
                 RootView()
                     .environment(model)
                     .environment(PrefsStore.shared)
+                    .comfortEnvironment()
                     .deepLinks(model)
                     .task { await model.loadProfile() }
                     .task { await model.sweep() }
@@ -57,8 +58,10 @@ struct SaroApp: App {
         }
 
         Settings {
-            if case .success(let model) = boot { SettingsView().environment(model) }
+            if case .success(let model) = boot { SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment() }
         }
+        .defaultSize(width: 920, height: 720)
+        .windowResizability(.contentMinSize)
 
         SaroMenuBar()
     }
@@ -128,7 +131,11 @@ struct SaroCommands: Commands {
             }
         }
         CommandGroup(after: .importExport) {
-            Button("Export Everything…") { Task { await model.exportEverything() } }.disabled(model.showsOnboarding)
+            Group {
+                Button("Export Everything…") { Task { await model.exportEverything() } }
+                Button("Import…") { Task { await model.importJournal() } }
+            }
+            .disabled(model.showsOnboarding)
         }
     }
 }
