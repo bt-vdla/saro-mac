@@ -47,7 +47,7 @@ struct VoiceFace: View {
     /// The orb's spot and a "title · time · duration" pill that hugs its words; the selection ring hugs both.
     private var collapsed: some View {
         HStack(spacing: 12) {
-            Color.clear.frame(width: 80, height: 80)
+            Color.clear.frame(width: 80, height: 80).contentShape(.circle)
             HStack(spacing: 6) {
                 Text(model.title(for: entry)).font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink).lineLimit(1)
                 Text("·")
