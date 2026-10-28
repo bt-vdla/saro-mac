@@ -14,10 +14,10 @@ extension AppModel {
     var firstQuestion: String { FirstPrompt.opening(starter?.firstPrompt, tone: profile?.tone, name: profile?.address) }
 
     /// The first reflection on today, once onboarding is done: the moment recorder or the voice pill under the question,
-    /// or a writing page whose prompt row is the question.
+    /// or a writing page whose prompt row is the question. A replay from a past day comes back to today first.
     func startFirstReflection(_ mode: FirstMode) async {
         let prompt = handoffPrompt ?? firstQuestion
-        pane = .day
+        await land(on: LocalDay.today())
         switch mode {
         case .moment, .voice:
             handoffPrompt = prompt
