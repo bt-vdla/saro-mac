@@ -111,7 +111,7 @@ struct RecorderView: View {
     /// min(380, width − 32) wide, 8 pt above the bottom of the canvas.
     private func voicePill(_ size: CGSize, from button: CGRect?) -> some View {
         let width = max(0, min(380, size.width - 32))
-        return VoicePill(notice: notice, inSession: inSession, grows: button != nil, prompt: model.handoffPrompt, toggle: primary, done: done, close: close)
+        return VoicePill(notice: notice, inSession: inSession, grows: button != nil, prompt: model.isDayHeld ? nil : model.handoffPrompt, toggle: primary, done: done, close: close)
             .frame(width: width)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pillHeight = $0 }
             .modifier(flight(from: button, to: CGRect(x: (size.width - width) / 2, y: size.height - 8 - pillHeight, width: width, height: pillHeight)))
@@ -157,7 +157,7 @@ struct RecorderView: View {
                     .init(color: .black.opacity(0.2), location: 0.75), .init(color: .black.opacity(0.65), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
                 .allowsHitTesting(false)
-                if !compact, let prompt = model.handoffPrompt { MomentPrompt(prompt: prompt, dimmed: countdown != nil) }
+                if !compact, !model.isDayHeld, let prompt = model.handoffPrompt { MomentPrompt(prompt: prompt, dimmed: countdown != nil) }
             } else {
                 LevelMeter(height: 56, color: Night.echo, live: capture.state != .paused)
                     .opacity(capture.state == .recording ? 1 : 0.4)
@@ -343,7 +343,7 @@ struct RecorderView: View {
         default:
             return kind == .moment
                 ? RecorderNotice(title: "Getting your camera ready…", detail: "If macOS asks, allow the camera and microphone.",
-                                 quote: compact ? nil : model.handoffPrompt)
+                                 quote: compact || model.isDayHeld ? nil : model.handoffPrompt)
                 : RecorderNotice(title: "Starting the microphone…")
         }
     }
