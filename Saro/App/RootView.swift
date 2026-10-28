@@ -7,8 +7,8 @@ struct RootView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if model.profile == nil {
-                LitGround().ignoresSafeArea().overlay { ToastHost() }
+            if model.profile == nil || LaunchProgress.shared.demo != nil {
+                LaunchView()
             } else if model.showsOnboarding {
                 // A new profile row (Erase, or an import into a blank journal) is a new pass, read from the ledger again.
                 OnboardingView().id(model.profile?.createdAt).ignoresSafeArea(.container, edges: .top).overlay { ToastHost() }
@@ -17,11 +17,14 @@ struct RootView: View {
                                                               set: { model.sidebarVisible = $0 != .detailOnly })) {
                     Sidebar()
                         .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
+                        // The time lens is modal: nothing outside it takes a click or the focus, so Tab stays inside it.
+                        .disabled(model.lens != nil)
+                        .toolbar(removing: model.lens != nil ? .sidebarToggle : nil)
                 } detail: {
                     Group {
                         switch model.pane {
                         case .day: DayView()
-                        case .trash: TrashView()
+                        case .trash: TrashPanel(style: .pane)
                         case .decisions:
                             #if DOGFOOD
                             DecisionsView()
@@ -37,7 +40,6 @@ struct RootView: View {
         }
         .background(Tok.bg)
         .tint(Tok.sage)
-        .sheet(isPresented: $model.safetyCardRequested) { SafetyCardView() }
         #if DOGFOOD
         .devMode()
         .overlay(alignment: .top) {
@@ -45,6 +47,18 @@ struct RootView: View {
         }
         #endif
         .searchPalette(isPresented: $model.searchOpen)
+        .shellSheets()
+        .lockable()
+        // Nothing stays open over the lock: the palette, the safety card and Adjust Mood close with it.
+        .onChange(of: Locker.shared.locked) { _, locked in
+            guard locked else { return }
+            model.searchOpen = false
+            model.safetyCardRequested = false
+            model.reflection.adjustingMood = false
+        }
+        // Outside the lock, so If You're Struggling opens even while Saro is locked: it shows nothing of the journal.
+        .sheet(isPresented: $model.safetyCardRequested) { SafetyCardView() }
+        .background(ScreenShare())
     }
 }
 

@@ -32,7 +32,8 @@ struct TalkSection: View {
         }
         .task { await load() }
         // A day held by an answer or a mood note changes no count, only its status: either picks the sentence again (SR-13).
-        .task(id: "\(model.days.first.map { "\($0.day)-\($0.count)" } ?? "")-\(model.day)-\(model.dayStatus)") {
+        // The source can be any recent day, not the one on screen, so every pass of the queue (a re-gate) picks it again too.
+        .task(id: "\(model.days.first.map { "\($0.day)-\($0.count)" } ?? "")-\(model.day)-\(model.dayStatus)-\(model.working)") {
             let next = await ToneSource.latest(model)
             source = next
             lines = Self.rewrites[next.sentence]
@@ -95,7 +96,7 @@ struct ToneSource: Equatable {
             guard let entries = try? await model.ledger.entries(day: day), let verdicts = try? await model.ledger.verdicts(day: day) else { continue }
             for e in entries.reversed() where e.kind == .reflection {
                 guard let body = e.body, !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let v = verdicts[e.id],
-                      v.verdict == "clear" || v.verdict == "unavailable_clear", v.textSha256 == sha256(body) else { continue }
+                      v.verdict == "clear" || v.verdict == "unavailable_clear", v.textSha256 == sha256(Pipeline.titled(body, e)) else { continue }
                 return ToneSource(sentence: TonePreview.previewSentence(TonePreview.toSecondPerson(body)), caption: "From your reflection on \(short(day))",
                                   day: day, inputs: [AIRunInput(entryId: e.id, field: "body", text: body)])
             }

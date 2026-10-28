@@ -45,6 +45,7 @@ enum Tok {
     static let echoInk = Color(0x5A55A8, 0xA7A2EC)
     static let stillInk = Color(0xA24E3A, 0xEC9A86)
     static let reflectionInk = Color(0x7D5E1A, 0xD8B062)
+    static let musicInk = Color(0x2F6396, 0x86B7EA)
 }
 
 extension Color {
@@ -138,7 +139,8 @@ enum Motion {
     static func pick(_ animation: Animation, reduce: Bool) -> Animation { reduce ? fade : animation }
 
     /// The frequency rule: what a key started doesn't animate. Read it inside the action (or the update) the input caused.
-    @MainActor static var byKey: Bool { NSApp.currentEvent?.type == .keyDown }
+    /// A key-up counts: Space's tap acts on it.
+    @MainActor static var byKey: Bool { NSApp.currentEvent.map { [.keyDown, .keyUp].contains($0.type) } ?? false }
 }
 
 /// Radii (`tailwind.config.js`): control 8, field 10, card 14, panel 20, sheet 28.

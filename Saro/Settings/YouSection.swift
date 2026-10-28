@@ -11,9 +11,18 @@ struct YouSection: View {
     @State private var called = ""
     @State private var calledMissing = false
     @State private var weight: Int64?
+    #if DOGFOOD
+    /// Snapshots only: open as a held name leaves the field.
+    static var sampleHeld: Field?
+    /// The field whose name the gate held, for the resources under it.
+    @State private var held: Field? = Self.sampleHeld
+    #else
+    @State private var held: Field?
+    #endif
     @FocusState private var field: Field?
 
     enum Field { case name, called }
+    private struct Unchecked: Error {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -47,10 +56,12 @@ struct YouSection: View {
             VStack(alignment: .leading, spacing: 18) {
                 labelled("Name") {
                     input("Your name, as you like it", text: $name, field: .name, invalid: false)
+                    if held == .name { HeldNote().padding(.top, 4) }
                 }
                 labelled("What Saro calls you", hint: calledMissing ? nil : "First name or nickname is perfect.",
                          error: calledMissing ? "Saro needs something to call you." : nil) {
                     input("A first name or nickname", text: $called, field: .called, invalid: calledMissing)
+                    if held == .called { HeldNote().padding(.top, 4) }
                 }
             }
             .padding(.bottom, 18)
@@ -84,8 +95,7 @@ struct YouSection: View {
             }
             RowRule()
             SettingsRow("About Saro", caption: "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · built for this Mac, on-device only.") {
-                // ponytail: the standard About panel until shell's own About window lands.
-                Button("About Saro") { NSApp.orderFrontStandardAboutPanel(nil) }.buttonStyle(.settingsQuiet)
+                Button("About Saro") { WindowActions.openWindow("about") }.buttonStyle(.settingsQuiet)
             }
             #if DOGFOOD
             RowRule()
@@ -131,7 +141,7 @@ struct YouSection: View {
             let next = Names.cap(name)
             name = next
             guard next != (profile.name ?? "") else { return }
-            save.run { try await model.updateProfile { $0.name = next.isEmpty ? nil : next } }
+            keep(next, f) { $0.name = next.isEmpty ? nil : next }
         case .called:
             let next = Names.cap(called)
             guard !next.isEmpty else {
@@ -142,7 +152,25 @@ struct YouSection: View {
             calledMissing = false
             called = next
             guard next != (profile.called ?? "") else { return }
-            save.run { try await model.updateProfile { $0.called = next } }
+            keep(next, f) { $0.called = next }
+        }
+    }
+
+    /// A name is their words kept outside an entry, and Saro says it back (the model's instructions, a letter's
+    /// salutation), so it goes through onboarding's Q1 gate first. Only a clear name is kept. A held one keeps nothing
+    /// and shows the resources; one the gate couldn't check yet says Couldn't save, and Retry asks again.
+    private func keep(_ text: String, _ f: Field, _ change: @escaping (inout Profile) -> Void) {
+        save.run {
+            let verdict = await model.exclusive { await model.pipeline.gate(answer: text) }
+            if verdict?.state == .safetyHold {
+                held = f
+                if f == .name, name == text { name = model.profile?.name ?? "" }
+                if f == .called, called == text { called = model.profile?.called ?? "" }
+                throw CancellationError()
+            }
+            guard AnswerVerdict(text: text, verdict: verdict?.verdict).checked else { throw Unchecked() }
+            if held == f { held = nil }
+            try await model.updateProfile(change)
         }
     }
 

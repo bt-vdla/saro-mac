@@ -36,8 +36,10 @@ extension AppModel {
         let generator = question == starter?.firstPrompt ? "heuristic" : "curated"
         do {
             try await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: question, generator: generator, localDay: day, entryId: entryId))
+            // The day's prompts were read when the new page's entry landed, before this row: read them again for its header.
+            await CaptureUI.shared.loadPrompts(self)
         } catch {
-            show(Toast("Couldn’t keep today’s prompt: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn’t keep today’s prompt with your page", error))
         }
     }
 }

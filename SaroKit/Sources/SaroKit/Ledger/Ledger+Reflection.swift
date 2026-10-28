@@ -131,13 +131,14 @@ extension Ledger {
     }
 
     /// A held day's readings and letters, and the first week's notes drawn on any entry of it, which are stored on the
-    /// day they came (SR-13, SR-15).
-    func dropDayReadings(_ day: String) throws {
-        try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=?", [.text(day)])
+    /// day they came (SR-13, SR-15). With `through`, only those made by then: the day may have been read again since.
+    func dropDayReadings(_ day: String, through: String? = nil) throws {
+        try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=? AND created_at <= COALESCE(?, created_at)",
+                   [.text(day), through.sql])
         try db.run("""
-            DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter')
+            DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter') AND created_at <= COALESCE(?, created_at)
               AND EXISTS (SELECT 1 FROM json_each(payload, '$.sources') s JOIN entry e ON e.id = s.value WHERE e.local_day=?)
-            """, [.text(day)])
+            """, [through.sql, .text(day)])
     }
 
     /// Days with an answer or a mood note, archived answers included; when `waiting`, only those gated without the model.

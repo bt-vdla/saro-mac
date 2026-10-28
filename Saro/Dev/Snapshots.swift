@@ -20,6 +20,8 @@ enum Snapshots {
     static let pickNode = Notification.Name("SaroSnapshotPickNode")
     /// Shows Why on the first person in What Saro knows' list.
     static let showWhy = Notification.Name("SaroSnapshotShowWhy")
+    /// Set by a state whose work can outlast a step on a loaded Mac: its shot waits for this first, up to a minute.
+    static var ready: (@MainActor () -> Bool)?
 
     static func runIfRequested(_ model: AppModel) {
         guard panel == nil, let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
@@ -31,6 +33,7 @@ enum Snapshots {
         p.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
             await seedReflection(model)
+            await seedHistory(model)
             try? await Task.sleep(for: .seconds(UserDefaults.standard.double(forKey: "SaroSnapshotDelay").clamped(to: 5...120)))
             let steps: [(String, @MainActor () -> Void)] = [
                 ("canvas", { model.selection = [] }),
@@ -133,8 +136,109 @@ enum Snapshots {
                         await model.reload()
                     }
                 }),
+                // Capture (demo journal only, synthetic text, SR-28): a song from a link on the canvas and its view, then a page
+                // started from a prompt with a question Saro asked under it, then that page edited on its card.
+                ("capture-song", {
+                    guard model.isDemo else { return }
+                    // The still held above is read again, which restates its clear verdict, so today isn't held for the
+                    // states after these; until the queue gets to it today is, so these run on a day of their own.
+                    if let s = model.entries.first(where: { $0.kind == .still }) { model.process(s.id) }
+                    model.openEntryID = nil
+                    // The panel left open above would cover the song and the page edited on its card.
+                    model.insight = .spine
+                    model.goToday()
+                    ready = { model.day == LocalDay.today() && model.dayStatus != .held }
+                    Task {
+                        try? await Task.sleep(for: .seconds(0.8))
+                        // The hold put on the still above is lifted as its gate would (its caption is clear), without
+                        // waiting behind the queue, so today isn't held.
+                        if let s = model.entries.first(where: { $0.kind == .still }), let text = await model.pipeline.gatedText(of: s) {
+                            try? await model.ledger.insertVerdict(SafetyVerdictRow(entryId: s.id, textSha256: sha256(text), safetyVersion: SafetyGate.version,
+                                                                                  layer: 1, verdict: "clear", reasonCode: "snapshot"))
+                            await model.reload()
+                        }
+                        if let url = Music.link("https://music.apple.com/gb/album/a-night-at-the-opera/1440650428") { await model.newMusic(url: url, at: nil) }
+                    }
+                }),
+                ("capture-songview", { model.openEntryID = model.entries.last(where: { $0.kind == .music })?.id }),
+                ("capture-page", {
+                    guard model.isDemo else { return }
+                    model.openEntryID = nil
+                    ready = { model.openEntryID != nil }
+                    Task {
+                        guard let e = await model.newWriting(body: "Walked home the long way. The river was loud after the rain and I kept thinking about the move.")
+                        else { return }
+                        try? await model.ledger.insertTurn(ReflectionTurn(kind: .prompt, question: "Which moment from today stands out?", generator: "curated",
+                                                                          localDay: e.localDay, entryId: e.id))
+                        try? await model.ledger.insertTurn(ReflectionTurn(kind: .reflectFurther, question: "You wrote “The river was loud after the rain”. What did that place give you?",
+                                                                          generator: "heuristic", localDay: e.localDay, entryId: e.id))
+                        await model.reload()
+                        await CaptureUI.shared.loadPrompts(model)
+                        model.openEntryID = e.id
+                    }
+                }),
+                // A moment's two parts fanned out, each under the question it answered, with its words.
+                ("capture-fan", {
+                    guard model.isDemo else { return }
+                    model.openEntryID = nil
+                    Task {
+                        let sid = UUID().uuidString
+                        let parts = [("Which moment from today stands out?", "Walking home over the bridge after the rain. The river was loud and I stopped for a while."),
+                                     ("What did the bridge give you?", "The quiet. Nobody needed anything from me for ten minutes.")]
+                        for (i, (question, said)) in parts.enumerated() {
+                            var e = Entry(kind: .moment, sessionId: sid, turnNumber: i + 1, capturedAt: .now.addingTimeInterval(Double(i * 60 - 900)),
+                                          localDay: model.day, processingStatus: ProcessingStatus.done)
+                            let a = MediaAsset(fileName: "\(e.localDay)/\(sid)/part-\(i + 1).mov", kind: .video, origin: "recorded", state: "ready",
+                                               durationMs: [42_000, 28_000][i])
+                            e.mediaId = a.id
+                            try? await model.ledger.insertMedia(a)
+                            try? await model.ledger.insertEntry(e)
+                            try? await model.ledger.setTranscript(mediaId: a.id, words: said.split(separator: " ").enumerated().map {
+                                TranscriptWord(text: String($0.element), startMs: $0.offset * 400, durMs: 380, confidence: 0.95)
+                            }, extractorVersion: "snapshot")
+                            try? await model.ledger.insertTurn(ReflectionTurn(kind: .prompt, question: question, generator: i == 0 ? "curated" : "heuristic",
+                                                                              localDay: e.localDay, entryId: e.id, sessionId: sid, turnNumber: i + 1))
+                        }
+                        await model.reload()
+                        await CaptureUI.shared.loadPrompts(model)
+                        model.openStackID = sid
+                    }
+                }),
+                ("capture-cardedit", {
+                    guard let e = model.entries.last(where: { $0.kind == .reflection }) else { return }
+                    model.openStackID = nil
+                    model.openEntryID = nil
+                    model.selection = [e.id]
+                    Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        CaptureUI.shared.editing = (e.id, .body)
+                    }
+                }),
+                // The music field, grown out of its button over the bar.
+                ("capture-music", {
+                    CaptureUI.shared.editing = nil
+                    model.selection = []
+                    CaptureUI.shared.musicGrows = true
+                    CaptureUI.shared.musicOpen = true
+                }),
+                // A page whose title alone trips the phrase gate: the title is gated with its words, so its day is held (SR-01).
+                ("capture-titleheld", {
+                    guard model.isDemo else { return }
+                    CaptureUI.shared.musicOpen = false
+                    let day = LocalDay.adding(-4, to: LocalDay.today())
+                    ready = { model.day == day && model.dayStatus == .held }
+                    Task {
+                        let e = Entry(kind: .reflection, titleUser: "No point anymore", body: "Walked home the long way by the river after work.", localDay: day)
+                        try? await model.ledger.insertEntry(e)
+                        model.go(to: day)
+                        model.process(e.id)
+                        model.insight = .panel
+                    }
+                }),
                 // Three weeks of synthetic history, seeded here so the steps before see only the demo day.
                 ("knows", {
+                    CaptureUI.shared.musicOpen = false
+                    CaptureUI.shared.editing = nil
                     UserDefaults.standard.set("graph", forKey: "saro.knows.mode")
                     Task {
                         await MemoryDemo.seed(model)
@@ -149,21 +253,81 @@ enum Snapshots {
                     model.memory.query = ""
                     if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
                 }),
-                // ⌘K's Recent list on today, then Trash with today's first page in it.
+                // Navigation: the time lens at each level, the date picker, the palette's start and an empty past day.
+                ("nav-lens-week", {
+                    model.pane = .day
+                    (model.openEntryID, model.insight) = (nil, .spine)
+                    model.openLens(level: .week, opener: .key)
+                }),
+                ("nav-lens-month", { model.lens?.go(to: .month, how: .instant) }),
+                ("nav-lens-year", { model.lens?.go(to: .year, how: .instant) }),
+                ("nav-lens-focus", {
+                    model.lens?.go(to: .month, how: .instant)
+                    model.lens?.move(.pageUp)
+                }),
+                ("nav-datepicker", {
+                    model.lens?.close(how: .instant)
+                    model.datePickerOpen = true
+                }),
+                ("nav-palette", {
+                    model.datePickerOpen = false
+                    model.searchOpen = true
+                }),
+                ("nav-empty-past", {
+                    model.searchOpen = false
+                    model.go(to: LocalDay.adding(-200, to: LocalDay.today()))
+                }),
+                ("nav-today", { model.goToday() }),
+                // Opened by a pinch: the day has flown into its tile; then the X flies back out and the day is refitted.
+                ("nav-lens-pinch", { model.openLens(level: .week, opener: .pinch) }),
+                ("nav-lens-back", { model.lens?.close(how: .animated) }),
+                // The day as narrow as the smallest window leaves it beside the sidebar: the bar takes two rows, and a toast
+                // still sits 8 pt above it.
+                ("nav-bar-narrow", {
+                    p.setContentSize(NSSize(width: 570, height: 860))
+                    // Set, not shown: a shown toast can time out before a loaded machine captures it.
+                    model.toasts = [Toast("Saved Yesterday as an image")]
+                }),
+                ("nav-bar-wide", {
+                    p.setContentSize(NSSize(width: 1320, height: 860))
+                    model.toasts = []
+                }),
+                // ⌘K's Recent list on today.
                 ("search", {
                     model.goToday()
                     model.searchOpen = true
                 }),
-                ("trash-pane", {
-                    model.searchOpen = false
-                    Task {
-                        if let e = model.entries.first(where: { $0.kind == .reflection }) { await model.trash([e.id]) }
-                        model.pane = .trash
-                    }
+                // The shell on the demo day: what Edit Details saved, on its cards; the toast stack, the account menu with a save
+                // that failed, Trash over the bar
+                // and as the pane, the Light Lab at dusk, the lock, and the day as Export Day as Image draws it.
+                ("shell-details", { ShellSnapshots.details(model) }),
+                ("shell-toasts", { ShellSnapshots.toasts(model) }),
+                ("shell-account", { ShellSnapshots.accountMenu(model) }),
+                ("shell-trash", { ShellSnapshots.trash(model) }),
+                // As narrow as nav-bar-narrow: Trash still sits 8 pt above the bar's two rows, and a toast clears the music field.
+                ("shell-trash-narrow", { p.setContentSize(NSSize(width: 570, height: 860)) }),
+                ("shell-toast-music", {
+                    ShellPanels.shared.panel = nil
+                    CaptureUI.shared.musicOpen = true
+                    model.toasts = [Toast(title: "Voice note moved to Trash", detail: "You can undo this", action: Toast.Action(label: "Undo", run: {}))]
                 }),
+                ("shell-trash-pane", {
+                    p.setContentSize(NSSize(width: 1320, height: 860))
+                    CaptureUI.shared.musicOpen = false
+                    model.toasts = []
+                    ShellPanels.shared.panel = nil
+                    model.pane = .trash
+                }),
+                ("shell-lightlab", {
+                    model.pane = .day
+                    ShellSnapshots.lightLab()
+                }),
+                ("shell-lock", { ShellSnapshots.lock() }),
+                ("shell-dayimage", { ShellSnapshots.dayImage(model, dir: dir) }),
                 // ⌘K's actions menu, then a day not yet loaded as it loads and as it couldn't be read, on its own ground
                 // (the canvas's own load is too quick to catch). These leave the live UI, so they come after its states.
                 ("actions", {
+                    model.goToday()
                     model.pane = .day
                     paletteActions = true
                     model.searchOpen = true
@@ -178,7 +342,13 @@ enum Snapshots {
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
                 // A commitment that trips the phrase gate: nothing kept, the note and Talk to someone instead.
                 ("reflection-pieces-held", { Task { await model.reflection.addCommitment("Kill myself tomorrow") } }),
-                ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
+                ("grow", { p.contentView = NSHostingView(rootView: GrowGallery().environment(model)) }),
+                ("capture-pieces", { p.contentView = NSHostingView(rootView: CaptureGallery().environment(model)) }),
+                ("capture-failed", {
+                    p.contentView = NSHostingView(rootView: FinishDialog(day: LocalDay.today(), paused: false, interrupted: false, keptParts: false,
+                                                                         step: .constant(.failed), finish: {}, keepRecording: {}, discard: {}, reveal: {})
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(DevelopedFrame.gallery))
+                }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
                 // Onboarding, each step hosted on its own flow (the demo journal itself skips onboarding).
                 ("onboarding-welcome", { p.contentView = onboarding(.preview(step: .welcome), model) }),
@@ -228,8 +398,13 @@ enum Snapshots {
             ]
             // `-SaroSnapshotOnly <prefix>` runs only the states whose names start with it.
             let only = UserDefaults.standard.string(forKey: "SaroSnapshotOnly")
-            for (name, apply) in steps + SettingsSnapshots.steps(p, model, dir) where only.map(name.hasPrefix) ?? true {
+            for (name, apply) in steps + ShellSnapshots.galleries(p, model) + SettingsSnapshots.steps(p, model, dir) where only.map(name.hasPrefix) ?? true {
                 apply()
+                for _ in 0..<240 {
+                    guard let wait = ready, !wait() else { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                ready = nil
                 try? await Task.sleep(for: .seconds(2.5))
                 if let v = p.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
                     v.cacheDisplay(in: v.bounds, to: rep)
@@ -239,6 +414,30 @@ enum Snapshots {
             NSApp.terminate(nil)
         }
     }
+}
+
+/// Synthetic writings on a scatter of earlier days (none in the last four, which other states show), so the time lens has a
+/// history to draw (SR-28: synthetic text only). The on-device model can't gate this many inside the snapshot delay, so
+/// each carries a clear verdict for its own text and its day the person's own locked mood, which makes the day ready and
+/// lets the tiles show their mood fills.
+@MainActor private func seedHistory(_ model: AppModel) async {
+    let lines = ["Walked by the river after work.", "Slow morning, good coffee.", "Long call with an old friend.",
+                 "The team shipped the release.", "Rain all day; read on the sofa.", "Cooked dinner for everyone."]
+    let moods: [Mood] = [.calm, .grateful, .reflective, .energised, .tender, .anxious, .inspired]
+    for (i, back) in [5, 6, 8, 9, 12, 15, 16, 20, 23, 27, 31, 34, 40, 47, 55, 62, 70, 88, 120, 160].enumerated() {
+        let day = LocalDay.adding(-back, to: LocalDay.today())
+        let at = (LocalDay.date(day) ?? .now).addingTimeInterval(Double(i % 5) * 3600 + 9 * 3600)
+        let writing = { (line: String, at: Date) in Entry(kind: .reflection, body: line, capturedAt: at, localDay: day, processingStatus: ProcessingStatus.done) }
+        var entries = [writing(lines[i % lines.count], at)]
+        if i % 3 == 0 { entries.append(writing(lines[(i + 2) % lines.count], at.addingTimeInterval(5400))) }
+        for e in entries {
+            try? await model.ledger.insertEntry(e)
+            try? await model.ledger.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(e.body ?? ""), safetyVersion: SafetyGate.version,
+                                                                  layer: 1, verdict: "clear", reasonCode: "snapshot"))
+        }
+        try? await model.ledger.setUserMood(day: day, label: moods[i % moods.count], note: nil, verdict: nil)
+    }
+    await model.reload()
 }
 
 /// The letter is due at once and the first week started two days ago; yesterday left two commitments open, and the day
@@ -356,7 +555,7 @@ private struct GrowGallery: View {
 
     @ViewBuilder private func surface(_ kind: EntryKind) -> some View {
         if kind == .voice {
-            VoicePill(notice: nil, inSession: false, grows: true, toggle: {}, done: {}, close: {}).frame(width: 380)
+            VoicePill(notice: nil, grows: true, kept: { _ in true }, close: {}, shut: {}).frame(width: 380)
         } else {
             Text("Getting your camera ready…").font(Typo.ui(13)).foregroundStyle(.white.opacity(0.8))
                 .frame(width: 400, height: 250)
@@ -366,24 +565,101 @@ private struct GrowGallery: View {
     }
 }
 
-/// The recorder's surfaces under the first reflection's question (no camera or microphone is asked for): the moment
-/// frame's top, and the voice pill with its card.
+/// The moment frame's top under the first reflection's question, as the recorder shows it (no camera or microphone is
+/// asked for); the voice pill's line is the same question, in the capture gallery.
 private struct HandoffGallery: View {
     private let prompt = "Bharat, the launch has been taking up a lot of room. How are you holding up?"
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 40) {
-            ZStack {
+            ZStack(alignment: .top) {
                 LinearGradient(colors: [Color(white: 0.3), Color(white: 0.12)], startPoint: .top, endPoint: .bottom)
-                MomentPrompt(prompt: prompt, dimmed: false)
+                SaroVoice(question: prompt).padding(.top, 80).padding(.horizontal, 24).environment(\.colorScheme, .dark)
             }
             .frame(width: 720, height: 460)
             .clipShape(.rect(cornerRadius: 28))
-            VoicePill(notice: nil, inSession: false, grows: true, prompt: prompt, toggle: {}, done: {}, close: {}).frame(width: 380)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .background(Tok.bg)
+    }
+}
+
+/// Capture's pieces that only a camera, a microphone or a drag would bring up, side by side: the moment frame at a
+/// checkpoint, the finish dialog's steps, the held checkpoint, the developed frame, the drop overlay, the music field and
+/// card, the voice pill's steps and Edit details (synthetic text, SR-28).
+private struct CaptureGallery: View {
+    @Environment(AppModel.self) private var model
+    private static let words = "I walked home the long way and the river was loud after the rain so I stopped on the bridge for a while"
+        .split(separator: " ").map { LiveWord(text: String($0), final: true) }
+    private static let song = Entry(kind: .music, body: "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC")
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
+                frame {
+                    VStack(spacing: 0) {
+                        SaroVoice(question: "What did the bridge give you?", observation: "You came back to the river twice there.",
+                                  followUp: true, orb: .talking, instant: true)
+                            .padding(.top, 40)
+                        Spacer()
+                        GlassNotice(text: "Click Pause & reflect (or press R) when you want Saro to respond.")
+                        CaptionStatus(text: nil)
+                        LiveCaptions(words: Self.words, placeholder: nil, size: 19).frame(width: 520)
+                        Button("Keep going") {}.buttonStyle(CaptureButtonStyle.mint).padding(.vertical, 18)
+                    }
+                }
+                frame {
+                    VStack {
+                        SaroVoice(question: "Bharat, which moment from today stands out?")
+                            .padding(.top, 40)
+                        Spacer()
+                        CaptionStatus(text: CaptureController.Live.connecting.line(paused: false, voice: false), connecting: true)
+                        LiveCaptions(words: [], placeholder: "Your words will appear here as you speak.").frame(width: 520).padding(.bottom, 30)
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach([FinishDialog.Step.confirm, .discard], id: \.self) { step in
+                    FinishDialog(day: LocalDay.today(), paused: true, interrupted: false, keptParts: step == .discard, step: .constant(step),
+                                 finish: {}, keepRecording: {}, discard: {})
+                        .frame(width: 520, height: 250)
+                        .background(Color(0x223029, 0x223029), in: .rect(cornerRadius: 20))
+                }
+                NightSafetyCard {}.frame(width: 520, height: 360).background(.black, in: .rect(cornerRadius: 20))
+            }
+            VStack(alignment: .leading, spacing: 20) {
+                DropOverlay(kind: .moment, day: LocalDay.today()).frame(width: 440, height: 250)
+                    .background(Tok.bg, in: .rect(cornerRadius: 20))
+                MusicField().frame(width: 440, height: 200).background(Tok.bg, in: .rect(cornerRadius: 20))
+                MusicFace(entry: Self.song, box: CanvasMath.size(.music)).padding(8)
+                VoicePill(notice: nil, kept: { _ in true }, close: {}, shut: {}).frame(width: 380)
+                VoiceReview(again: {}, discard: {}, keep: {}).frame(width: 380)
+                    .background(Night.surface, in: .rect(cornerRadius: 28)).environment(\.colorScheme, .dark)
+                EditDetailsSheet(entry: Self.song).clipShape(.rect(cornerRadius: 20)).elevation(.overlay)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Tok.bg)
+    }
+
+    private func frame(@ViewBuilder _ content: () -> some View) -> some View {
+        ZStack {
+            DevelopedFrame.gallery
+            LinearGradient(colors: [.black.opacity(0.55), .clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
+            Color.black.opacity(0.4)
+            content().environment(\.colorScheme, .dark)
+        }
+        .frame(width: 600, height: 390)
+        .clipShape(.rect(cornerRadius: 28))
+    }
+}
+
+extension DevelopedFrame {
+    /// A stand-in for a camera frame: warm dusk light.
+    static var gallery: some View {
+        LinearGradient(colors: [Color(0x6B4B3A, 0x6B4B3A), Color(0x2D3B36, 0x2D3B36)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 

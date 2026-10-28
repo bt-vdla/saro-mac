@@ -127,6 +127,8 @@ private struct SageSwitch: View {
     let configuration: ToggleStyleConfiguration
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var enabled
+    /// The last flip came from a key: a value that lands later (a profile save) mustn't slide either.
+    @State private var keyed = false
 
     var body: some View {
         let on = configuration.isOn
@@ -138,14 +140,18 @@ private struct SageSwitch: View {
         .frame(width: 36, height: 20)
         .contentShape(.interaction, .rect.inset(by: -10))
         .contentShape(.focusEffect, .capsule)
-        .onTapGesture { configuration.isOn.toggle() }
+        .onTapGesture {
+            keyed = false
+            configuration.isOn.toggle()
+        }
         .focusable(enabled)
         .onKeyPress(.space) {
             // The frequency rule: a key's flip doesn't slide.
+            keyed = true
             withTransaction(\.disablesAnimations, true) { configuration.isOn.toggle() }
             return .handled
         }
-        .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: on)
+        .animation(keyed ? nil : Motion.pick(Motion.small, reduce: reduceMotion), value: on)
         .opacity(enabled ? 1 : 0.5)
         .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
     }

@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import Synchronization
 
 @Generable
 struct EntryOut {
@@ -71,8 +72,12 @@ public actor SaroAI {
         (self.stub, stubStatus) = (stub, status)
     }
 
+    /// The Developer menu's Simulate Apple Intelligence Unavailable: every touchpoint takes its heuristic path.
+    public static let simulatedUnavailable = Mutex(false)
+
     public nonisolated var status: Status {
         if let stubStatus { return stubStatus }
+        if Self.simulatedUnavailable.withLock({ $0 }) { return .unavailable(reason: "simulated") }
         return switch base.availability {
         case .available: .available
         case .unavailable(let reason): .unavailable(reason: "\(reason)")
@@ -320,21 +325,23 @@ public actor SaroAI {
 
     // MARK: Budget, timing, provenance
 
-    private func tokens(_ instructions: String, _ prompt: String, _ schema: GenerationSchema?) async -> Int {
+    /// A count waits while the system model is busy, so it is bounded like every call: one that stalls can't hold the
+    /// one-job queue, and the estimate stands in.
+    func tokens(_ instructions: String, _ prompt: String, _ schema: GenerationSchema?, limit: Duration = .seconds(5)) async -> Int {
         // A test stub answers in the model's place, so it shouldn't wait on the system model to count tokens.
         if stub != nil { return Self.estimate(instructions, prompt, schema) }
-        do {
+        let base = self.base
+        let n = try? await Self.withTimeout(limit) {
             var n = try await base.tokenCount(for: Instructions(instructions))
             n += try await base.tokenCount(for: prompt)
             if let schema { n += try await base.tokenCount(for: schema) }
             return n
-        } catch {
-            return Self.estimate(instructions, prompt, schema)
         }
+        return n ?? Self.estimate(instructions, prompt, schema)
     }
 
     // ponytail: 3 chars/token is the BRD's conservative knob, used only when tokenCount can't be asked.
-    private static func estimate(_ instructions: String, _ prompt: String, _ schema: GenerationSchema?) -> Int {
+    static func estimate(_ instructions: String, _ prompt: String, _ schema: GenerationSchema?) -> Int {
         (instructions.count + prompt.count) / 3 + (schema == nil ? 0 : 350)
     }
 

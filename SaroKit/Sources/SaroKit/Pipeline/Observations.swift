@@ -9,9 +9,12 @@ extension Pipeline {
     @discardableResult
     public func learn(entryId: String) async -> Bool {
         guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil else { return false }
-        let src = try? await text(for: entry)
+        // A song's title and artist are gated, but say nothing about the person.
+        // Memory reads the words, never a title; their verdict is for both.
+        let src = entry.kind == .music ? nil : try? await words(for: entry)
         let text = src?.text ?? ""
         let hash = sha256(text)
+        let gated = sha256(Self.titled(text, entry))
         let standing = (try? await ledger.standingObservations(entryId: entryId)) ?? []
         // A still's own description is Saro's words, never the person's (P-STILLS): it teaches memory nothing, and
         // whatever it taught goes.
@@ -24,7 +27,7 @@ extension Pipeline {
         }
 
         guard let src, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let v = (try? await ledger.verdicts(day: entry.localDay))?[entryId], v.textSha256 == hash,
+              let v = (try? await ledger.verdicts(day: entry.localDay))?[entryId], v.textSha256 == gated,
               v.verdict == "clear" || v.verdict == "unavailable_clear" else { return await retractStale() }
         let version = MemoryRules.extractorVersion
         let learned = (try? await ledger.memoryLearned(entryId: entryId, textSha256: hash, extractor: version)) == true
@@ -40,14 +43,15 @@ extension Pipeline {
         run.osBuild = SaroAI.osBuild
         run.extractorVersion = version
         run.promptVersion = SaroAI.memoryPromptVersion
-        run.inputHash = hash
+        // Under the verdict's hash, so the launch backfill finds it; whether it was learned is by the words it read.
+        run.inputHash = gated
         run.modelCalls = 0
         run.latencyMs = 0
         run.localDay = entry.localDay
         let inputs = [AIRunInput(entryId: entryId, field: src.field, text: text)]
 
         let pauses = (try? await ledger.pauses()) ?? []
-        let edited = (try? await ledger.firstVerdictAt(entryId: entryId, textSha256: hash)) ?? entry.capturedAt
+        let edited = (try? await ledger.firstVerdictAt(entryId: entryId, textSha256: gated)) ?? entry.capturedAt
         let cutoff = try? await ledger.forgotAllAt()
         let paused = pauses.contains { $0.contains(entry.capturedAt) || $0.contains(edited) }
         if saros || paused || cutoff.map({ entry.capturedAt <= $0 }) == true {
@@ -74,7 +78,7 @@ extension Pipeline {
                 return await retractStale() // deferred (§11.7): no run, so the next pass or the backfill reads it
             case "output_gate":
                 // Layer 3 (SR-08): a hit in the reply holds the entry, as the entry reading does; the hold drops its rows.
-                try? await ledger.insertVerdict(SafetyVerdictRow(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version,
+                try? await ledger.insertVerdict(SafetyVerdictRow(entryId: entryId, textSha256: gated, safetyVersion: SafetyGate.version,
                                                                 layer: 3, verdict: "safety_hold", reasonCode: "output_gate"))
                 return true
             default: break

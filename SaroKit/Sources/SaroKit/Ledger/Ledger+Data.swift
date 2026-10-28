@@ -11,14 +11,17 @@ public struct StorageSummary: Sendable, Hashable {
         /// The media file; entries sharing one (a duplicate) weigh it once.
         public var file: String?
         public var inTrash = false
+        /// A copy from Duplicate To, which isn't counted (FR-DAY-07).
+        public var duplicate = false
 
-        public init(entryId: String, kind: EntryKind, day: String, bytes: Int64, file: String? = nil, inTrash: Bool = false) {
+        public init(entryId: String, kind: EntryKind, day: String, bytes: Int64, file: String? = nil, inTrash: Bool = false, duplicate: Bool = false) {
             self.entryId = entryId
             self.kind = kind
             self.day = day
             self.bytes = bytes
             self.file = file
             self.inTrash = inTrash
+            self.duplicate = duplicate
         }
     }
 
@@ -45,7 +48,7 @@ public struct StorageSummary: Sendable, Hashable {
         // Live entries first, so a file shared with a trashed copy counts as live.
         for item in items.sorted(by: { !$0.inTrash && $1.inTrash }) {
             guard let i = kinds.firstIndex(where: { $0.kind == item.kind }) else { continue }
-            if !item.inTrash { kinds[i].count += 1 }
+            if !item.inTrash && !item.duplicate { kinds[i].count += 1 }
             if let file = item.file, !seen.insert(file).inserted { continue }
             let bytes = max(0, item.bytes)
             kinds[i].bytes += bytes
@@ -75,7 +78,8 @@ extension Ledger {
 
     public func storageSummary() throws -> StorageSummary {
         let rows = try db.run("""
-            SELECT e.id, e.kind, e.local_day, e.trashed_at, e.title_user, e.body, e.caption_user, m.file_name, m.bytes, m.poster_file
+            SELECT e.id, e.kind, e.local_day, e.trashed_at, e.duplicated_from_id, e.title_user, e.body, e.caption_user, m.file_name, m.bytes,
+                   m.poster_file
             FROM entry e LEFT JOIN media_asset m ON m.id = e.media_id
             """)
         let items = rows.map { r -> StorageSummary.Item in
@@ -87,7 +91,7 @@ extension Ledger {
                 if let poster = r.str("poster_file") { bytes += Self.size(of: mediaURL.appending(path: poster)) ?? 0 }
             }
             return .init(entryId: r.str("id") ?? "", kind: kind, day: r.str("local_day") ?? "", bytes: bytes, file: r.str("file_name"),
-                         inTrash: r.str("trashed_at") != nil)
+                         inTrash: r.str("trashed_at") != nil, duplicate: r.str("duplicated_from_id") != nil)
         }
         var summary = StorageSummary(items: items)
         summary.databaseBytes = ["saro.sqlite", "saro.sqlite-wal", "saro.sqlite-shm"].compactMap { Self.size(of: rootURL.appending(path: $0)) }.reduce(0, +)
@@ -106,10 +110,12 @@ extension Ledger {
 
     // MARK: Rhythm
 
-    /// When the person wrote or recorded on each of the last `days` local days (not music: that isn't a reflection).
+    /// When the person wrote or recorded on each of the last `days` local days (not music: that isn't a reflection; nor a
+    /// duplicate, which wasn't written then).
     public func entryTimes(days: Int = Rhythm.windowDays, today: String = LocalDay.today()) throws -> [Rhythm.EntryTime] {
         try db.run("""
-            SELECT local_day, captured_at, tz_id FROM live_entry WHERE kind IN ('moment','voice','reflection','still') AND local_day >= ?
+            SELECT local_day, captured_at, tz_id FROM live_entry
+            WHERE kind IN ('moment','voice','reflection','still') AND duplicated_from_id IS NULL AND local_day >= ?
             """, [.text(LocalDay.adding(-(days - 1), to: today))])
             .compactMap { r in
                 guard let day = r.str("local_day"), let at = r.date("captured_at") else { return nil }
@@ -144,6 +150,12 @@ extension Ledger {
     public func bookDays(year: Int) throws -> [Book.Day] {
         let prefix = "\(year)-"
         var days: [String: [Book.Piece]] = [:]
+        let held = Set(try db.run("""
+            SELECT e.local_day AS d FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
+            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict = 'safety_hold'
+            UNION SELECT local_day AS d FROM reflection_turn WHERE answer_verdict = 'safety_hold'
+            UNION SELECT local_day AS d FROM day_state WHERE mood_note_verdict = 'safety_hold'
+            """).compactMap { $0.str("d") })
         for e in try db.run("SELECT * FROM live_entry WHERE local_day LIKE ? ORDER BY captured_at", [.text(prefix + "%")]).map(Entry.init) {
             let minutes = Rhythm.EntryTime(localDay: e.localDay, capturedAt: e.capturedAt, tzId: e.tzId).minutes
             let piece: Book.Piece? = switch e.kind {
@@ -151,18 +163,14 @@ extension Ledger {
             case .still: Book.Piece(kind: .still, minutes: minutes, title: e.titleUser, body: Book.paragraphs(e.captionUser))
             case .moment, .voice:
                 Book.Piece(kind: e.kind == .moment ? .moment : .echo, minutes: minutes, title: e.titleUser,
-                           prompt: try db.run("SELECT question FROM reflection_turn WHERE entry_id=? AND kind='prompt' LIMIT 1", [.text(e.id)]).first?.str("question"),
+                           // The question is Saro's: a held day shows none of Saro's words (SR-13).
+                           prompt: held.contains(e.localDay) ? nil
+                               : try db.run("SELECT question FROM reflection_turn WHERE entry_id=? AND kind='prompt' LIMIT 1", [.text(e.id)]).first?.str("question"),
                            body: Book.paragraphs(try e.mediaId.map { Pipeline.join(try transcript(mediaId: $0)) }))
             case .music: nil
             }
             if let piece { days[e.localDay, default: []].append(piece) }
         }
-        let held = Set(try db.run("""
-            SELECT e.local_day AS d FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
-            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict = 'safety_hold'
-            UNION SELECT local_day AS d FROM reflection_turn WHERE answer_verdict = 'safety_hold'
-            UNION SELECT local_day AS d FROM day_state WHERE mood_note_verdict = 'safety_hold'
-            """).compactMap { $0.str("d") })
         // The letter the day keeps now (a rewrite unkeeps the old one), as Reflection kept it.
         for s in try db.run("""
             SELECT s.* FROM insight_snapshot s JOIN day_state d ON d.letter_kept_snapshot_id = s.id WHERE s.kind='letter' AND d.local_day LIKE ?
@@ -206,6 +214,13 @@ extension Ledger {
         let tables = try tableNames()
         try db.transaction {
             try db.exec("PRAGMA defer_foreign_keys=ON")
+            // A first pass (no entries yet) part way through About you gives way to an export that finished onboarding:
+            // its half-made profile and its starter, whose version would collide with the export's.
+            let firstPass = try !db.run("SELECT 1 FROM profile WHERE id=1 AND onboarding_done_at IS NULL AND NOT EXISTS (SELECT 1 FROM entry)").isEmpty
+            if firstPass, (top["profile"] as? [[String: Any]])?.first?["onboarding_done_at"] is String {
+                try db.run("DELETE FROM profile")
+                try db.run("DELETE FROM starter_context")
+            }
             try db.run("DELETE FROM profile WHERE id=1 AND name IS NULL AND called IS NULL AND onboarding_done_at IS NULL")
             for t in tables {
                 guard let rows = top[t] as? [[String: Any]], !rows.isEmpty else { continue }
@@ -234,23 +249,28 @@ extension Ledger {
 
     /// An export can be older than this journal's holds and forgetting, and its rows come back under their own ids, so
     /// what those deleted is deleted again (SR-15, FR-MEM-03), as `insertVerdict`, `setTurnAnswer`, `setUserMood` and
-    /// `forget` did.
+    /// `forget` did. Every such verdict counts, not just an entry's newest: one the entry has cleared since (an edit)
+    /// took what was made by then, and only that.
     func purgeAgain() throws {
         let unclear = try db.run("""
-            SELECT v.entry_id, v.verdict, v.created_at, e.local_day, e.trashed_at FROM safety_verdict v JOIN entry e ON e.id = v.entry_id
-            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict NOT IN ('clear','unavailable_clear')
+            SELECT v.entry_id, v.verdict, v.created_at, e.local_day, e.trashed_at,
+                   v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AS newest
+            FROM safety_verdict v JOIN entry e ON e.id = v.entry_id WHERE v.verdict NOT IN ('clear','unavailable_clear')
             """)
         for r in unclear {
             guard let id = r.str("entry_id"), let day = r.str("local_day") else { continue }
-            try dropMemory(entryId: id)
+            let at = r.str("created_at") ?? ""
+            let newest = r.int("newest") == 1
+            let by = newest ? nil : at
+            try dropMemory(entryId: id, through: by)
             guard r.str("verdict") == "safety_hold" else { continue }
-            try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(id)])
-            if r.str("trashed_at") == nil { try dropDayReadings(day); continue }
-            // Its day may have been read again since it went to Trash: only what drew on it goes.
-            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=? AND created_at <= ?",
-                       [.text(day), .text(r.str("created_at") ?? "")])
-            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter') AND EXISTS (SELECT 1 FROM json_each(payload, '$.sources') WHERE value=?)",
-                       [.text(id)])
+            try db.run("DELETE FROM entry_annotation WHERE entry_id=? AND created_at <= COALESCE(?, created_at)", [.text(id), by.sql])
+            // A held entry since trashed: its day may have been read again without it, and that reading stays.
+            try dropDayReadings(day, through: newest && r.str("trashed_at") == nil ? nil : at)
+            if newest {
+                try db.run("DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter') AND EXISTS (SELECT 1 FROM json_each(payload, '$.sources') WHERE value=?)",
+                           [.text(id)])
+            }
         }
         for r in try db.run("""
             SELECT local_day FROM reflection_turn WHERE answer_verdict = 'safety_hold'

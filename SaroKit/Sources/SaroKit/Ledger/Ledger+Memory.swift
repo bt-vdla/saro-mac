@@ -163,13 +163,17 @@ extension Ledger {
 
     /// A gate that no longer clears an entry takes back everything memory learned from it, retracted rows included
     /// (SR-15: nothing generated is kept for a held entry), and its memory runs, so text cleared again is learned afresh.
-    /// Called inside `insertVerdict`'s transaction.
-    func dropMemory(entryId: String) throws {
+    /// Called inside `insertVerdict`'s transaction. With `through`, only what was learned by then goes: an import
+    /// re-applying a verdict the entry has cleared since keeps what its newer text taught.
+    func dropMemory(entryId: String, through: String? = nil) throws {
+        let by = through.sql
         let runs = try db.run("""
-            SELECT DISTINCT r.id FROM ai_run r JOIN ai_run_input i ON i.ai_run_id = r.id WHERE r.feature=? AND i.entry_id=?
-            """, [.text(Self.memoryFeature), .text(entryId)]).compactMap { $0.str("id") }
-        try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE entry_id=?)", [.text(entryId)])
-        try db.run("DELETE FROM observation WHERE entry_id=?", [.text(entryId)])
+            SELECT DISTINCT r.id FROM ai_run r JOIN ai_run_input i ON i.ai_run_id = r.id
+            WHERE r.feature=? AND i.entry_id=? AND r.created_at <= COALESCE(?, r.created_at)
+            """, [.text(Self.memoryFeature), .text(entryId), by]).compactMap { $0.str("id") }
+        let learned = "SELECT id FROM observation WHERE entry_id=? AND created_at <= COALESCE(?, created_at)"
+        try db.run("DELETE FROM observation_retraction WHERE observation_id IN (\(learned))", [.text(entryId), by])
+        try db.run("DELETE FROM observation WHERE id IN (\(learned))", [.text(entryId), by])
         for id in runs {
             try db.run("DELETE FROM ai_run_input WHERE ai_run_id=?", [.text(id)])
             try db.run("DELETE FROM ai_run WHERE id=? AND NOT EXISTS (SELECT 1 FROM observation WHERE ai_run_id=?)", [.text(id), .text(id)])
@@ -222,11 +226,11 @@ extension Ledger {
         try db.run("SELECT at FROM memory_tombstone WHERE key_sha256='all'").first?.date("at")
     }
 
-    /// Whether this text of the entry was learned from, or deliberately passed over, by this extractor version.
+    /// Whether these words of the entry were learned from, or deliberately passed over, by this extractor version.
     public func memoryLearned(entryId: String, textSha256: String, extractor: String) throws -> Bool {
         try !db.run("""
             SELECT 1 FROM ai_run r JOIN ai_run_input i ON i.ai_run_id = r.id
-            WHERE r.feature=? AND r.extractor_version=? AND r.input_hash=? AND i.entry_id=? LIMIT 1
+            WHERE r.feature=? AND r.extractor_version=? AND i.text_sha256=? AND i.entry_id=? LIMIT 1
             """, [.text(Self.memoryFeature), .text(extractor), .text(textSha256), .text(entryId)]).isEmpty
     }
 
@@ -272,11 +276,11 @@ extension Ledger {
             .filter { !SafetyGate.phraseHit($0.text) }
     }
 
-    /// How many live entries have cleared text, for the empty state's count (R-14).
+    /// How many live entries have cleared text, for the empty state's count (R-14); duplicates aren't counted (FR-DAY-07).
     public func clearedEntryCount() throws -> Int {
         try db.run("""
             SELECT COUNT(*) AS n FROM live_entry e JOIN safety_verdict v ON v.entry_id = e.id
-            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id) AND v.verdict IN ('clear','unavailable_clear')
+            WHERE e.duplicated_from_id IS NULL AND v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id) AND v.verdict IN ('clear','unavailable_clear')
             """).first?.int("n") ?? 0
     }
 

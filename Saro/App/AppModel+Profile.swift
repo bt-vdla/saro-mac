@@ -9,7 +9,7 @@ extension AppModel {
             if profile.map({ p.updatedAt >= $0.updatedAt }) ?? true { profile = p }
             starter = try await ledger.latestStarter()
         } catch {
-            show(Toast("Couldn't read your profile: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't read your profile", error))
         }
     }
 
@@ -18,10 +18,10 @@ extension AppModel {
         do {
             var p = if let profile { profile } else { try await ledger.profile() }
             change(&p)
-            try await ledger.saveProfile(p)
+            try await saves.track("profile") { [ledger, p] in try await ledger.saveProfile(p) }
             profile = try await ledger.profile()
         } catch {
-            show(Toast("Couldn't save your profile: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't save your profile", error))
         }
     }
 
@@ -64,6 +64,8 @@ extension AppModel {
             if all, profile?.onboardingDoneAt != nil, let old = try? await ledger.latestStarter() {
                 let s = await pipeline.regate(starter: old, knownName: profile?.address ?? "")
                 if let s, s != old, await saveStarter(s) {
+                    // Pages that kept the old first prompt lose it too: it quotes an answer no longer clear.
+                    if let gone = old.firstPrompt, gone != starter?.firstPrompt { try? await ledger.dropPrompts(question: gone) }
                     await saveProfile { $0.follow(picks: old.storable.picks, to: s.storable.picks) }
                 } else if s != old {
                     done = false
@@ -76,7 +78,11 @@ extension AppModel {
     func completeOnboarding() async { await saveProfile { $0.onboardingDoneAt = .now } }
 
     /// Settings → Replay Onboarding: the window goes back to the welcome door; the journal is untouched.
-    func replayOnboarding() async { await saveProfile { $0.onboardingDoneAt = nil } }
+    /// The quick-capture panel closes, its turn saved: nothing lands mid-onboarding, and the camera is free for Find your light.
+    func replayOnboarding() async {
+        CapturePanelController.shared.close()
+        await saveProfile { $0.onboardingDoneAt = nil }
+    }
 
     /// Pausing opens a memory_pause window and resuming closes it, in the profile's own write.
     func setMemoryPaused(_ paused: Bool) async { await saveProfile { $0.memoryPaused = paused } }

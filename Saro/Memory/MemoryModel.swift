@@ -29,6 +29,8 @@ final class MemoryModel {
     @ObservationIgnored var showError: (String) -> Void = { _ in }
     /// The SafetyGate in AppModel's queue (§11.7: one model call at a time); nil until AppModel wires it, so nothing is kept.
     @ObservationIgnored var gate: (String) async -> GateResult? = { _ in nil }
+    /// The person's own lines go through the app's save status.
+    @ObservationIgnored var saves: SaveStatus?
     @ObservationIgnored private var timers: [String: Task<Void, Never>] = [:]
     /// Each pending delete's ⌘Z, so Undo or the window closing takes just that one off the Edit menu.
     @ObservationIgnored private var undoTokens: [String: UndoToken] = [:]
@@ -198,7 +200,8 @@ final class MemoryModel {
 
     /// The person's own words pass the full SafetyGate before they're kept (§13: user text stored outside an entry is gated
     /// at save; SR-01), the phrase layer first so a hit doesn't wait on the queue. Nothing re-gates a memory later, so only
-    /// a clear verdict keeps it: a hold keeps nothing, and a caution hit or a deferred classifier keeps nothing yet.
+    /// a clear verdict keeps it: a hold keeps nothing, and the model being off, a caution hit or a deferred classifier
+    /// keeps nothing yet.
     private func write(_ o: MemoryObservation, done: String, failed: String) async -> Saved {
         if SafetyGate.phraseHit(o.label) { return .held }
         // A second Return while the gate runs keeps its editor open, and adds nothing twice.
@@ -206,14 +209,18 @@ final class MemoryModel {
         writing = true
         defer { writing = false }
         switch await gate(o.label)?.state {
-        case .clear, .modelUnavailable: break
+        case .clear: break
         case .safetyHold: return .held
         default:
             fail("Saro couldn’t check that just now. Try again later.")
             return .failed
         }
         do {
-            try await ledger.addUserMemory(o)
+            if let saves {
+                try await saves.track("memory:\(o.key)") { [ledger] in try await ledger.addUserMemory(o) }
+            } else {
+                try await ledger.addUserMemory(o)
+            }
             await load(animation: Motion.small)
             announce(done)
             return .saved

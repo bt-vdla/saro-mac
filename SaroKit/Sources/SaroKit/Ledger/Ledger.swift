@@ -83,7 +83,8 @@ public actor Ledger {
     /// but never processed; one emptied of text has nothing left to read.
     public func updateEntryText(id: String, body: String?, titleUser: String?, captionUser: String?) throws {
         guard let old = try entry(id) else { return }
-        let status = Self.statusAfterEdit(old, body: body, captionUser: captionUser) ?? old.processingStatus
+        let status = Self.statusAfterEdit(old, body: body, titleUser: titleUser, captionUser: captionUser, summaryUser: old.summaryUser)
+            ?? old.processingStatus
         try db.run("UPDATE entry SET body=?, title_user=?, caption_user=?, processing_status=?, updated_at=? WHERE id=?",
                    [body.sql, titleUser.sql, captionUser.sql, .text(status), .text(Date.now.iso), .text(id)])
     }
@@ -92,7 +93,7 @@ public actor Ledger {
     /// sweep gates it like any saved edit. False when the wait ran out first.
     // ponytail: a semaphore wait capped at 2 s, like MemoryModel's quit commit; an applicationShouldTerminate reply if a write ever needs longer.
     @discardableResult
-    nonisolated public func updateEntryTextBeforeQuit(id: String, body: String?, titleUser: String?, captionUser: String? = nil) -> Bool {
+    nonisolated public func updateEntryTextBeforeQuit(id: String, body: String?, titleUser: String?, captionUser: String?) -> Bool {
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             try? await self.updateEntryText(id: id, body: body, titleUser: titleUser, captionUser: captionUser)
@@ -101,11 +102,17 @@ public actor Ledger {
         return done.wait(timeout: .now() + 2) == .success
     }
 
-    /// Nil when the gated text is unchanged; a recording's text is its transcript, not these fields.
-    static func statusAfterEdit(_ old: Entry, body: String?, captionUser: String?) -> String? {
-        guard old.kind != .moment, old.kind != .voice, old.body != body || old.captionUser != captionUser else { return nil }
-        let empty = ((body ?? "") + (captionUser ?? "")).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return empty ? ProcessingStatus.done : ProcessingStatus.pending
+    /// Nil when the gated text is unchanged. What was typed in Edit details is gated with the words (SR-01); a song's words
+    /// are its title and artist, not its link, and a recording's are its transcript, which no edit empties.
+    static func statusAfterEdit(_ old: Entry, body: String?, titleUser: String?, captionUser: String?, summaryUser: String?) -> String? {
+        let (was, now): ([String?], [String?]) = switch old.kind {
+        case .music: ([old.titleUser, old.captionUser], [titleUser, captionUser])
+        case .moment, .voice: ([old.titleUser, old.summaryUser], [titleUser, summaryUser])
+        case .reflection, .still: ([old.body, old.captionUser, old.titleUser], [body, captionUser, titleUser])
+        }
+        guard was != now else { return nil }
+        let empty = now.compactMap { $0 }.joined().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return empty && old.kind != .moment && old.kind != .voice ? ProcessingStatus.done : ProcessingStatus.pending
     }
 
     public func setProcessingStatus(id: String, _ status: String) throws {
@@ -116,7 +123,8 @@ public actor Ledger {
     /// one actor turn, so none can slip between): the pass was for older text, and the edit still needs its gate.
     public func setProcessingStatus(_ status: String, startedFrom pass: Entry) throws {
         guard let now = try entry(pass.id) else { return }
-        try setProcessingStatus(id: pass.id, Self.statusAfterEdit(pass, body: now.body, captionUser: now.captionUser) ?? status)
+        try setProcessingStatus(id: pass.id, Self.statusAfterEdit(pass, body: now.body, titleUser: now.titleUser, captionUser: now.captionUser,
+                                                                   summaryUser: now.summaryUser) ?? status)
     }
 
     public func entry(_ id: String) throws -> Entry? {
@@ -161,7 +169,8 @@ public actor Ledger {
         try db.run("DELETE FROM transcript_word WHERE media_id=?", [.text(mediaId)])
     }
 
-    /// Days that have at least one live entry, newest first.
+    /// Days that have at least one live entry, newest first, with every card on them counted: a copy from Duplicate To is
+    /// on its day like any other card. FR-DAY-07 keeps copies out of the engines' counts only.
     public func days() throws -> [(day: String, count: Int)] {
         try db.run("SELECT local_day, COUNT(*) AS n FROM live_entry GROUP BY local_day ORDER BY local_day DESC")
             .map { ($0.str("local_day") ?? "", $0.int("n") ?? 0) }
@@ -223,45 +232,6 @@ public actor Ledger {
 
     public func trashed() throws -> [Entry] {
         try db.run("SELECT * FROM entry WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC").map(Entry.init)
-    }
-
-    /// Deletes trashed entries for good (FR-DAY-05, DR-15): every row derived from them, every reading that quotes them,
-    /// and their media files unless a live or trashed entry still shares one. The person's answers and commitments stay,
-    /// unlinked. A live entry is never touched. Returns how many were deleted.
-    @discardableResult
-    public func purge(_ ids: [String]) throws -> Int {
-        var files: [URL] = []
-        var purged = 0
-        try db.transaction {
-            for id in ids {
-                guard let e = try db.run("SELECT media_id FROM entry WHERE id=? AND trashed_at IS NOT NULL", [.text(id)]).first else { continue }
-                let arg: [SQLValue] = [.text(id)]
-                try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE entry_id=?)", arg)
-                for table in ["observation", "entry_annotation", "ai_run_input", "safety_verdict", "card_layout"] {
-                    try db.run("DELETE FROM \(table) WHERE entry_id=?", arg)
-                }
-                try db.run("DELETE FROM insight_snapshot WHERE instr(payload, ?) > 0 OR instr(COALESCE(quotes, ''), ?) > 0", arg + arg)
-                try db.run("DELETE FROM reflection_turn WHERE entry_id=? AND answer IS NULL", arg)
-                try db.run("UPDATE reflection_turn SET entry_id=NULL WHERE entry_id=?", arg)
-                try db.run("UPDATE commitment SET source_entry_id=NULL WHERE source_entry_id=?", arg)
-                try db.run("UPDATE entry SET duplicated_from_id=NULL WHERE duplicated_from_id=?", arg)
-                try db.run("DELETE FROM entry WHERE id=?", arg)
-                purged += 1
-                guard let mid = e.str("media_id"), try db.run("SELECT 1 FROM entry WHERE media_id=?", [.text(mid)]).isEmpty,
-                      let m = try db.run("SELECT * FROM media_asset WHERE id=?", [.text(mid)]).first.map(MediaAsset.init) else { continue }
-                try db.run("DELETE FROM transcript_word WHERE media_id=?", [.text(mid)])
-                try db.run("DELETE FROM media_asset WHERE id=?", [.text(mid)])
-                files.append(url(for: m))
-            }
-        }
-        for f in files { try? FileManager.default.removeItem(at: f) }
-        return purged
-    }
-
-    /// The 30-day purge (DR-15): entries trashed before `cutoff`.
-    @discardableResult
-    public func purgeTrash(before cutoff: Date) throws -> Int {
-        try purge(db.run("SELECT id FROM entry WHERE trashed_at < ?", [.text(cutoff.iso)]).compactMap { $0.str("id") })
     }
 
     // MARK: Canvas layout
@@ -375,8 +345,8 @@ public actor Ledger {
         return Dictionary(rows.map(EntryAnnotation.init).map { ($0.entryId, $0) }, uniquingKeysWith: { $1 })
     }
 
-    /// A safety hold also drops what was generated from the entry: its readings, and its day's readings, kept letters
-    /// and the first week's notes drawn on it, which Export would otherwise still write out (SR-15, which outranks
+    /// A safety hold also drops what was generated from the entry: its readings and follow-up questions, and its day's
+    /// readings, kept letters and the first week's notes drawn on it, which Export would otherwise still write out (SR-15, which outranks
     /// DR-05's append-only rule here). Any verdict that doesn't clear the entry drops what memory learned from it.
     public func insertVerdict(_ v: SafetyVerdictRow) throws {
         try db.transaction {
@@ -388,6 +358,7 @@ public actor Ledger {
             if v.verdict != "clear" && v.verdict != "unavailable_clear" { try dropMemory(entryId: v.entryId) }
             guard v.verdict == "safety_hold" else { return }
             try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(v.entryId)])
+            try dropFollowUps(heldFrom: v.entryId)
             if let day = try entry(v.entryId)?.localDay { try dropDayReadings(day) }
         }
     }

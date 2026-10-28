@@ -26,11 +26,16 @@ struct DevNotes {
                         "Two-finger pan, pinch and ⌘-scroll zoom (0.2-3×); the day stays framed until you move it; Recenter (⌘0)",
                         "Marquee on empty canvas and the contextual toolbar: Stack ⌘S, Grid ⌘G, Delete",
                         "Chevrons slide the whole day (viewport + 32 pt, surface spring); ⌘[ ⌘] switch instantly; tomorrow leans 24 pt and comes back",
-                        "The glass bar: History (days sidebar), date + 7-day mood ribbon, Moment ⌘N, Voice ⇧⌘N, Still, Write ⌥⌘W, Recenter",
+                        "The glass bar: History (days sidebar), date + 7-day mood ribbon, Moment ⌘N, Voice ⇧⌘N, Still, Reflection ⌥⌘W, Music, Recenter",
                         "Lit ground: the web's WebGL shader ported to Metal, keyed to the hour; palette follows the clock (B-18)",
-                        "Drop, paste or pick photos as stills; -SaroDemo YES opens a throwaway journal of synthetic entries"],
-                stubbed: ["Resize handles", "Motion blur on flights",
-                          "Collections / folders (FR-CAN-05)", "Notes pinned to an image (FR-CAN-04)", "Time lens, day replay (FR-DAY-06)"],
+                        "Drop, paste or import photos, audio, video and music links (Import Media ⇧⌘I); -SaroDemo YES opens a throwaway journal of synthetic entries",
+                        "Navigation: Space-drag and middle-drag pan with a glide, a faint pan grid, a wheel notch springs, fit down to 8%; arrows, Tab and ⌘A select (Tab goes on to the bar past the last card), ⌥-arrow nudges and ⇧⌥-arrow resizes (saved when the arrow comes up, whichever key is let go first); a bare Space tap on the focused canvas opens the voice pill, Space held while dragging pans; a held card pans the canvas at the edges",
+                        "The canvas's keys act only while the canvas itself has the focus, never from a field, panel or bar button inside the day; it takes the focus back when a detail, the Noticed panel, the letter, the lens or ⌘K closes",
+                        "Day layout (dayLayout.ts): a new day is laid out by type and the window's shape, again when the width changes for cards nobody moved; new cards land in view (freeSpot, packBurst), dropped files on a grid",
+                        "The bar: 'TODAY · 4:16 PM' on the Mac's clock, Yesterday, shorter forms when narrow, one or two rows; the date opens the date picker; the next chevron dims at today; mood ribbon tooltips, VoiceOver summary and click-to-day",
+                        "Hovering a chevron reads its day ahead, and the days either side load once a day lands; at midnight today follows the clock with a slide once you're idle"],
+                stubbed: ["Collections / folders (FR-CAN-05)", "Notes pinned to an image (FR-CAN-04)",
+                          "Quick chevron presses count on from the day still loading, but each is its own slide; the web's one strip offset that keeps their velocity isn't ported"],
                 issues: ["Overnight, gestures and motion were checked from builds and off-screen snapshots only; nobody has clicked or flicked them on a trackpad yet",
                          "Zooming far in scales cards as layers, so text can look soft above 150%",
                          "A day sliding out re-reads titles from the new day for its last frames (cards keep their places)"],
@@ -46,19 +51,31 @@ struct DevNotes {
         case .recorder:
             DevNotes(
                 name: "Recorder",
-                does: "The in-window recorder for video moments and voice notes. Video is the default; each pause ends a turn and resume starts the next.",
+                does: "The in-window recorder for video moments and voice notes. A pause keeps the part; Pause & reflect ends it, Saro asks, and Keep going starts the next.",
                 built: ["Video first at 720p HEVC (1080p in Settings)", "Camera picker incl. Continuity Camera",
-                        "One file per turn, rows written before the first frame (crash-safe)", "Voice notes use the same turns"],
-                stubbed: ["Countdown, orb, checkpoints and Keep going ritual (FR-CAP-04)", "Live captions (FR-CAP-05)",
-                          "Checkpoint follow-up question (FR-REF-06)"],
-                issues: ["The launch sweep that reconciles rows and files after a crash isn't verified with kill -9 (FR-CAP-11)"],
-                brd: ["FR-CAP-01", "FR-CAP-04", "FR-CAP-05", "FR-CAP-11", "DR-11", "DR-12"])
+                        "One file per part, rows written before the first frame (crash-safe); pause and resume in the same file",
+                        "Today's prompt under Saro's orb, frozen at the first part and kept as its prompt row",
+                        "3-2-1 that Cancel (or Space) stops; default focus on the record disc; no entrance animation by key",
+                        "Live captions on this Mac (SpeechAnalyzer volatile results), never stored (FR-CAP-05), in the panel too; Captions always on",
+                        "Pause & reflect (R): the gate on the live words, then reflect_deeper raced against its twin for 2.5 s",
+                        "Observation line and the question arriving word by word; held words show the night SafetyCard",
+                        "Keep going (Return or K), Saving… only past 150 ms; the question, minus any live words it quoted, is the next part's prompt",
+                        "The checkpoint's gate and question run in the model's queue, ahead of parts still being read",
+                        "Finish dialog with two-step discard of the part not yet kept (Ledger.discardTake); a failed save offers Try again and Show in Finder",
+                        "The last frame develops, then flies into its card after a click",
+                        "Voice pill: starts on open, one live caption line, review with bars, transcript and Keep this / Record again",
+                        "Mic errors offer Try again; a disconnect keeps what was said"],
+                stubbed: [],
+                issues: ["The launch sweep that reconciles rows and files after a crash isn't verified with kill -9 (FR-CAP-11)",
+                         "Live captions, checkpoints and the develop flight need a person at the Mac to check (camera, mic, speech)",
+                         "Deliberate (§11.7, one model call at a time): a checkpoint's gate and question wait for the entry being read, so after a long part 'Reflecting…' can outlast the 2.5 s budget (FR-REF-06) while that part is transcribed and read"],
+                brd: ["FR-CAP-01", "FR-CAP-04", "FR-CAP-05", "FR-CAP-11", "FR-REF-06", "DR-11", "DR-12"])
         case .capturePanel:
             DevNotes(
                 name: "Capture panel",
                 does: "The floating ⌃⌘J panel: capture from any app without bringing Saro forward. Captures file under today.",
-                built: ["⌃⌘J global hotkey", "Video, voice and writing from the panel"],
-                stubbed: ["Changing the hotkey", "Dropping media onto the panel (FR-CAP-09)"],
+                built: ["⌃⌘J global hotkey", "Video, voice and writing from the panel", "Photos, audio and video dropped on the panel go to today"],
+                stubbed: ["Changing the hotkey"],
                 issues: [],
                 brd: ["FR-CAN-09", "FR-CAP-02", "FR-CAP-09"])
         case .menuBar:
@@ -76,8 +93,8 @@ struct DevNotes {
                 built: ["Morphs open from its card and back", "Player with timed transcript", "Tap a sentence to seek; the playing sentence is highlighted",
                         "Your own title (outranks Saro's)", "What Saro heard: summary, mood, a verbatim quote that seeks, provenance line",
                         "Held entries show the SafetyCard instead; technical holds offer Try again"],
-                stubbed: ["Copy transcript, Show in Finder, Export a copy (FR-DAY-02)", "Edit caption and summary (FR-DAY-04)",
-                          "Turn n of N navigation inside a session"],
+                stubbed: ["Copy transcript, Show in Finder, Export a copy (FR-DAY-02)", "Edit summary (FR-DAY-04); Edit details ⌘I edits the title"],
+                // Turn n of N with the turn's question, ← →, and Play all (AVQueuePlayer) are built.
                 issues: ["Transcription follows the system locale when supported, else en-US (B-12)"],
                 brd: ["FR-CAN-01", "FR-DAY-02", "FR-DAY-04", "FR-CAP-06"])
         case .voiceDetail:
@@ -92,11 +109,15 @@ struct DevNotes {
         case .writingDetail:
             DevNotes(
                 name: "Writing",
-                does: "The plain-text editor for a written reflection. It autosaves; only you write the body, and Writing Tools stays off.",
-                built: ["Autosaving editor (0.8 s debounce), New York serif", "Writing Tools off in Saro's editors",
-                        "The first line becomes the card title", "Closing an empty page discards it (B-16)",
-                        "Gate and reading run when the editor closes"],
-                stubbed: ["Follow-up question after the gate (FR-REF-07)", "Writing Tools opt-in (FR-SET-03)"],
+                does: "The reading page for a written reflection, or a song's view. It autosaves; only you write the body.",
+                built: ["Autosaving editor (0.8 s debounce)", "Title field (the card's title, else Untitled), TODAY · 4:16 PM · EDITED, the prompt row, your caption",
+                        "The first line becomes the card title when none is typed", "Closing an empty page discards it (B-16)",
+                        "Gate and reading run when the editor closes", "Edit on the card: the second click on a selected page edits its title or body",
+                        "A typed title is gated with the words (a held title holds the day), never read or quoted",
+                        "Reflect further after the gate: reflect_further on the ladder, Another question, Retry, the SafetyCard when held",
+                        "Questions and gated answers are reflection_turn rows, never the body (DR-04)",
+                        "Songs: 560 pt view with Open in … and Copy link; Edit Details ⌘I (the shell's sheet) for title and artist, which are gated, never read"],
+                stubbed: [],
                 issues: [],
                 brd: ["FR-CAP-03", "FR-REF-07", "FR-SET-03", "DR-04"])
         case .stillDetail:
@@ -110,14 +131,15 @@ struct DevNotes {
                         "Edit the caption in place: it becomes yours, is gated, and outranks Saro's; Describe again ⌘R",
                         "A cleared still feeds the day's digest; only your own words are ever quoted"],
                 stubbed: ["The note pinned over the image on the canvas (FR-CAN-04)", "Search over Saro's descriptions (navigation)",
-                          "The Edit details sheet's caption field (capture)", "A mood from a still: skipped, no claims about the user"],
+                          "A mood from a still: skipped, no claims about the user"],
                 issues: [],
                 brd: ["FR-CAP-07", "FR-CAP-08", "FR-CAN-07", "SR-11"])
         case .stack:
             DevNotes(
                 name: "Stack",
                 does: "A recording session's turns piled together. Opening it fans the turns out in place and dims the canvas behind.",
-                built: ["A session's turns stack automatically", "Fan out in place with the canvas dimmed", "Unstack", "Stack ⌘S from any selection"],
+                built: ["A session's turns stack automatically", "Fan out in place over the window, the bar and panel hidden", "Header at the top: Unstack, Play all ⌘↩, Done (Esc)",
+                        "Each turn under its question, with its words", "Stack ⌘S from any selection"],
                 stubbed: ["Turn numbers inside the opened detail"],
                 issues: [],
                 brd: ["FR-CAN-02", "FR-CAN-03"])
@@ -127,6 +149,7 @@ struct DevNotes {
                 does: "Saro's reading of the day, made on this Mac from per-entry readings (title, summary, mood, quotes by index), only for entries the safety gate cleared.",
                 built: ["The spine: glyphs, up to three commitment marks and +N, the dashed carry ring, a loading shimmer, the empty-day tip, a 44 pt fold",
                         "⌥⌘I, Esc and ⌘K are instant, the pointer springs; the evening arrival eases in (0.7 s)",
+                        "Clicked, the panel takes the focus: ↑ ↓, Page Up/Down, Home and End scroll it, ⌘C copies the summary",
                         "Last-inferred line, the D-13 template narrative (titles, counts, 14-day recurrence), single-open sections",
                         "Adjust emotion (locked, gated note), the daily question with a gated answer and a lock, refresh insights / narrative / question",
                         "Copy summary, narrative, emotion tag and question as Markdown", "My commitments with carry-over, let go, undo (FR-REF-12)",
@@ -144,7 +167,8 @@ struct DevNotes {
                         "Up to three paragraphs from the narrative; quotes fly into their entry; 'In your words' lists only unplaced quotes",
                         "Write back (the daily question's answer), Keep (the kept copy reads on return), Write a new letter",
                         "Available after the letter time (Close the day opens it early), unread dot, opened record in the ledger",
-                        "Evening arrival when the window is key and the canvas idle; a content-free notification at the letter time"],
+                        "Evening arrival when the window is key and the canvas idle; a content-free notification at the letter time",
+                        "↑ ↓, Page Up/Down, Home and End scroll it, and Tab moves on to its buttons with Keyboard Navigation on"],
                 stubbed: [],
                 issues: ["The quote's flight starts from its paragraph's frame, not the quote's own run"],
                 brd: ["FR-REF-08", "FR-REF-09", "SR-13"])
@@ -232,10 +256,41 @@ struct DevNotes {
                 does: "The camera and mic check as a mirror on its own preview-only session: light, direction, framing (Vision) and mic. Nothing is recorded.",
                 built: ["Phases and copy from the web, rewritten for macOS", "64×36 readings every 166 ms with holds", "Oval, mic rim, light arc and eye-line marks",
                         "Status rows with Turn off and Esc", "Camera picker incl. Continuity Camera", "Readiness card: Apple Intelligence and speech download",
-                        "Hand-off on today: moment recorder or voice pill under Today's prompt, or a writing page with the prompt as its question"],
+                        "Hand-off on today: moment recorder or voice pill under Today's prompt, or a writing page with the prompt as its question",
+                        "The first question shows under Saro's orb in the recorder, atop the voice pill and on the page as its prompt row, never on a held day"],
                 stubbed: [],
                 issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras"],
                 brd: ["FR-ONB-05", "FR-ONB-03"])
+        case .lens:
+            DevNotes(
+                name: "Time lens",
+                does: "Every day back to the first entry as a tile: a week, a month or the year, zoomed 1:1 with the fingers (⌥⌘T, ⌘K, or pinching out past the day's floor).",
+                built: ["LensMath ports lensLayout.ts with its tests: 7-column month blocks from the Mac's first weekday, the year's best column count, z as the log of tile size, settle by projected velocity, snap to rows and months",
+                        "Pinch past the day's floor rubber-bands (floor × pull^0.35, dims) and opens the lens at 0.7 with a trackpad tick when Haptics is on; the same pinch carries on",
+                        "The live day shrinks into its tile on one surface spring (and grows back from the X); keys and ⌘K open and close instantly; a 1.5 s watchdog",
+                        "A picked day's key frame flies into the canvas while the lens fades; the day loads first",
+                        "Tiles in one Canvas: radius 8.5% (1.5-14), empty and entry fills, mood at 62%/30%, key frames under an 18-40% glaze (none under Reduce Transparency or Increase Contrast), today dot, hover, focus ring, band fade, a 4-tap velocity smear (Metal) while moving",
+                        "Labels and count chips in mono 10.5 with kind dots, swapping detail at 128, 64 and 46 pt; month names; header with Date.IntervalFormatStyle, counts, 150 ms 'Reading your days…', Retry, the reach note",
+                        "Keys: arrows, Page Up/Down, Home/End, + − = _, Return, Esc, ⌘1-3; footer hint; VoiceOver grid with a row per week, a Months rotor, no mood on a held day",
+                        "Week replay: play/pause, day columns, the ring on the lit tile, dots at capture times, per-entry mood line at 1.6 s a day, the spoken summary",
+                        "Posters: 256 pt JPEG key frames beside their day, black-frame probes, made after recording and import and backfilled nearest-first",
+                        "Modal: the days sidebar, its toggle and the day's commands wait while it's open, so Tab stays inside; leaving the day, a saro:// link, a reminder or a Settings row closes it first",
+                        "The smear compiles 2.5 s after the day appears, or on the first zoom-out, so opening compiles nothing"],
+                stubbed: ["The smear follows the focus tile's velocity for the whole grid; the web's shader gives each month its own",
+                          "Tiles are always drawn in a SwiftUI Canvas; the instanced Metal pass while moving isn't ported",
+                          "A picked tile flies by the lens's own hand-off; ⌘K's clicked rows and the letter's quotes share the detail's flight from a rect"],
+                issues: ["Checked from builds and off-screen snapshots; pinches and flicks haven't been felt on a trackpad yet"],
+                brd: ["FR-DAY-06", "FR-DAY-02", "§13.2"])
+        case .datePicker:
+            DevNotes(
+                name: "Date picker",
+                does: "The month above the bar (the date button, ⌥⌘G, ⌘K): days with entries marked in their mood's colour, the day on screen selected, nothing after today.",
+                built: ["A 7-column month from the Mac's first weekday, month steps that stop at this month, Go to today",
+                        "Resting on a day for 120 ms reads it ahead, so the pick only slides; a key's pick is instant; arrows and Return work inside it; Esc or a click outside closes",
+                        "Each day reads 'Tuesday, October 27, today, has entries, selected'; a held day's mark has no mood"],
+                stubbed: [],
+                issues: ["A panel centred above the bar, as the web's is, not an NSPopover; focus goes back to the date button with Keyboard Navigation on, else to the canvas (SwiftUI buttons only take focus with it on)"],
+                brd: ["FR-DAY-02"])
         case .knows:
             DevNotes(
                 name: "What Saro knows",

@@ -581,6 +581,91 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
     }
 
+    /// SR-13: a held day shows none of Saro's words, the question a voice note answered included.
+    @Test func bookLeavesOutSarosPromptOnAHeldDay() async throws {
+        let l = try freshLedger()
+        let page = try await seed(l)
+        let voice = try #require(try await l.entries(day: "2026-10-26").first { $0.kind == .voice })
+        try await l.insertTurn(ReflectionTurn(kind: .prompt, question: "What stood out today?", generator: "heuristic", localDay: "2026-10-26", entryId: voice.id))
+        func prompts() async throws -> [String] { try await l.bookDays(year: 2026).flatMap(\.pieces).compactMap(\.prompt) }
+        #expect(try await prompts() == ["What stood out today?"])
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(page.body!), safetyVersion: "t", layer: 1, verdict: "safety_hold", reasonCode: "x"))
+        #expect(try await prompts().isEmpty)
+    }
+
+    /// SR-15: a hold the entry has cleared since (rewritten) still took what was made before it, and an export from
+    /// before the hold doesn't bring that back; what the cleared text made since stays.
+    @Test func importAfterAHoldSinceClearedBringsBackNothingItDeleted() async throws {
+        let l = try freshLedger()
+        let page = try await seed(l)
+        let runId = try #require(try await l.runs().first?.str("id"))
+        try await l.insertAnnotation(EntryAnnotation(entryId: page.id, aiRunId: runId, generator: "heuristic"))
+        _ = try await keep(l, "You had chai with Ravi.")
+        try await l.insertObservations([MemoryObservation(entryId: page.id, kind: .person, key: "person:ravi", label: "Ravi", quote: "Ravi",
+                                                          field: "body", spanStart: 10, spanEnd: 14, localDay: "2026-10-26")],
+                                       run: AIRun(feature: Ledger.memoryFeature, executor: "heuristic", status: "ok"),
+                                       inputs: [AIRunInput(entryId: page.id, field: "body", text: page.body!)])
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        try await l.exportEverything(to: dir, prefs: nil)
+
+        // A new gate holds that text; the page is rewritten, clears, and is read and learned from again.
+        try await Task.sleep(for: .milliseconds(5))
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(page.body!), safetyVersion: "t2", layer: 1, verdict: "safety_hold", reasonCode: "x"))
+        try await Task.sleep(for: .milliseconds(5))
+        let rewritten = "Rain, then a call with Sam."
+        try await l.updateEntryText(id: page.id, body: rewritten, titleUser: nil, captionUser: nil)
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(rewritten), safetyVersion: "t2", layer: 1, verdict: "clear", reasonCode: "none"))
+        let annotation = EntryAnnotation(entryId: page.id, aiRunId: runId, generator: "heuristic")
+        try await l.insertAnnotation(annotation)
+        let reading = InsightSnapshot(kind: "day_reading", day: "2026-10-26", aiRunId: nil, generator: "heuristic", inputHash: nil, payload: "{}")
+        try await l.insertSnapshot(reading)
+        try await l.insertObservations([MemoryObservation(entryId: page.id, kind: .person, key: "person:sam", label: "Sam", quote: "Sam",
+                                                          field: "body", spanStart: 23, spanEnd: 26, localDay: "2026-10-26")],
+                                       run: AIRun(feature: Ledger.memoryFeature, executor: "heuristic", status: "ok"),
+                                       inputs: [AIRunInput(entryId: page.id, field: "body", text: rewritten)])
+
+        try await l.importExport(from: dir)
+        #expect(try await l.run("SELECT id FROM insight_snapshot").compactMap { $0.str("id") } == [reading.id])
+        #expect(try await l.run("SELECT id FROM entry_annotation").compactMap { $0.str("id") } == [annotation.id])
+        #expect(try await l.activeObservations().map(\.key) == ["person:sam"])
+        #expect(try await l.run("SELECT COUNT(*) AS n FROM ai_run WHERE feature='memory'").first?.int("n") == 1)
+        #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
+    }
+
+    /// File → Import part way through a first onboarding pass: the export's finished profile and About you replace the
+    /// half-made ones. A journal with entries (a replay) keeps its own.
+    @Test func importMidOnboardingTakesTheExportsFinishedProfile() async throws {
+        let a = try freshLedger()
+        _ = try await seed(a)
+        let theirs = StarterContext(version: 1)
+        try await a.saveStarter(theirs)
+        var done = try await a.profile()
+        done.onboardingDoneAt = .now
+        done.tone = .direct
+        try await a.saveProfile(done)
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        try await a.exportEverything(to: dir, prefs: nil)
+
+        let b = try freshLedger()
+        var half = try await b.profile()
+        half.name = "Sam"
+        half.called = "Sam"
+        try await b.saveProfile(half)
+        try await b.saveStarter(StarterContext(version: 1))
+        _ = try await b.importExport(from: dir)
+        let imported = try await b.profile()
+        #expect(imported.name == "Alex Rivers" && imported.onboardingDoneAt != nil && imported.tone == .direct)
+        #expect(try await b.run("SELECT id FROM starter_context").compactMap { $0.str("id") } == [theirs.id])
+
+        let c = try freshLedger()
+        try await c.insertEntry(Entry(kind: .reflection, body: "A quiet morning.", localDay: "2026-10-20"))
+        var replay = try await c.profile()
+        replay.name = "Sam"
+        try await c.saveProfile(replay)
+        _ = try await c.importExport(from: dir)
+        #expect(try await c.profile().name == "Sam")
+    }
+
     /// SR-15, FR-MEM-03: importing an export made before a hold, or before a forget, brings back none of what they deleted.
     @Test func importingAnOlderExportBringsBackNothingAHoldOrForgetDeleted() async throws {
         let l = try freshLedger()
@@ -820,6 +905,22 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(landed.count == 2)
         #expect(save.state == .saved)
         await until(.seconds(4)) { save.state == .idle }
+        #expect(save.state == .idle)
+    }
+
+    /// A held name calls its write off: neither ✓ Saved nor Couldn't save · Retry. A write that fails still offers Retry.
+    @Test func aCalledOffWriteShowsNothing() async {
+        struct Broke: Error {}
+        let save = Autosave(), landed = Landed()
+        save.run { throw Broke() }
+        await until(.seconds(2)) { save.state == .failed }
+        #expect(save.state == .failed)
+        save.run {
+            landed.count += 1
+            throw CancellationError()
+        }
+        await until(.seconds(2)) { landed.count == 1 }
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(save.state == .idle)
     }
 }

@@ -159,7 +159,7 @@ struct DataSection: View {
     private var lock: some View {
         let prefs = PrefsStore.shared
         return VStack(alignment: .leading, spacing: 0) {
-            SettingsRow("Lock with Touch ID", caption: "Saro asks for your fingerprint or password when you come back. Saved now; the lock itself comes with the next build.") {
+            SettingsRow("Lock with Touch ID", caption: "Saro asks for your fingerprint or password when you come back, and locks when your Mac sleeps. It's a lock on the window, not encryption.") {
                 Toggle("Lock with Touch ID", isOn: Binding(get: { prefs.lockEnabled }, set: { prefs.lockEnabled = $0; save.saved() }))
                     .toggleStyle(.sage).labelsHidden()
             }
@@ -174,7 +174,7 @@ struct DataSection: View {
                     .labelsHidden().fixedSize()
                 }
             }
-            SettingsRow("Hide from screen sharing", caption: "Saro’s windows stay out of screen shares and recordings. Saved now; it takes effect with the next build.") {
+            SettingsRow("Hide from screen sharing", caption: "Hides Saro from most screen sharing. Test it with your app.") {
                 Toggle("Hide from screen sharing", isOn: Binding(get: { prefs.hideFromScreenShare }, set: { prefs.hideFromScreenShare = $0; save.saved() }))
                     .toggleStyle(.sage).labelsHidden()
             }

@@ -236,3 +236,12 @@ func candidates(_ entryId: String, _ text: String, from start: Int = 0) -> [Cand
     let outcome = await SaroAI().classify(neutralEntry, instructions: instructions, prompt: "Entry: {text}\nLabel:")
     #expect(outcome == .label(.none))
 }
+
+/// A token count waits while the model is busy: past its limit the estimate stands in, so a count can't hold the queue.
+@Test(.enabled(if: liveModelAvailable), .liveModel) func liveTokenCountGivesWayToTheEstimate() async {
+    let ai = SaroAI()
+    let start = ContinuousClock.now
+    #expect(await ai.tokens("Count these.", neutralEntry, nil, limit: .milliseconds(1)) == SaroAI.estimate("Count these.", neutralEntry, nil))
+    #expect(ContinuousClock.now - start < .seconds(1))
+    #expect(await ai.tokens("Count these.", neutralEntry, nil) > 0)
+}

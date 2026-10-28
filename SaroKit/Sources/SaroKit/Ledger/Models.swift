@@ -12,6 +12,8 @@ public struct Entry: Sendable, Identifiable, Hashable, Codable {
     public var turnNumber: Int?
     public var titleUser: String?
     public var captionUser: String?
+    /// A voice note's summary in the person's own words (Edit Details), which outranks Saro's.
+    public var summaryUser: String?
     public var body: String?
     public var capturedAt: Date
     public var tzId: String
@@ -49,6 +51,7 @@ public struct Entry: Sendable, Identifiable, Hashable, Codable {
         turnNumber = row.int("turn_number")
         titleUser = row.str("title_user")
         captionUser = row.str("caption_user")
+        summaryUser = row.str("summary_user")
         body = row.str("body")
         capturedAt = row.date("captured_at") ?? .distantPast
         tzId = row.str("tz_id") ?? TimeZone.current.identifier

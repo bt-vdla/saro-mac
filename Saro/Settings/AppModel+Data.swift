@@ -80,7 +80,7 @@ extension AppModel {
             }
             show(Toast("Exported to \(dir.lastPathComponent)/\(name)"))
         } catch {
-            show(Toast("Export failed: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't export everything", error))
         }
     }
 
@@ -109,26 +109,33 @@ extension AppModel {
             show(Toast(added.rows == 0 && added.files == 0 ? "Nothing new: this journal already holds everything in that export."
                 : "Imported \(added.rows) \(added.rows == 1 ? "row" : "rows") and \(added.files) \(added.files == 1 ? "file" : "files")."))
         } catch {
-            show(Toast("Import failed: \(error.localizedDescription)", style: .error))
+            // Saro's own reasons are already plain words; anything else gets a remedy instead.
+            show((error as? ImportError).map { Toast(title: "Couldn't import that", detail: $0.errorDescription, style: .destructive) }
+                 ?? .failed("Couldn't import that", error))
         }
     }
 
     /// Erase everything on this Mac (DR-16): every row, recording, photo and backup, every scheduled reminder, and
     /// every preference. The window goes back to the welcome door.
     func eraseEverything() async throws {
-        // A delete still in its Undo window is written now, so it can't land in the new journal after the erase.
+        // A delete still in its Undo window is written now, and the quick-capture panel's recording saved and the panel
+        // closed, so neither can land in the new journal after the erase.
         await memory.commitPending()
+        _ = await CaptureController.shared.end(.panel)
+        CapturePanelController.shared.close()
         try await ledger.eraseAll()
         Reminders.shared.removeAll()
         reflection.reset()
         PrefsStore.shared.eraseAll()
         // The quick-capture panel's half-written note is journal text too.
         CapturePanelController.shared.draft = ""
+        CapturePanelController.shared.lockedDraft = ""
         memory.query = ""
         Daylight.shared.mode = .clock
         // After the light, whose setter writes its key back. Onboarding's place goes too, so the next pass opens on the door.
         for key in Self.erasedDefaults { UserDefaults.standard.removeObject(forKey: key) }
-        for key in OnboardingFlow.keys { OnboardingFlow.defaults.removeObject(forKey: key) }
+        // The tour lives beside onboarding's place: a demo's in its own suite, so erasing it leaves the real journal's be.
+        for key in OnboardingFlow.keys + ["tourSeen"] { OnboardingFlow.defaults.removeObject(forKey: key) }
         profile = try await ledger.profile()
         starter = nil
         openEntryID = nil
@@ -139,9 +146,9 @@ extension AppModel {
         await reload()
     }
 
-    /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, the capture devices, What Saro
-    /// knows' graph or list, and the tour (dogfood).
-    static let erasedDefaults = ["captureDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID", "saro.knows.mode", "tourSeen"]
+    /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, the capture devices, and What Saro
+    /// knows' graph or list.
+    static let erasedDefaults = ["captureDraft", "captureLockedDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID", "saro.knows.mode"]
 
     /// The Book of `year`, as HTML or PDF, saved where the person picks.
     func exportBook(year: Int, pdf: Bool) async throws -> Bool {

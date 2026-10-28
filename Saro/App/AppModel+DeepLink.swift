@@ -13,13 +13,20 @@ extension AppModel {
             return
         }
         WindowActions.openMain()
-        // Onboarding's own test reminder carries Voice and Write: nothing lands in the journal until it ends.
-        guard !showsOnboarding else { return }
-        Task { await follow(link) }
+        Task {
+            // A link that launches Saro comes before the profile is read, and no profile reads as onboarding: wait for
+            // it (a read that fails gives up after 10 s, and onboarding shows).
+            for _ in 0..<200 where profile == nil { try? await Task.sleep(for: .milliseconds(50)) }
+            // Onboarding's own test reminder carries Voice and Write: nothing lands in the journal until it ends.
+            guard !showsOnboarding else { return }
+            await follow(link)
+        }
     }
 
     private func follow(_ link: DeepLink) async {
         let today = LocalDay.today()
+        // The lens is modal: a link lands on the day it names, not under the lens or into its tile.
+        lens?.close(how: .instant)
         switch link {
         case .capture(let kind):
             // A recording under way keeps going: the window only comes forward.
@@ -66,6 +73,7 @@ extension AppModel {
 enum WindowActions {
     static var openMain: () -> Void = {}
     static var openSettings: () -> Void = {}
+    static var openWindow: (String) -> Void = { _ in }
 }
 
 extension View {
@@ -89,6 +97,10 @@ private struct DeepLinks: ViewModifier {
                 WindowActions.openSettings = { [openSettings] in
                     NSApp.activate()
                     openSettings()
+                }
+                WindowActions.openWindow = { [openWindow] id in
+                    NSApp.activate()
+                    openWindow(id: id)
                 }
                 Reminders.shared.route = { model.open($0) }
             }

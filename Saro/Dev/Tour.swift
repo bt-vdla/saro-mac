@@ -15,7 +15,7 @@ enum Tour {
         Step(targets: [.history], title: "History",
              body: "History replays the day: its cards land in the order you made them while the light moves through its hours. Space plays and pauses, ← → step, Esc stops. Your days are under View → Show Days (⌃⌘S); Trash and Decisions are in ⌘K."),
         Step(targets: [.dayNav], title: "Move between days",
-             body: "⌘[ and ⌘] step a day back or forward, and Today (⌘T) brings you home. Capturing while a past day is open files the entry under that day."),
+             body: "⌘[ and ⌘] step a day back or forward, and Today (⌘T) brings you home. Click the date to pick any day (⌥⌘G), or pinch out past the day for the time lens (⌥⌘T). Capturing while a past day is open files the entry under that day."),
         Step(targets: [.canvas], title: "The day's canvas",
              body: "Pan with two fingers. Pinch or ⌘-scroll to zoom. Press a card for a moment, then drag to move it. Drag on empty space to marquee-select."),
         Step(targets: [.captureBar], title: "Capture",

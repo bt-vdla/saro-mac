@@ -26,12 +26,13 @@ extension Pipeline {
         let annotations = (try? await ledger.annotations(day: day)) ?? [:]
         var out: [NarrativeEntry] = []
         for e in entries {
-            guard let src = try? await text(for: e), !src.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard let src = try? await words(for: e), !src.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 out.append(NarrativeEntry(id: e.id, kind: e.kind, day: day))
                 continue
             }
-            guard let v = verdicts[e.id], v.verdict == "clear" || v.verdict == "unavailable_clear", sha256(src.text) == v.textSha256 else { continue }
-            let current = (try? await ledger.hasAnnotation(entryId: e.id, inputHash: v.textSha256)) == true
+            guard let v = verdicts[e.id], v.verdict == "clear" || v.verdict == "unavailable_clear",
+                  sha256(Self.titled(src.text, e)) == v.textSha256 else { continue }
+            let current = (try? await ledger.hasAnnotation(entryId: e.id, inputHash: sha256(src.text))) == true
             let quote = current ? annotations[e.id].flatMap { a in
                 a.quote.map { Candidate(index: 0, entryId: e.id, field: a.quoteField ?? src.field, text: $0, utf16From: a.quoteFrom ?? 0,
                                         utf16To: a.quoteTo ?? 0) }
@@ -116,8 +117,8 @@ extension Pipeline {
             let annotations = (try? await ledger.annotations(day: d)) ?? [:]
             for e in entries {
                 guard let v = verdicts[e.id], v.verdict == "clear" || v.verdict == "unavailable_clear", let a = annotations[e.id],
-                      let src = try? await text(for: e), sha256(src.text) == v.textSha256,
-                      (try? await ledger.hasAnnotation(entryId: e.id, inputHash: v.textSha256)) == true else { continue }
+                      let src = try? await words(for: e), sha256(Self.titled(src.text, e)) == v.textSha256,
+                      (try? await ledger.hasAnnotation(entryId: e.id, inputHash: sha256(src.text))) == true else { continue }
                 out.append(WeekEntry(id: e.id, at: e.capturedAt, words: [a.quote, a.title, a.summary].compactMap { $0 }.joined(separator: "\n"),
                                      quote: a.quote, mood: a.moodLabel.flatMap(Mood.init(rawValue:))))
             }
@@ -153,14 +154,24 @@ extension Pipeline {
         for day in (try? await ledger.reflectionDays(waiting: !all)) ?? [] {
             for t in (try? await ledger.turns(day: day, includeArchived: true)) ?? [] where all || t.answerVerdict?.hasPrefix("unavailable") == true {
                 guard let answer = t.answer else { continue }
-                guard let r = await check(answer) else { done = false; continue }
+                guard let r = await checkOnce(answer) else { done = false; continue }
                 if r.verdict != t.answerVerdict { try? await ledger.setTurnAnswer(id: t.id, answer: answer, verdict: r.verdict) }
             }
             guard let s = try? await ledger.dayState(day), let note = s.moodNote, let mood = s.moodUser,
                   all || s.moodNoteVerdict?.hasPrefix("unavailable") == true else { continue }
-            guard let r = await check(note) else { done = false; continue }
+            guard let r = await checkOnce(note) else { done = false; continue }
             if r.verdict != s.moodNoteVerdict { try? await ledger.setUserMood(day: day, label: mood, note: note, verdict: r.verdict) }
         }
         return done
+    }
+
+    /// `check`, once a launch for text the model can't read: Apple Intelligence coming back can't change that verdict
+    /// (SR-17), so a later pass reuses it instead of asking the classifier again, as an entry's cached verdict does.
+    private func checkOnce(_ text: String) async -> GateResult? {
+        let hash = sha256(text)
+        if let r = unreadable[hash] { return r }
+        let r = await check(text)
+        if r?.reasonCode == "unsupported_language" { unreadable[hash] = r }
+        return r
     }
 }

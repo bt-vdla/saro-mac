@@ -19,20 +19,11 @@ struct PaletteCommand: Identifiable {
     var shortcut: String?
     /// Offered only when this holds (Read the day again, on a day that can be read).
     var available: @MainActor (AppModel) -> Bool = { _ in true }
+    /// A setting's current value, shown on the row; running it keeps the palette open and flashes the new value.
+    var value: (@MainActor (AppModel) -> String)?
     let run: @MainActor (AppModel) -> Void
 
-    /// Every query word starts a word of the title or keywords, or the query is the title's initials ("wsn").
-    func matches(_ query: String) -> Bool {
-        let words = Self.words(query)
-        let title = Self.words(self.title)
-        guard !words.isEmpty else { return false }
-        if words.allSatisfy({ w in (title + Self.words(keywords)).contains { $0.hasPrefix(w) } }) { return true }
-        return words.count == 1 && words[0].count >= 2 && String(title.compactMap(\.first)) == words[0]
-    }
-
-    private static func words(_ s: String) -> [String] {
-        s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
-    }
+    func matches(_ query: String) -> Bool { CommandMatch.matches(query, title: title, keywords: keywords) }
 }
 
 private enum Row: Identifiable {
@@ -42,6 +33,10 @@ private enum Row: Identifiable {
     case scope(EntryKind)
     case write(String)
     case memory(Memory)
+    /// The index couldn't be read: Try again.
+    case retry
+    /// A scoped search found nothing: search every type.
+    case widen
 
     var id: String {
         switch self {
@@ -51,6 +46,8 @@ private enum Row: Identifiable {
         case .scope(let k): "s:\(k.rawValue)"
         case .write: "w"
         case .memory(let m): "m:\(m.key)"
+        case .retry: "retry"
+        case .widen: "widen"
         }
     }
 }
@@ -73,7 +70,7 @@ private enum EntryAction: CaseIterable {
         switch self {
         case .open: "↵"
         case .replay: "⌘↵"
-        case .copy: "⇧⌘C"
+        case .copy: Shortcut.copyText.keys
         case .day, .trash: nil
         }
     }
@@ -127,6 +124,8 @@ struct SearchPalette: View {
     /// The query and scope `hits` belong to; until it matches, the last results stay up instead of flashing empty.
     @State private var hitsKey: String?
     @State private var selected: String?
+    /// Where the highlighted row sits in the window, so a click on it flies its entry out of the row.
+    @State private var currentFrame: CGRect?
     @State private var window: NSWindow?
     @State private var monitor: Any?
     @State private var mouse: CGPoint?
@@ -136,31 +135,73 @@ struct SearchPalette: View {
     @State private var flash = ""
     @State private var flashOn = false
     @State private var flashTask: Task<Void, Never>?
+    @State private var searching = false
+    @State private var failed = false
+    @State private var attempt = 0
+    /// The ⌘P menu of types, and its highlighted row.
+    @State private var scopeMenu = false
+    @State private var scopeRow = 0
 
     private static let limit = 50
     private static let scopes: [EntryKind] = [.moment, .voice, .reflection, .still]
     private static let commands: [PaletteCommand] = {
         var all = [
-            PaletteCommand(id: "today", title: "Today", symbol: "sun.max", keywords: "go now day home", shortcut: "⌘T") { $0.goToday() },
+            PaletteCommand(id: "today", title: "Today", symbol: "sun.max", keywords: "go now day home", shortcut: Shortcut.today.keys) { $0.goToday() },
             PaletteCommand(id: "replay", title: "Replay today", symbol: "clock.arrow.circlepath", keywords: "play timelapse rewind history") {
                 $0.requestReplay(LocalDay.today())
             },
-            PaletteCommand(id: "moment", title: "Record a moment", symbol: "video", keywords: "video camera capture new", shortcut: "⌘N") {
+            // Switching kind under a live recorder would keep the camera running behind the voice pill, as the bar knows.
+            PaletteCommand(id: "moment", title: "Record a moment", symbol: "video", keywords: "video camera capture new", shortcut: Shortcut.recordMoment.keys,
+                           available: { $0.recorderKind == nil }) {
                 $0.pane = .day
                 $0.recorderKind = .moment
             },
-            PaletteCommand(id: "voice", title: "Voice note", symbol: "waveform", keywords: "audio record speak microphone new", shortcut: "⇧⌘N") {
+            PaletteCommand(id: "voice", title: "Voice note", symbol: "waveform", keywords: "audio record speak microphone new", shortcut: Shortcut.voiceNote.keys,
+                           available: { $0.recorderKind == nil }) {
                 $0.pane = .day
                 $0.recorderKind = .voice
             },
             PaletteCommand(id: "write", title: "Write", symbol: "square.and.pencil", keywords: "writing reflection text page journal new",
-                           shortcut: "⌥⌘W") { write("", in: $0) },
+                           shortcut: Shortcut.write.keys) { write("", in: $0) },
+            PaletteCommand(id: "still", title: "Add a still", symbol: "photo", keywords: "photo image picture import") { m in
+                m.pane = .day
+                m.pickStill()
+            },
+            PaletteCommand(id: "music", title: "Add music", symbol: "opticaldisc", keywords: "song link spotify apple music youtube soundcloud") { m in
+                m.pane = .day
+                CaptureUI.shared.musicGrows = false
+                CaptureUI.shared.musicOpen = true
+            },
+            PaletteCommand(id: "import", title: "Import media…", symbol: "square.and.arrow.down", keywords: "file audio video photo drop add",
+                           shortcut: Shortcut.importMedia.keys) { m in
+                m.pane = .day
+                m.pickMedia()
+            },
+            PaletteCommand(id: "date", title: "Go to date…", symbol: "calendar", keywords: "calendar day jump picker", shortcut: Shortcut.goToDate.keys) { m in
+                m.pane = .day
+                m.datePickerOpen = true
+            },
+            PaletteCommand(id: "lens", title: "Open time lens", symbol: "square.grid.3x3", keywords: "week month year overview zoom calendar",
+                           shortcut: Shortcut.timeLens.keys) { m in
+                m.pane = .day
+                m.openLens()
+            },
+            PaletteCommand(id: "recenter", title: "Recenter canvas", symbol: "scope", keywords: "fit day zoom reset center", shortcut: Shortcut.fitDay.keys) { m in
+                m.pane = .day
+                m.camera = .fit(UUID())
+            },
+            PaletteCommand(id: "appearance", title: "Appearance", symbol: "circle.lefthalf.filled", keywords: "theme dark light night mode day",
+                           value: { _ in Daylight.shared.mode.title }) { _ in
+                let all = Daylight.Mode.allCases
+                Daylight.shared.mode = all[((all.firstIndex(of: Daylight.shared.mode) ?? 0) + 1) % all.count]
+            },
             PaletteCommand(id: "noticed", title: "What Saro noticed", symbol: "sparkles", keywords: "insight inspector patterns mood",
-                           shortcut: "⌥⌘I") {
+                           shortcut: Shortcut.noticed.keys) {
                 $0.pane = .day
                 $0.showNoticed = true
             },
-            PaletteCommand(id: "letter", title: "Evening letter", symbol: "envelope.open", keywords: "letter night reading") {
+            PaletteCommand(id: "letter", title: "Evening letter", symbol: "envelope.open", keywords: "letter night reading",
+                           shortcut: Shortcut.letter.keys) {
                 $0.pane = .day
                 $0.showLetter = true
             },
@@ -180,7 +221,7 @@ struct SearchPalette: View {
         #endif
         all += [
             PaletteCommand(id: "knows", title: "What Saro knows", symbol: "point.3.connected.trianglepath.dotted",
-                           keywords: "memory memories people graph remember forget", shortcut: "⌥⌘K") { $0.pane = .knows },
+                           keywords: "memory memories people graph remember forget", shortcut: Shortcut.whatSaroKnows.keys) { $0.pane = .knows },
             PaletteCommand(id: "memory-pause", title: "Pause memory", symbol: "pause.circle", keywords: "stop learning remember") { m in
                 Task { await m.setMemoryPaused(true) }
             },
@@ -189,7 +230,7 @@ struct SearchPalette: View {
             },
             PaletteCommand(id: "trash", title: "Trash", symbol: "trash", keywords: "deleted bin restore") { $0.pane = .trash },
             PaletteCommand(id: "settings", title: "Settings…", symbol: "gearshape", keywords: "preferences tone reminder privacy text size say it",
-                           shortcut: "⌘,") { _ in WindowActions.openSettings() },
+                           shortcut: Shortcut.settings.keys) { _ in WindowActions.openSettings() },
             PaletteCommand(id: "sayit", title: "Change a setting in words…", symbol: "text.bubble", keywords: "say it settings remind bigger text tone") { _ in
                 SettingsWindow.askInWords()
             },
@@ -200,6 +241,15 @@ struct SearchPalette: View {
             PaletteCommand(id: "export", title: "Export everything", symbol: "square.and.arrow.up", keywords: "backup download save data") { m in
                 Task { await m.exportEverything() }
             },
+            PaletteCommand(id: "dayimage", title: "Export day image", symbol: "photo.on.rectangle", keywords: "picture png canvas share download save") { m in
+                m.pane = .day
+                Task { await m.exportDayImage() }
+            },
+            PaletteCommand(id: "shortcuts", title: "Keyboard shortcuts", symbol: "keyboard", keywords: "keys help hotkeys", shortcut: Shortcut.shortcuts.keys) { _ in
+                WindowActions.openWindow("shortcuts")
+            },
+            PaletteCommand(id: "lock", title: "Lock Saro", symbol: "lock", keywords: "touch id privacy hide away", shortcut: Shortcut.lock.keys,
+                           available: { _ in PrefsStore.shared.lockEnabled }) { _ in Locker.shared.lock() },
             PaletteCommand(id: "onboarding", title: "Replay onboarding", symbol: "arrow.counterclockwise", keywords: "welcome about you first week setup start again") { m in
                 Task { await m.replayOnboarding() }
             },
@@ -217,7 +267,7 @@ struct SearchPalette: View {
         })
         return all
     }()
-    private static let start = ["write", "moment", "voice", "today"].compactMap { id in commands.first { $0.id == id } }
+    private static let start = ["write", "moment", "voice", "replay"].compactMap { id in commands.first { $0.id == id } }
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
     private var words: [String] { trimmed.split(whereSeparator: \.isWhitespace).map(String.init) }
@@ -259,15 +309,23 @@ struct SearchPalette: View {
             selected = nil
             actionsOpen = false
         }
-        .task(id: key) {
+        .task(id: "\(key)|\(attempt)") {
             let (q, k, kind) = (trimmed, key, scope)
+            // A hairline under the input says it's working, only once a search is slow enough to notice.
+            let slow = Task {
+                try? await Task.sleep(for: .milliseconds(150))
+                if !Task.isCancelled { searching = true }
+            }
+            defer { slow.cancel(); searching = false }
             do {
-                let found = try await model.ledger.search(q, kind: kind, limit: q.isEmpty ? (kind == nil ? 6 : 8) : Self.limit)
+                let found = try await model.ledger.search(q, kind: kind, limit: q.isEmpty ? (kind == nil ? 5 : 8) : Self.limit)
                 guard !Task.isCancelled else { return }
                 hits = found
                 hitsKey = k
+                failed = false
             } catch {
-                model.show(Toast("Couldn't search: \(error.localizedDescription)", style: .error))
+                guard !Task.isCancelled else { return }
+                failed = true
             }
         }
     }
@@ -277,7 +335,7 @@ struct SearchPalette: View {
     private var panel: some View {
         VStack(spacing: 0) {
             input
-            Tok.border.frame(height: 1)
+            (searching ? Tok.sage : Tok.border).frame(height: 1)
             list
             Tok.border.frame(height: 1)
             footer
@@ -296,8 +354,53 @@ struct SearchPalette: View {
                     // 8 pt above the footer's Actions, right-aligned with it.
                     actionsMenu(menuHit).padding(.trailing, 8).padding(.bottom, 42)
                 }
+            } else if scopeMenu {
+                ZStack(alignment: .topTrailing) {
+                    Color.clear.contentShape(.rect).onTapGesture { scopeMenu = false }
+                    // 6 pt under the type button, right-aligned with it.
+                    scopesMenu.padding(.trailing, 12).padding(.top, 46)
+                }
             }
         }
+    }
+
+    /// All types, then each type, the current one checked (SearchPalette.tsx's scope menu).
+    private var scopesMenu: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(([nil] + Self.scopes.map(Optional.some)).enumerated()), id: \.offset) { i, k in
+                HStack(spacing: 8) {
+                    Image(systemName: k?.symbol ?? "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(Tok.ink3).frame(width: 16)
+                    Text(k?.plural ?? "All types").font(Typo.ui(13)).tracking(0.13).foregroundStyle(Tok.ink)
+                    Spacer(minLength: 16)
+                    if k == scope { Image(systemName: "checkmark").font(.system(size: 11, weight: .medium)).foregroundStyle(Tok.ink2) }
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 36)
+                .background(i == scopeRow ? Tok.ink.opacity(0.06) : .clear, in: .rect(cornerRadius: Radius.control))
+                .contentShape(.rect)
+                .onTapGesture { choose(scope: k) }
+                .onContinuousHover { if case .active = $0 { scopeRow = i } }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(k == scope ? [.isButton, .isSelected] : .isButton)
+                .accessibilityAction { choose(scope: k) }
+            }
+        }
+        .padding(6)
+        .frame(width: 220)
+        .background(Tok.surfaceAlt, in: .rect(cornerRadius: Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Tok.line))
+        .elevation(.panel)
+    }
+
+    private func choose(scope k: EntryKind?) {
+        scope = k
+        scopeMenu = false
+    }
+
+    private func openScopeMenu() {
+        scopeRow = scope.flatMap { Self.scopes.firstIndex(of: $0).map { $0 + 1 } } ?? 0
+        actionsOpen = false
+        scopeMenu = true
     }
 
     private var input: some View {
@@ -319,7 +422,7 @@ struct SearchPalette: View {
             .frame(height: 28)
             .background(scope.map { $0.tint.opacity(0.15) } ?? .clear, in: .rect(cornerRadius: 8))
             .contentShape(.rect)
-            .onTapGesture { cycleScope() }
+            .onTapGesture { scopeMenu ? (scopeMenu = false) : openScopeMenu() }
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Search in: \(scope?.plural ?? "All types")")
         }
@@ -350,7 +453,7 @@ struct SearchPalette: View {
                             if let miss = s.miss {
                                 VStack(spacing: 4) {
                                     Text("Nothing matches “\(miss)”").font(Typo.serif(17)).foregroundStyle(Tok.ink2)
-                                    Text("Try fewer words, or another spelling.").font(Typo.ui(13)).foregroundStyle(Tok.ink3)
+                                    Text("Typos are fine. Try fewer words.").font(Typo.ui(13)).foregroundStyle(Tok.ink3)
                                 }
                                 .frame(maxWidth: .infinity).padding(.top, 32).padding(.bottom, 16)
                             }
@@ -376,6 +479,8 @@ struct SearchPalette: View {
         case .scope(let k): (k.symbol, k.tint)
         case .write: (EntryKind.reflection.symbol, EntryKind.reflection.tint)
         case .memory: ("point.3.connected.trianglepath.dotted", Tok.sage)
+        case .retry: ("exclamationmark.triangle", Tok.danger)
+        case .widen: ("magnifyingglass", nil)
         }
         return HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 12, weight: .medium))
@@ -384,14 +489,26 @@ struct SearchPalette: View {
                 .background(tint?.opacity(0.15) ?? Tok.ink.opacity(0.06), in: .rect(cornerRadius: 6))
             switch row {
             case .entry(let h):
-                Text(marked(h.title ?? h.kind.noun, Typo.ui(14, .semibold))).font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
+                // The engine's own matches: stems, prefixes and typo-tolerant words, not just the letters typed.
+                Text(h.title.map { Self.marked($0, h.titleHighlights, Typo.ui(14, .semibold)) } ?? AttributedString(h.kind.noun))
+                    .font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
                     .lineLimit(1).layoutPriority(1)
-                Text(marked(h.snippet, Typo.ui(13, .medium), Tok.ink)).font(Typo.ui(13)).foregroundStyle(Tok.ink3).lineLimit(1)
+                Text(Self.marked(h.snippet, h.highlights, Typo.ui(13, .medium), Tok.ink)).font(Typo.ui(13)).foregroundStyle(Tok.ink3).lineLimit(1)
                     .frame(minWidth: h.snippet.isEmpty ? 0 : 160, maxWidth: .infinity, alignment: .leading)
+                if let meta = h.meta { Text(meta).font(Typo.mono(11.5)).foregroundStyle(Tok.ink3).monospacedDigit().lineLimit(1).fixedSize() }
                 right(Text(when(h).uppercased()))
             case .command(let c):
                 title(c.title)
+                if let value = c.value?(model) { Text(value).font(Typo.ui(13)).foregroundStyle(Tok.ink2).lineLimit(1).fixedSize() }
                 if let s = c.shortcut { Kbd(s).frame(width: 72, alignment: .trailing) }
+            case .retry:
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Couldn't load your entries").font(Typo.ui(14, .medium)).foregroundStyle(Tok.danger)
+                    Text("Try again").font(Typo.ui(12.5)).foregroundStyle(Tok.ink3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            case .widen:
+                title("Search all types")
             case .day(let d):
                 Text("Go to \(DayFormat.title(d))").font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink).lineLimit(1).layoutPriority(1)
                 Text(dayCount(d)).font(Typo.ui(13)).foregroundStyle(Tok.ink3).lineLimit(1)
@@ -400,7 +517,7 @@ struct SearchPalette: View {
                 title("Search \(k.plural)")
                 Kbd("Tab").frame(width: 72, alignment: .trailing)
             case .write(let text):
-                title("Write “\(text)”")
+                title("New writing starting “\(text)”")
             case .memory(let m):
                 Text(marked(m.text, Typo.ui(14, .semibold))).font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
                     .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
@@ -410,7 +527,10 @@ struct SearchPalette: View {
         .frame(height: 44)
         .background(isCurrent ? Tok.ink.opacity(scheme == .dark ? 0.08 : 0.06) : .clear, in: .rect(cornerRadius: 12))
         .contentShape(.rect)
-        .onTapGesture { run(row) }
+        .background {
+            if isCurrent { Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { currentFrame = $0 } }
+        }
+        .onTapGesture { run(row, from: isCurrent ? currentFrame : nil) }
         // Only a real pointer move selects: rows scrolling under a still pointer must not take the keyboard's place.
         .onContinuousHover { phase in
             guard case .active = phase, NSEvent.mouseLocation != mouse else { return }
@@ -439,18 +559,16 @@ struct SearchPalette: View {
             .font(Typo.ui(12.5)).lineLimit(1)
             .animation(Motion.easeOut(0.16), value: flashOn)
             Spacer()
+            // Each hint does what it says when clicked.
             if let current {
-                hint(primary(current), "↵")
+                hint(primary(current), "↵") { run(current) }
                 if replays(current) {
                     Tok.border.frame(width: 1, height: 16)
-                    hint("Replay", "⌘↵")
+                    hint("Replay", "⌘↵") { replay(current) }
                 }
                 if case .entry = current {
                     Tok.border.frame(width: 1, height: 16)
-                    hint("Actions", "⌘K")
-                        .contentShape(.rect)
-                        .onTapGesture { openActions(byKey: false) }
-                        .accessibilityAddTraits(.isButton)
+                    hint("Actions", "⌘K") { openActions(byKey: false) }
                 }
             }
         }
@@ -458,11 +576,16 @@ struct SearchPalette: View {
         .frame(height: 40)
     }
 
-    private func hint(_ label: String, _ key: String) -> some View {
-        HStack(spacing: 6) {
-            Text(label).font(Typo.ui(12.5)).foregroundStyle(Tok.ink2)
-            Kbd(key)
+    private func hint(_ label: String, _ key: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(label).font(Typo.ui(12.5)).foregroundStyle(Tok.ink2)
+                Kbd(key)
+            }
+            .padding(.horizontal, 6).frame(height: 28)
+            .contentShape(.rect)
         }
+        .buttonStyle(PressStyle(hoverFill: true, radius: Radius.control))
     }
 
     private func actionsMenu(_ h: SearchHit) -> some View {
@@ -496,19 +619,21 @@ struct SearchPalette: View {
 
     // MARK: Rows
 
+    /// What the palette lists, in order (palette.ts's buildSections).
     private var sections: [PaletteSection] {
         let q = trimmed
+        // A failed read says so in place, with Try again, above whatever still shows.
+        var out: [PaletteSection] = failed ? [PaletteSection(id: "error", rows: [.retry])] : []
         if q.isEmpty {
             if let scope {
-                return [PaletteSection(id: "recent", title: scope.plural, note: loaded && hits.isEmpty ? "No \(scope.plural.lowercased()) yet." : nil,
-                                       rows: hits.map(Row.entry))]
+                return out + [PaletteSection(id: "recent", title: scope.plural, note: loaded && hits.isEmpty ? "No \(scope.plural.lowercased()) yet." : nil,
+                                             rows: hits.map(Row.entry))]
             }
-            var out: [PaletteSection] = []
             if !hits.isEmpty { out.append(PaletteSection(id: "recent", title: "Recent", rows: hits.map(Row.entry))) }
+            else if loaded && !failed { out.append(PaletteSection(id: "recent", note: "Your entries will show up here.")) }
             out.append(PaletteSection(id: "start", title: "Start", rows: Self.start.map(Row.command)))
             return out
         }
-        var out: [PaletteSection] = []
         var entries = hits
         if scope == nil {
             // One of Pause memory and Resume memory, whichever would change something.
@@ -536,7 +661,10 @@ struct SearchPalette: View {
             out.append(PaletteSection(id: "entries", title: scope?.plural ?? "Entries",
                                       count: hits.count >= Self.limit ? "\(Self.limit)+" : "\(entries.count)", rows: entries.map(Row.entry)))
         }
-        if out.isEmpty && loaded { out.append(PaletteSection(id: "none", miss: q, rows: [.write(q)])) }
+        // Nothing found: offer to start a writing with the words, pre-selected, and to widen a scoped search.
+        if out.allSatisfy({ $0.id == "error" }) && loaded {
+            out.append(PaletteSection(id: "none", miss: q, rows: [.write(q)] + (scope != nil ? [.widen] : [])))
+        }
         return out
     }
 
@@ -559,6 +687,8 @@ struct SearchPalette: View {
         case .scope: "Narrow the search"
         case .write: "New writing"
         case .memory(let m): "What Saro knows · \(m.group.label)"
+        case .retry: "Search"
+        case .widen: "Every type"
         case nil: ""
         }
     }
@@ -567,9 +697,10 @@ struct SearchPalette: View {
         switch row {
         case .entry: "Open"
         case .day: "Go"
-        case .scope: "Search"
+        case .scope, .widen: "Search"
         case .command, .write: "Run"
         case .memory: "Show"
+        case .retry: "Try again"
         }
     }
 
@@ -589,6 +720,20 @@ struct SearchPalette: View {
         return d.formatted(.dateTime.month(.abbreviated).year())
     }
 
+    /// `text` with the engine's matches (UTF-16 ranges) set in `font` (and `color`).
+    private static func marked(_ text: String, _ ranges: [Range<Int>], _ font: Font, _ color: Color? = nil) -> AttributedString {
+        var a = AttributedString(text)
+        let u = text.utf16
+        for r in ranges where r.upperBound <= u.count {
+            guard let lo = String.Index(u.index(u.startIndex, offsetBy: r.lowerBound), within: text),
+                  let hi = String.Index(u.index(u.startIndex, offsetBy: r.upperBound), within: text),
+                  let from = AttributedString.Index(lo, within: a), let to = AttributedString.Index(hi, within: a) else { continue }
+            a[from..<to].font = font
+            if let color { a[from..<to].foregroundColor = color }
+        }
+        return a
+    }
+
     /// `text` with each query word set in `font` (and `color`).
     private func marked(_ text: String, _ font: Font, _ color: Color? = nil) -> AttributedString {
         var a = AttributedString(text)
@@ -605,14 +750,23 @@ struct SearchPalette: View {
 
     // MARK: Actions
 
-    private func run(_ row: Row) {
+    private func run(_ row: Row, from: CGRect? = nil) {
         switch row {
         case .entry(let h):
             isPresented = false
-            Self.open(h, in: model)
+            Self.open(h, in: model, from: from.map { $0.offsetBy(dx: -model.dayOrigin.x, dy: -model.dayOrigin.y) })
+        case .command(let c) where c.value != nil:
+            // A setting cycles in place, and the footer flashes what it is now.
+            c.run(model)
+            show("\(c.title): \(c.value?(model) ?? "")")
         case .command(let c):
             isPresented = false
             c.run(model)
+        case .retry:
+            failed = false
+            attempt += 1
+        case .widen:
+            scope = nil
         case .day(let d):
             isPresented = false
             model.go(to: d)
@@ -678,7 +832,11 @@ struct SearchPalette: View {
             NSPasteboard.general.clearContents()
             text = NSPasteboard.general.setString(h.copyText, forType: .string) ? "Copied" : "Couldn't copy"
         }
-        // In the footer, where the row's context was, for 1.6 s.
+        show(text)
+    }
+
+    /// In the footer, where the row's context was, for 1.6 s.
+    private func show(_ text: String) {
         flash = text
         flashOn = true
         AccessibilityNotification.Announcement(text).post()
@@ -689,11 +847,13 @@ struct SearchPalette: View {
         }
     }
 
-    /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to load.
-    private static func open(_ h: SearchHit, in model: AppModel) {
-        model.go(to: h.localDay)
+    /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to land (a day that
+    /// lands after the entry opened would close it). A clicked row is where the entry's flight into its detail starts
+    /// (day view coordinates); a key opens it at once.
+    private static func open(_ h: SearchHit, in model: AppModel, from: CGRect? = nil) {
         Task {
-            if model.entry(h.entryId) == nil { await model.reload() }
+            await model.land(on: h.localDay)
+            model.reflection.flightSource = from
             model.openEntryID = h.entryId
         }
     }
@@ -710,16 +870,13 @@ struct SearchPalette: View {
         selected = all[max(0, min(i + by, all.count - 1))].id
     }
 
-    private func cycleScope() {
-        let i = scope.flatMap { Self.scopes.firstIndex(of: $0) } ?? -1
-        scope = i + 1 < Self.scopes.count ? Self.scopes[i + 1] : nil
-    }
 
     /// Keys while the palette is up, before the text field or the canvas sees them. Returns whether it used the key.
     private func handle(_ e: NSEvent) -> Bool {
         guard e.window === window, (e.window?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return false }
         let mods = e.modifierFlags.intersection([.command, .control, .option, .shift])
         if let menuHit { return handleActions(e, mods, menuHit) }
+        if scopeMenu { return handleScopes(e, mods) }
         switch e.keyCode {
         case 125: move(1)
         case 126: move(-1)
@@ -741,11 +898,30 @@ struct SearchPalette: View {
             case ([.command, .shift], "c"):
                 guard case .entry(let h) = current else { return false }
                 copy(h)
-            case (.command, "p"): cycleScope()
+            case (.command, "p"): openScopeMenu()
             case (.control, "n"): move(1)
             case (.control, "p"): move(-1)
             default: return false
             }
+        }
+        return true
+    }
+
+    /// The type menu: ↑↓, Home/End, ↵ or Space, a first letter, Esc or ⌘P to close.
+    private func handleScopes(_ e: NSEvent, _ mods: NSEvent.ModifierFlags) -> Bool {
+        let all: [EntryKind?] = [nil] + Self.scopes.map(Optional.some)
+        switch e.keyCode {
+        case 125: scopeRow = min(scopeRow + 1, all.count - 1)
+        case 126: scopeRow = max(scopeRow - 1, 0)
+        case 115: scopeRow = 0
+        case 119: scopeRow = all.count - 1
+        case 36, 76, 49: if !e.isARepeat { choose(scope: all[scopeRow]) }
+        case 53: scopeMenu = false
+        default:
+            let char = e.charactersIgnoringModifiers?.lowercased()
+            if mods == .command, char == "p" || char == "k" { scopeMenu = false }
+            else if mods.contains(.command) { return false }
+            else if let char, let i = all.firstIndex(where: { ($0?.plural ?? "all types").lowercased().hasPrefix(char) }) { scopeRow = i }
         }
         return true
     }
@@ -771,6 +947,17 @@ struct SearchPalette: View {
             }
         }
         return true
+    }
+}
+
+private extension Daylight.Mode {
+    var title: String {
+        switch self {
+        case .clock: "Follow the day"
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
     }
 }
 

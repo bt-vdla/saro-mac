@@ -25,8 +25,7 @@ struct ComfortSection: View {
                 .fixedSize()
             }
             RowRule()
-            // ponytail: drop the second sentence when capture's live captions merge; they read captionsAlways.
-            toggle("Captions always on", "In the video and voice recorders, what you said stays on screen when you pause or Saro asks a follow-up. Live captions aren’t in this build yet, so this waits for them.",
+            toggle("Captions always on", "In the video and voice recorders, what you said stays on screen when you pause or Saro asks a follow-up. Captions are heard on this Mac and never saved.",
                    \.captionsAlways)
             SettingsRow("Caption language", caption: "The language captions and transcripts listen for.") {
                 Picker("Caption language", selection: binding(\.captionLocale)) {

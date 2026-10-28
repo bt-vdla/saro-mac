@@ -80,6 +80,8 @@ struct QuestionSection: View {
                     .font(Typo.ui(13)).foregroundStyle(Tok.ink)
                     .scrollContentBackground(.hidden)
                     .focused($fieldFocused)
+                    // Esc cancels the answer here, before the day's own Esc closes the panel.
+                    .onExitCommand { if !saving { editing = false } }
                     .writingToolsFollowPref()
                     .disabled(saving)
                     .accessibilityLabel("Your answer")

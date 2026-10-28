@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import Speech
+import Synchronization
 
 /// Whether Apple Intelligence and the speech model can run on this Mac, each with one honest line (FR-ONB-05).
 /// Saro works either way: without the model it reflects the person's own words back, labelled In your words.
@@ -34,7 +35,11 @@ public enum Readiness {
         }
     }
 
-    public static func model() -> ModelState { ModelState(SystemLanguageModel.default.availability) }
+    /// Developer → Simulate Apple Intelligence Unavailable reads as Apple Intelligence being off, as SaroAI.status does.
+    public static func model(_ availability: SystemLanguageModel.Availability = SystemLanguageModel.default.availability,
+                             simulated: Bool = SaroAI.simulatedUnavailable.withLock { $0 }) -> ModelState {
+        simulated ? .notEnabled : ModelState(availability)
+    }
 
     public enum SpeechState: Sendable, Hashable {
         case installed

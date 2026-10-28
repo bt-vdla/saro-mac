@@ -24,14 +24,15 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     try await l.insertEntry(Entry(kind: .reflection, body: "Nothing to see here."))
     #expect(try await l.search("cafe").map(\.entryId) == [e.id])
     #expect(try await l.search("RAVI  chai").map(\.entryId) == [e.id])
-    #expect(try await l.search("ravi tokyo").isEmpty)
+    // Every word when it can, else the most (engine.ts).
+    #expect(try await l.search("ravi tokyo").map(\.entryId) == [e.id])
 }
 
 @Test func titleOutranksSummaryOutranksBodyThenNewestFirst() async throws {
     let l = try tempLedger()
     let base = Date(timeIntervalSince1970: 1_790_000_000)
     let body = Entry(kind: .reflection, body: "A note about tea.", capturedAt: base.addingTimeInterval(300))
-    let older = Entry(kind: .reflection, body: "More about tea.", capturedAt: base)
+    let older = Entry(kind: .reflection, body: "A note on tea.", capturedAt: base)
     let titled = Entry(kind: .reflection, titleUser: "Tea with Ravi", body: "Long day.", capturedAt: base.addingTimeInterval(100))
     let summarised = Entry(kind: .reflection, body: "Long day.", capturedAt: base.addingTimeInterval(200))
     for e in [body, older, titled, summarised] { try await l.insertEntry(e) }
@@ -50,7 +51,7 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     try await l.setTranscript(mediaId: m.id, words: words("walked home the long way and the sky was pink"), extractorVersion: "v2")
     let hits = try await l.search("sky was pink")
     #expect(hits.map(\.entryId) == [e.id])
-    #expect(hits.first?.snippet == "…the long way and the sky was pink")
+    #expect(hits.first?.snippet == "walked home the long way and the sky was pink")
     #expect(hits.first?.title == nil)
     #expect(try await l.search("old words").isEmpty)
 }
@@ -172,7 +173,7 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     try await l.insertEntry(e)
     let hit = try #require(try await l.search("ravi").first)
     #expect(hit.title == "Monday notes")
-    #expect(hit.snippet == "…and then had chai with Ravi in the evening.")
+    #expect(hit.snippet == "Shipped the onboarding flow finally, and then had chai with Ravi in the evening.")
     #expect(try await l.search("onboarding").first?.snippet == "Shipped the onboarding flow finally, and then had chai with Ravi in the evening.")
 }
 
@@ -187,4 +188,25 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
         ("tea", nil), ("may", nil), ("fr", nil), ("12/10", nil),
     ]
     for (text, day) in cases { #expect(LocalDay.parse(text, now: now) == day, "\(text)") }
+}
+
+@Test func aTitleTypedSinceTheGateLeavesTheEntryUncheckedInSearch() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: "Words of my own.")
+    try await l.insertEntry(e)
+    try await annotate(l, e, title: "Grief", summary: "A hard anniversary.", verdicts: ["clear"])
+    #expect(try await l.search("anniversary").map(\.entryId) == [e.id])
+    // A typed title is gated with the words (SR-01): unchecked until they are gated together; the reading of the words stands.
+    try await l.updateEntryText(id: e.id, body: "Words of my own.", titleUser: "Tuesday", captionUser: nil)
+    #expect(try await l.search("anniversary").isEmpty)
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256("Words of my own.\nTuesday"), safetyVersion: "1", layer: 1,
+                                               verdict: "clear", reasonCode: "clear"))
+    #expect(try await l.search("anniversary").map(\.entryId) == [e.id])
+}
+
+@Test func aSongIsNamedByItsLinkAsItsCardIs() async throws {
+    let l = try tempLedger()
+    let song = Entry(kind: .music, body: "https://music.apple.com/gb/album/a-night-at-the-opera/1440650428")
+    try await l.insertEntry(song)
+    #expect(try await l.search("opera").first?.title == "A Night at the Opera")
 }
