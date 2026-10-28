@@ -208,6 +208,7 @@ struct SearchPalette: View {
         .clipShape(.rect(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Tok.border))
         .contentShape(.rect(cornerRadius: 20))
+        .compositingGroup()
         .shadow(color: Tok.shadow.opacity(0.24), radius: 40, y: 32)
     }
 
