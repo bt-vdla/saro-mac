@@ -71,6 +71,7 @@ struct BottomBar: View {
 
     private var day: some View {
         HStack(spacing: 2) {
+            AvatarButton()
             iconButton("chevron.left", "Previous day") { model.slide(-1) }.help("Previous day  ⌘[")
             VStack(spacing: 4) {
                 Text(DayFormat.bar(model.day)).monoCaps(11.5, tracking: 0.04).foregroundStyle(Tok.sageDark)
@@ -233,6 +234,7 @@ struct PressStyle: ButtonStyle {
             .background(hoverFill && hover ? Tok.ink.opacity(0.05) : .clear, in: .rect(cornerRadius: radius))
             .scaleEffect(configuration.isPressed ? scale : 1)
             .animation(Motion.press, value: configuration.isPressed)
+            .focusRing(radius: radius)
             .onHover { hover = $0 }
     }
 }
