@@ -75,6 +75,30 @@ private func annotate(_ l: Ledger, _ e: Entry, title: String, summary: String? =
     }
 }
 
+@Test func copyTextIsTheUsersWordsFirstAndNeverAHeldEntrysGeneratedText() async throws {
+    let l = try tempLedger()
+    let m = MediaAsset(fileName: "v.mov", kind: .audio, origin: "recorded", state: "ready")
+    try await l.insertMedia(m)
+    let voice = Entry(kind: .voice, mediaId: m.id)
+    let page = Entry(kind: .reflection, titleUser: "Tuesday", body: "Tea with Ravi.")
+    let still = Entry(kind: .still, captionUser: "The pink sky")
+    let untranscribed = Entry(kind: .voice)
+    let held = Entry(kind: .voice)
+    for e in [voice, page, still, untranscribed, held] { try await l.insertEntry(e) }
+    try await l.setTranscript(mediaId: m.id, words: [TranscriptWord(text: "walked", startMs: 0, durMs: 300, confidence: 0.9),
+                                                     TranscriptWord(text: "home", startMs: 300, durMs: 300, confidence: 0.9)],
+                              extractorVersion: "v1")
+    try await annotate(l, voice, title: "A walk", summary: "A walk home.", verdicts: ["clear"])
+    try await annotate(l, untranscribed, title: "A walk", summary: "A walk home.", verdicts: ["clear"])
+    try await annotate(l, held, title: "Grief", summary: "A hard anniversary.", verdicts: ["safety_hold"])
+    let copied = Dictionary(uniqueKeysWithValues: try await l.search("").map { ($0.entryId, $0.copyText) })
+    #expect(copied[voice.id] == "walked home")
+    #expect(copied[page.id] == "Tea with Ravi.")
+    #expect(copied[still.id] == "The pink sky")
+    #expect(copied[untranscribed.id] == "A walk home.")
+    #expect(copied[held.id] == "")
+}
+
 @Test func emptyQueryListsNewestLiveEntriesOfAKind() async throws {
     let l = try tempLedger()
     let base = Date(timeIntervalSince1970: 1_790_000_000)

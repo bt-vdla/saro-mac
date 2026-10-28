@@ -12,6 +12,8 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
     public let title: String?
     /// One line of the entry's words, starting a few words before the first match.
     public let snippet: String
+    /// What Copy text copies (SearchPalette.tsx): the transcript, body or caption, else the summary or title shown above.
+    public let copyText: String
 }
 
 extension Ledger {
@@ -58,8 +60,10 @@ extension Ledger {
             let match = words.lazy.compactMap { w in sources.first { $0.localizedStandardContains(w) }.map { ($0, w) } }.first
             let snippet = match.map { Self.snippet($0.0, around: $0.1, dropping: title) }
                 ?? Self.snippet(text("ai_summary") ?? body ?? text("transcript") ?? text("caption_user") ?? "", around: nil, dropping: title)
+            let copyText = text("transcript") ?? body ?? text("caption_user") ?? text("ai_summary") ?? title ?? ""
             found.append((score, SearchHit(entryId: r.str("id") ?? "", kind: kind, localDay: r.str("local_day") ?? "",
-                                           capturedAt: r.date("captured_at") ?? .distantPast, title: title, snippet: snippet)))
+                                           capturedAt: r.date("captured_at") ?? .distantPast, title: title, snippet: snippet,
+                                           copyText: copyText)))
         }
         return found.sorted { $0.score != $1.score ? $0.score > $1.score : $0.hit.capturedAt > $1.hit.capturedAt }
             .prefix(limit).map(\.hit)
