@@ -263,7 +263,8 @@ final class AppModel {
     /// transcript of record is never edited, so only its annotation is matched; hash the transcript if editing lands.
     private static func typedText(_ e: Entry) -> String? {
         switch e.kind {
-        case .reflection, .music: e.body ?? ""
+        case .reflection: e.body ?? ""
+        case .music: Pipeline.songText(e)
         // Uncaptioned, a still's text is Saro's description, matched through its annotation like a recording's.
         case .still: e.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         case .moment, .voice: nil

@@ -9,7 +9,8 @@ extension Pipeline {
     @discardableResult
     public func learn(entryId: String) async -> Bool {
         guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil else { return false }
-        let src = try? await text(for: entry)
+        // A song's title and artist are gated, but say nothing about the person.
+        let src = entry.kind == .music ? nil : try? await text(for: entry)
         let text = src?.text ?? ""
         let hash = sha256(text)
         let standing = (try? await ledger.standingObservations(entryId: entryId)) ?? []

@@ -341,7 +341,7 @@ extension FollowUp {
     #expect(try await l.editedAt(entryId: page.id) != nil)
 }
 
-// MARK: A song is never read
+// MARK: A song is gated by its own words, never read
 
 @Test func aSongIsNeverGatedOrRead() async throws {
     let l = try tempLedger()
@@ -352,4 +352,46 @@ extension FollowUp {
     #expect(try await l.verdicts(day: song.localDay)[song.id] == nil)
     #expect(try await l.annotations(day: song.localDay)[song.id] == nil)
     #expect(await p.dayStatus(song.localDay) == .empty)
+}
+
+@Test func aSongsTitleAndArtistAreGatedAndTheDayKeepsReading() async throws {
+    let l = try tempLedger()
+    let page = Entry(kind: .reflection, body: "Walked home the long way by the river after work.")
+    let song = Entry(kind: .music, body: "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC", localDay: page.localDay,
+                     processingStatus: ProcessingStatus.done)
+    try await l.insertEntry(page)
+    try await l.insertEntry(song)
+    let p = Pipeline(ledger: l, ai: SaroAI(stub: { _ in "NONE" }))
+    await p.process(entryId: page.id) {}
+    await p.process(entryId: song.id) {}
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    #expect(await p.narrativeEntries(page.localDay).contains { $0.kind == .music && $0.label == nil })
+
+    // Edit details: a title and an artist are the person's words, gated and never read; the link stays as it was.
+    try await l.updateEntryText(id: song.id, body: song.body, titleUser: "Midnight Walk", captionUser: "Some Artist")
+    #expect(try await l.entry(song.id)?.processingStatus == ProcessingStatus.pending)
+    await p.process(entryId: song.id) {}
+    #expect(try await l.entry(song.id)?.processingStatus == ProcessingStatus.done)
+    #expect(try await l.verdicts(day: page.localDay)[song.id]?.verdict == "clear")
+    #expect(try await l.annotations(day: page.localDay)[song.id] == nil)
+    #expect(await p.dayStatus(page.localDay) == .ready)
+    let told = try #require(await p.narrativeEntries(page.localDay).first { $0.kind == .music })
+    #expect(DayNarrative.lastInferred(told).message == "You added \"Midnight Walk\".")
+
+    // A held title holds the day, like any of the person's words.
+    try await l.updateEntryText(id: song.id, body: song.body, titleUser: "No point anymore", captionUser: "Some Artist")
+    await p.process(entryId: song.id) {}
+    #expect(await p.dayStatus(page.localDay) == .held)
+
+    // A titled song alone is nothing to read.
+    let alone = Entry(kind: .music, titleUser: "Midnight Walk", body: song.body, localDay: LocalDay.adding(-1, to: page.localDay))
+    try await l.insertEntry(alone)
+    await p.process(entryId: alone.id) {}
+    #expect(try await l.verdicts(day: alone.localDay)[alone.id]?.verdict == "clear")
+    #expect(await p.dayStatus(alone.localDay) == .empty)
+
+    // Cleared again, nothing is left to gate or hold.
+    try await l.updateEntryText(id: song.id, body: song.body, titleUser: nil, captionUser: nil)
+    #expect(try await l.entry(song.id)?.processingStatus == ProcessingStatus.done)
+    #expect(await p.dayStatus(page.localDay) == .ready)
 }

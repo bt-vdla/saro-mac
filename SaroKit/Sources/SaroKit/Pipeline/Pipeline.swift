@@ -46,8 +46,11 @@ public actor Pipeline {
     /// The text an entry offers the gate and the model, the field it came from, and transcript confidence.
     func text(for entry: Entry) async throws -> (text: String, field: String, confidence: Double?)? {
         switch entry.kind {
-        case .reflection, .music:
+        case .reflection:
             return (entry.body ?? "", "body", nil)
+        case .music:
+            // A song's own words are the title and artist typed for it, never its link.
+            return (Self.songText(entry), "title_user", nil)
         case .still:
             return try await stillText(entry)
         case .moment, .voice:
@@ -59,15 +62,18 @@ public actor Pipeline {
         }
     }
 
+    public static func songText(_ e: Entry) -> String {
+        [e.titleUser, e.captionUser].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
     static func join(_ words: [TranscriptWord]) -> String {
         words.map(\.text).joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     /// Runs every step that hasn't run for this entry yet. `onStatus` is called after each status change.
     public func process(entryId: String, onStatus: @Sendable () async -> Void) async {
-        // A song is a link the person kept, read offline from its URL: nothing gates or reads it, so no part of a link is
-        // ever quoted back (a restore from Trash queues it like any entry).
-        guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil, entry.kind != .music else { return }
+        guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil else { return }
         func status(_ s: String) async {
             try? await ledger.setProcessingStatus(s, startedFrom: entry)
             await onStatus()
@@ -130,6 +136,11 @@ public actor Pipeline {
         }
         if source.field == Self.aiCaptionField {
             await keepStillCaptionCurrent(entryId, hash: hash)
+            await status(ProcessingStatus.done)
+            return
+        }
+        // A song is gated, never read: nothing of it is ever quoted back.
+        if entry.kind == .music {
             await status(ProcessingStatus.done)
             return
         }
@@ -217,7 +228,10 @@ public actor Pipeline {
             if let v = verdicts[e.id] {
                 // A verdict only counts for the text it was given: edited text is unchecked until it is gated again.
                 if let src, sha256(src.text) != v.textSha256 { return .working }
-                states.append(EntryState(verdict: v.verdict))
+                let state = EntryState(verdict: v.verdict)
+                // A song's words can hold the day, but leave nothing to read.
+                if e.kind == .music, state == .clear || state == .modelUnavailable { continue }
+                states.append(state)
                 continue
             }
             switch e.processingStatus {

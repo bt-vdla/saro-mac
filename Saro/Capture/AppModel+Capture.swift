@@ -60,7 +60,7 @@ extension AppModel {
         do {
             try await ledger.updateEntryText(id: e.id, body: body, titleUser: title, captionUser: caption)
             await reload()
-            if e.kind != .music { process(e.id) }
+            process(e.id)
             return true
         } catch {
             show(Toast("Couldn’t save your changes", style: .error))

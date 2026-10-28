@@ -108,7 +108,7 @@ struct DevNotes {
                         "Gate and reading run when the editor closes", "Edit on the card: the second click on a selected page edits its title or body",
                         "Reflect further after the gate: reflect_further on the ladder, Another question, Retry, the SafetyCard when held",
                         "Questions and gated answers are reflection_turn rows, never the body (DR-04)",
-                        "Songs: 560 pt view with Open in … and Copy link; Edit details ⌘I for title and artist"],
+                        "Songs: 560 pt view with Open in … and Copy link; Edit details ⌘I for title and artist, which are gated, never read"],
                 stubbed: [],
                 issues: [],
                 brd: ["FR-CAP-03", "FR-REF-07", "FR-SET-03", "DR-04"])

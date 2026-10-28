@@ -634,7 +634,8 @@ final class Scenarios {
     /// The text the gate reads, as `Pipeline.text(for:)` builds it.
     private func text(_ e: Entry) async -> String {
         switch e.kind {
-        case .reflection, .music: return e.body ?? ""
+        case .reflection: return e.body ?? ""
+        case .music: return Pipeline.songText(e)
         case .still: return e.captionUser ?? ""
         case .moment, .voice:
             guard let id = e.mediaId else { return "" }
