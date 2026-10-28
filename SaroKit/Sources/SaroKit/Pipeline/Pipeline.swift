@@ -31,10 +31,11 @@ public actor Pipeline {
     public init(ledger: Ledger, ai: SaroAI) {
         self.ledger = ledger
         self.ai = ai
-        let classify: (@Sendable (String) async -> ClassifierOutcome)? = ai.status == .available
-            ? { @Sendable text in await ai.classify(text, instructions: SafetyGate.classifierInstructions, prompt: SafetyGate.classifierPrompt(for: "{text}")) }
-            : nil
-        gate = SafetyGate(classify: classify)
+        // Always wired: SaroAI.classify answers `.unavailable` itself while the model can't run, so a model that
+        // becomes ready mid-session is used without a relaunch.
+        gate = SafetyGate(classify: { @Sendable text in
+            await ai.classify(text, instructions: SafetyGate.classifierInstructions, prompt: SafetyGate.classifierPrompt(for: "{text}"))
+        })
     }
 
     /// The text an entry offers the gate and the model, the field it came from, and transcript confidence.
@@ -67,7 +68,13 @@ public actor Pipeline {
 
         // 1. Transcript of record (moments and voice notes).
         if entry.kind == .moment || entry.kind == .voice {
-            guard let mid = entry.mediaId, let media = try? await ledger.media(mid), media.state == "ready" else { return }
+            guard let mid = entry.mediaId, let media = try? await ledger.media(mid) else { return }
+            if media.state == "recording" { return }
+            guard media.state == "ready" else {
+                // A file that went missing or failed can't be transcribed; don't leave the day waiting on it.
+                await status(ProcessingStatus.failed)
+                return
+            }
             if (try? await ledger.transcript(mediaId: mid))?.isEmpty ?? true {
                 await status(ProcessingStatus.transcribing)
                 do {
@@ -88,6 +95,8 @@ public actor Pipeline {
         // 2. SafetyGate, cached by text hash and gate version (SR-17, SR-18).
         let hash = sha256(source.text)
         var verdict = try? await ledger.cachedVerdict(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version)
+        // A verdict made while the model couldn't run is re-gated once it can (SR-17).
+        if let v = verdict?.verdict, v.hasPrefix("unavailable"), ai.status == .available { verdict = nil }
         if verdict == nil {
             await status(ProcessingStatus.gating)
             let r = await gate.gate(text: source.text, transcriptConfidence: source.confidence)
@@ -171,7 +180,12 @@ public actor Pipeline {
         let verdicts = (try? await ledger.verdicts(day: day)) ?? [:]
         var states: [EntryState] = []
         for e in entries {
-            if let v = verdicts[e.id] { states.append(EntryState(verdict: v.verdict)); continue }
+            if let v = verdicts[e.id] {
+                // A verdict only counts for the text it was given: edited text is unchecked until it is gated again.
+                if let src = try? await text(for: e), sha256(src.text) != v.textSha256 { return .working }
+                states.append(EntryState(verdict: v.verdict))
+                continue
+            }
             switch e.processingStatus {
             case ProcessingStatus.done, ProcessingStatus.failed: continue // nothing to read (a silent recording, a bare still)
             case ProcessingStatus.transcriptUnavailable: states.append(.awaitingCheck)
@@ -198,8 +212,8 @@ public actor Pipeline {
         var sources: [String] = []
         let modelOK = ai.status == .available && entries.allSatisfy { verdicts[$0.id].map { $0.verdict != "unavailable_clear" } ?? true }
         for e in entries {
-            guard let v = verdicts[e.id]?.verdict, v == "clear" || v == "unavailable_clear",
-                  let a = annotations[e.id], let src = try? await text(for: e) else { continue }
+            guard let row = verdicts[e.id], row.verdict == "clear" || row.verdict == "unavailable_clear",
+                  let a = annotations[e.id], let src = try? await text(for: e), sha256(src.text) == row.textSha256 else { continue }
             digests.append(EntryDigest(entryId: e.id, kind: e.kind.rawValue, time: e.capturedAt.formatted(date: .omitted, time: .shortened),
                                        title: a.title ?? e.kind.rawValue, summary: a.summary ?? "", mood: a.moodLabel.flatMap(Mood.init(rawValue:))))
             candidates += Heuristics.candidates(entryId: e.id, field: src.field, text: src.text, firstIndex: candidates.count)

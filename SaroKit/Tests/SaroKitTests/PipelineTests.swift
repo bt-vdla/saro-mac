@@ -53,3 +53,28 @@ import Testing
     try await l.setProcessingStatus(id: e.id, ProcessingStatus.transcribing)
     #expect(await p.dayStatus(e.localDay) == .working)
 }
+
+@Test func editedTextHoldsTheDayUntilRegated() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: SaroAI())
+    let e = Entry(kind: .reflection, body: "I want to die.")
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    // The newest verdict was made for other text; editing the body must not count as checked.
+    try await l.updateEntryText(id: e.id, body: "A quiet walk home.", titleUser: nil)
+    #expect(await p.dayStatus(e.localDay) == .working)
+    #expect(await p.readDay(e.localDay) == nil)
+}
+
+@Test func missingMediaFailsInsteadOfWaiting() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: SaroAI())
+    let m = MediaAsset(fileName: "x/part-1.mov", kind: .video, origin: "recorded", state: "missing")
+    try await l.insertMedia(m)
+    var e = Entry(kind: .moment, mediaId: m.id)
+    e.processingStatus = ProcessingStatus.pending
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.failed)
+    #expect(await p.dayStatus(e.localDay) == .empty)
+}

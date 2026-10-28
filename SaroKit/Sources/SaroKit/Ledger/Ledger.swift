@@ -98,10 +98,25 @@ public actor Ledger {
         try db.run("SELECT * FROM \(includeTrashed ? "entry" : "live_entry") ORDER BY captured_at").map(Entry.init)
     }
 
-    /// Entries whose processing did not finish (crash, quit mid-transcription), for the launch sweep.
+    /// Entries whose processing did not finish (crash, quit mid-transcription) or whose transcript wasn't ready,
+    /// for the launch sweep to try again.
     public func unfinishedEntries() throws -> [Entry] {
-        try db.run("SELECT * FROM live_entry WHERE processing_status NOT IN ('done','failed','transcript_unavailable') ORDER BY captured_at")
+        try db.run("SELECT * FROM live_entry WHERE processing_status NOT IN ('done','failed') ORDER BY captured_at")
             .map(Entry.init)
+    }
+
+    /// Live entries whose newest verdict is one of `verdicts`.
+    public func entryIDs(withLatestVerdictIn verdicts: [String]) throws -> [String] {
+        let marks = verdicts.map { _ in "?" }.joined(separator: ",")
+        return try db.run("""
+            SELECT v.entry_id FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
+            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict IN (\(marks))
+            """, verdicts.map { .text($0) }).compactMap { $0.str("entry_id") }
+    }
+
+    /// Drops a media file's transcript so the next pass transcribes it again (Try again on a technical hold).
+    public func clearTranscript(mediaId: String) throws {
+        try db.run("DELETE FROM transcript_word WHERE media_id=?", [.text(mediaId)])
     }
 
     /// Days that have at least one live entry, newest first.
