@@ -106,11 +106,11 @@ struct KnowledgeGraphView: View {
         let lit = litIDs
         ZStack {
             CanvasEvents(enabled: model.pane == .knows && !model.searchOpen,
-                         onPan: { d in
+                         onPan: { d, _, _ in
                              userMoved = true
                              camera.pan = CGSize(width: camera.pan.width + d.width, height: camera.pan.height + d.height)
                          },
-                         onZoom: { f, p in
+                         onZoom: { f, p, _ in
                              userMoved = true
                              zoom(by: f, at: p)
                          })

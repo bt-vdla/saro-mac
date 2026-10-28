@@ -9,6 +9,8 @@ struct DayView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
     @FocusState private var focused: Bool
+    /// An ⌥-arrow nudge or ⇧⌥-arrow resize moved something not yet saved; the key's release saves it.
+    @State private var nudged = false
     /// The chrome and the stage share it, so the letter's quotes can fly into their cards.
     nonisolated static let space = "day"
 
@@ -25,7 +27,10 @@ struct DayView: View {
                     // The world steps back while the moment frame is up (ease.drawer, 400 ms).
                     .scaleEffect(model.recorderKind == .moment && !reduceMotion ? 0.98 : 1)
                     .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.4), value: model.recorderKind)
-                if model.openEntryID.flatMap(model.entry) == nil { chrome(geo.size) }
+                    // The live day is the surface that shrinks into its lens tile and comes back out of it.
+                    .modifier(LensPose(pose: model.lens?.dayPose))
+                if model.openEntryID.flatMap(model.entry) == nil && model.lens == nil { chrome(geo.size) }
+                if let lens = model.lens { TimeLens(lens: lens).transition(.identity) }
             }
             .overlayPreferenceValue(CaptureOriginKey.self) { [kind = model.recorderKind, grows = model.recorderGrows] origins in
                 if let kind {
@@ -40,15 +45,29 @@ struct DayView: View {
             .coordinateSpace(.named(Self.space))
         }
         .clipped()
-        .focusable()
+        .focusable(model.lens == nil)
         .focusEffectDisabled()
         .focused($focused)
+        // Arrows walk to the nearest card that way, Tab and ⇧Tab through capture order; ⌥ nudges by 8 pt, saved once the
+        // key is let go, and ⇧⌥ resizes by as much.
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow], phases: [.down, .repeat, .up]) { canvasKey($0) }
+        .onKeyPress(.tab) {
+            guard model.lens == nil, model.openEntryID == nil, !model.replay.active else { return .ignored }
+            walk(NSEvent.modifierFlags.contains(.shift) ? -1 : 1)
+            return .handled
+        }
+        .onCommand(#selector(NSText.selectAll(_:))) {
+            if model.openEntryID == nil, model.lens == nil { model.selection = Set(model.entries.map(\.id)) }
+        }
+        .onChange(of: model.lens == nil) { _, closed in if closed { focused = true } }
+        .onChange(of: model.datePickerOpen) { _, open in if !open { focused = true } }
         .onDeleteCommand {
             let flies = !Motion.byKey && !reduceMotion
             Task { await model.trash(model.selection, undoManager: undoManager, flies: flies) }
         }
         .onExitCommand {
-            if model.openEntryID != nil { model.openEntryID = nil }
+            if model.datePickerOpen { model.datePickerOpen = false }
+            else if model.openEntryID != nil { model.openEntryID = nil }
             else if model.openStackID != nil { model.openStackID = nil }
             else if model.replay.active { model.replay.exit(animated: false) }
             else if model.openVoiceID != nil { model.openVoiceID = nil }
@@ -83,6 +102,8 @@ struct DayView: View {
     }
 
     private var screenID: ScreenID {
+        if model.lens != nil { return .lens }
+        if model.datePickerOpen { return .datePicker }
         if model.recorderKind != nil { return .recorder }
         if let id = model.openEntryID, let e = model.entry(id) {
             return switch e.kind {
@@ -98,6 +119,66 @@ struct DayView: View {
         return model.openStackID != nil ? .stack : .canvas
     }
 
+    private func canvasKey(_ press: KeyPress) -> KeyPress.Result {
+        guard model.lens == nil, model.openEntryID == nil, !model.replay.active, model.recorderKind == nil, model.openStackID == nil else { return .ignored }
+        let dir: CGVector = switch press.key {
+        case .leftArrow: CGVector(dx: -1, dy: 0)
+        case .rightArrow: CGVector(dx: 1, dy: 0)
+        case .upArrow: CGVector(dx: 0, dy: -1)
+        default: CGVector(dx: 0, dy: 1)
+        }
+        let cards = model.stageCards
+        switch press.modifiers.intersection([.command, .option, .shift, .control]) {
+        case []:
+            guard press.phase != .up else { return .handled }
+            let current = cards.first { !$0.ids.isDisjoint(with: model.selection) }
+            let next = current.map { c in DayLayout.neighbour(of: c.center, toward: dir, among: cards.map { ($0.id, $0.center) }) }
+                ?? Self.captureOrder(cards).first?.id
+            if let next, let c = cards.first(where: { $0.id == next }) { model.selection = c.ids }
+        case .option:
+            if press.phase == .up {
+                if nudged { model.move(model.selection, by: .zero) }
+                nudged = false
+            } else {
+                for id in model.selection { model.layouts[id]?.x += dir.dx * 8; model.layouts[id]?.y += dir.dy * 8 }
+                nudged = !model.selection.isEmpty
+            }
+        case [.option, .shift]:
+            guard model.selection.count == 1, let id = model.selection.first, let e = model.entry(id),
+                  let spec = CanvasMath.resizeSpec(e.kind), var l = model.layouts[id] else { return .ignored }
+            if press.phase == .up {
+                if nudged { model.resize(id, to: CGRect(center: CGPoint(x: l.x, y: l.y), size: model.size(of: e)), height: l.h.map { CGFloat($0) }) }
+                nudged = false
+                return .handled
+            }
+            // The top-left corner stays; a picture with no height of its own keeps its proportions.
+            let s = model.size(of: e)
+            let w = (s.width + dir.dx * 8).clamped(to: spec.minW...spec.maxW)
+            if dir.dy != 0 || l.h != nil { l.h = Double((s.height + dir.dy * 8).clamped(to: spec.minH...spec.maxH)) }
+            l.w = Double(w)
+            model.layouts[id] = l
+            let after = model.size(of: e)
+            model.layouts[id]?.x += (after.width - s.width) / 2
+            model.layouts[id]?.y += (after.height - s.height) / 2
+            nudged = true
+        default:
+            return .ignored
+        }
+        return .handled
+    }
+
+    /// Tab and ⇧Tab walk the cards in the order they were captured.
+    private func walk(_ by: Int) {
+        let order = Self.captureOrder(model.stageCards)
+        guard !order.isEmpty else { return }
+        let i = order.firstIndex { !$0.ids.isDisjoint(with: model.selection) }.map { ($0 + by + order.count) % order.count } ?? (by > 0 ? 0 : order.count - 1)
+        model.selection = order[i].ids
+    }
+
+    private static func captureOrder(_ cards: [StageCard]) -> [StageCard] {
+        cards.sorted { ($0.item.entries.map(\.capturedAt).min() ?? .distantPast) < ($1.item.entries.map(\.capturedAt).min() ?? .distantPast) }
+    }
+
     private func chrome(_ size: CGSize) -> some View {
         ZStack {
             OrbitNav()
@@ -106,8 +187,14 @@ struct DayView: View {
             InsightSurface(height: size.height - size.height * 0.075 - 120)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(.trailing, 24).padding(.top, size.height * 0.075)
+            // A click anywhere else closes the date picker.
+            if model.datePickerOpen {
+                Color.clear.contentShape(.rect).onTapGesture { model.datePickerOpen = false }
+            }
             VStack(spacing: 10) {
-                if !model.selection.isEmpty && model.openStackID == nil {
+                if model.datePickerOpen {
+                    DatePickerPanel().transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
+                } else if !model.selection.isEmpty && model.openStackID == nil {
                     SelectionToolbar().transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 BottomBar()
@@ -116,6 +203,16 @@ struct DayView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, 20)
         }
+    }
+}
+
+/// The day under the lens, scaled about its top-left corner and offset along the lens's flight; identity otherwise, so the
+/// stage keeps its state.
+private struct LensPose: ViewModifier {
+    let pose: LensState.DayPose?
+
+    func body(content: Content) -> some View {
+        content.scaleEffect(pose?.scale ?? 1, anchor: .topLeading).offset(pose?.offset ?? .zero).opacity(Double(pose?.opacity ?? 1))
     }
 }
 
@@ -156,9 +253,45 @@ extension AppModel {
         }
     }
 
+    /// Export Day Image: the day's cards where they sit, on the ground, as a PNG saved where the person chooses. Cards draw
+    /// as on the canvas, so a held day carries none of Saro's words.
+    func exportDayImage() async {
+        let cards = stageCards
+        guard let box = CanvasMath.bounds(cards.map { CGRect(center: $0.center, size: $0.size) })?.insetBy(dx: -80, dy: -80) else {
+            return show(Toast("Nothing on this day to export yet"))
+        }
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let r = ImageRenderer(content: ZStack {
+            Tok.bg
+            ForEach(cards) { c in
+                Group { if c.item.isStack { StackFace(entries: c.item.entries) } else { CardFace(entry: c.item.top, size: c.size) } }
+                    .frame(width: c.size.width, height: c.size.height)
+                    .position(x: c.center.x - box.minX, y: c.center.y - box.minY)
+            }
+        }
+        .frame(width: box.width, height: box.height)
+        .environment(self).environment(\.colorScheme, dark ? .dark : .light))
+        r.scale = 2
+        guard let image = r.cgImage, let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+            return show(Toast("Couldn't draw the day", style: .error))
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "Saro \(DayFormat.relative(day)).png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try png.write(to: url)
+            show(Toast("Saved \(DayFormat.relative(day)) as an image"))
+        } catch {
+            show(Toast("Couldn't save the image: \(error.localizedDescription)", style: .error))
+        }
+    }
+
+    /// Every dropped file on its own cell of a grid centred where they were let go (B-021).
     func loadStills(_ providers: [NSItemProvider], at point: CGPoint?, origin: String) {
+        let grid = point.map { DayLayout.dropGrid(count: providers.count, at: $0) }
         for (i, provider) in providers.enumerated() {
-            let at = point.map { CGPoint(x: $0.x + CGFloat(i) * 30, y: $0.y + CGFloat(i) * 30) }
+            let at = grid?[i]
             _ = provider.loadDataRepresentation(for: .image) { data, _ in
                 guard let data else { return }
                 Task { @MainActor in await self.importStill(data, origin: origin, at: at) }
@@ -171,14 +304,26 @@ extension AppModel {
 struct Camera: Equatable {
     var zoom: CGFloat = 1
     var pan: CGSize = .zero
+    /// The gestures' floor and ceiling (MIN_SCALE, MAX_SCALE); a busy day's own framing may sit below the floor.
     static let range: ClosedRange<CGFloat> = 0.2...3
 
-    /// Frames every card inside the web's insets (top 104, right 120 for the spine, bottom 112 for the bar), never above 100%.
+    /// The canvas inside the web's insets: top 104, right 120 for the spine, bottom 112 for the bar.
+    static func frame(_ size: CGSize) -> CGRect {
+        CGRect(x: 40, y: 104, width: max(200, size.width - 160), height: max(200, size.height - 104 - 132))
+    }
+
+    /// Frames every card inside the insets, never above 100% and down to 8% for a very busy day (FIT_MIN_SCALE).
     static func fit(_ cards: [StageCard], in size: CGSize) -> Camera {
         guard let b = CanvasMath.bounds(cards.map { CGRect(center: $0.center, size: $0.size) }), size.width > 0 else { return Camera() }
-        let frame = CGRect(x: 40, y: 104, width: max(200, size.width - 160), height: max(200, size.height - 104 - 132))
-        let z = min(1, frame.width / b.width, frame.height / b.height).clamped(to: range)
+        let frame = frame(size)
+        let z = min(1, frame.width / b.width, frame.height / b.height).clamped(to: 0.08...1)
         return Camera(zoom: z, pan: CGSize(width: frame.midX - b.midX * z, height: frame.midY - b.midY * z))
+    }
+
+    /// The world rect this camera shows inside the insets.
+    func visible(_ size: CGSize) -> CGRect {
+        let f = Camera.frame(size)
+        return CGRect(x: (f.minX - pan.width) / zoom, y: (f.minY - pan.height) / zoom, width: f.width / zoom, height: f.height / zoom)
     }
 }
 
@@ -217,6 +362,22 @@ struct DayStage: View {
     /// The card whose handles show because the pointer is on it, kept 150 ms after the pointer leaves.
     @State private var hoverID: String?
     @State private var unhover: Task<Void, Never>?
+    /// Below the day's floor a zoom-out builds a pull (1 is none): the day shrinks slowly and dims, and at 0.7 the time
+    /// lens opens.
+    @State private var pull: CGFloat = 1
+    @State private var pullAt: CGPoint = .zero
+    @State private var settle: Task<Void, Never>?
+    /// The faint grid while the canvas pans, and when it last moved.
+    @State private var panning = false
+    @State private var panIdle: Task<Void, Never>?
+    /// Space-drag and middle-drag, with their recent pointer samples for the glide.
+    @State private var dragPan: [(t: TimeInterval, p: CGPoint)] = []
+    /// While a held card is within 60 pt of an edge, the canvas pans that way each frame and the card goes along.
+    @State private var edgePush: CGSize = .zero
+    @State private var edgePanned: CGSize = .zero
+    @State private var edgeTask: Task<Void, Never>?
+    @State private var lastHold: (card: StageCard, translation: CGSize, velocity: CGSize)?
+    @State private var relayoutTask: Task<Void, Never>?
 
     /// A card's box while one of its handles is dragged (world units).
     private struct Sizing {
@@ -295,7 +456,8 @@ struct DayStage: View {
         // Until the user pans, zooms or drags, the day stays framed as its cards arrive and settle; one flying into the
         // Undo toast leaves the rest where they are, so Undo brings it back to the same spot.
         .onChange(of: cards.map { "\($0.id)\($0.center)" }) { _, _ in
-            if !userMoved && model.trashFlight?.into != true { camera = Camera.fit(cards, in: size) }
+            // A key's nudge leaves the camera where it is.
+            if !userMoved && model.trashFlight?.into != true && !Motion.byKey { camera = Camera.fit(cards, in: size) }
         }
         .onChange(of: model.camera) { _, cmd in
             guard isCurrent, let cmd else { return }
@@ -313,6 +475,30 @@ struct DayStage: View {
                 }
             }
         }
+        // The rubber band below the floor dims the day as the pull builds.
+        .opacity(pull < 1 && !reduceMotion ? max(0, 1 - (1 - pull) * 1.2) : 1)
+        .onChange(of: camera, initial: true) { publishVisible() }
+        .onChange(of: isCurrent) { publishVisible() }
+        // A new width lays the day's untouched cards out again for its shape (B-002); a new height changes nothing.
+        .onChange(of: size.width) { _, _ in
+            guard isCurrent else { return }
+            relayoutTask?.cancel()
+            relayoutTask = Task {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                userMoved = false
+                model.relayout(for: Camera.frame(size))
+            }
+        }
+        // A card the keyboard selected is panned into view, instantly (the frequency rule).
+        .onChange(of: model.selection) { _, ids in
+            guard isCurrent, Motion.byKey, ids.count == 1, let c = cards.first(where: { !$0.ids.isDisjoint(with: ids) }) else { return }
+            let r = screenRect(c), f = Camera.frame(size)
+            guard !f.contains(r) else { return }
+            userMoved = true
+            camera.pan.width += r.minX < f.minX ? f.minX - r.minX : r.maxX > f.maxX ? max(f.minX - r.minX, f.maxX - r.maxX) : 0
+            camera.pan.height += r.minY < f.minY ? f.minY - r.minY : r.maxY > f.maxY ? max(f.minY - r.minY, f.maxY - r.maxY) : 0
+        }
     }
 
     // MARK: Coordinates
@@ -320,10 +506,120 @@ struct DayStage: View {
     private func screen(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x * camera.zoom + camera.pan.width, y: p.y * camera.zoom + camera.pan.height) }
     private func world(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - camera.pan.width) / camera.zoom, y: (p.y - camera.pan.height) / camera.zoom) }
 
-    private func zoom(by factor: CGFloat, at p: CGPoint) {
-        let next = (camera.zoom * factor).clamped(to: Camera.range)
+    /// The wheel's floor: 20%, or lower when the day only fits further out, so its own framing isn't a pull.
+    private var floor: CGFloat { min(Camera.range.lowerBound, Camera.fit(cards, in: size).zoom) }
+
+    private func setZoom(_ next: CGFloat, at p: CGPoint) {
         camera.pan = CGSize(width: p.x - (p.x - camera.pan.width) * next / camera.zoom, height: p.y - (p.y - camera.pan.height) * next / camera.zoom)
         camera.zoom = next
+    }
+
+    /// A key or menu zoom stops at the floor.
+    private func zoom(by factor: CGFloat, at p: CGPoint) {
+        setZoom((camera.zoom * factor).clamped(to: floor...Camera.range.upperBound), at: p)
+    }
+
+    /// A pinch or ⌘-scroll: one level through the floor, where the zoom becomes a pull (Canvas.tsx zoomAt). The day keeps
+    /// shrinking slowly (floor × pull^0.35) and dims, and once the pull reaches 0.7 the lens opens and the same gesture
+    /// carries on into it. Let go before that and it springs back. Reduce Motion: no pull to see, the lens fades in.
+    private func pinch(by factor: CGFloat, at p: CGPoint) {
+        let lo = floor
+        let level = (pull < 1 ? lo * pull : camera.zoom) * factor
+        pull = level < lo ? level / lo : 1
+        pullAt = p
+        if pull < 0.7 {
+            pull = 1
+            settle?.cancel()
+            if PrefsStore.shared.haptics { NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now) }
+            model.openLens(level: .week, opener: .pinch)
+            return
+        }
+        setZoom(pull < 1 ? (reduceMotion ? lo : lo * pow(pull, 0.35)) : min(Camera.range.upperBound, level), at: p)
+    }
+
+    /// The pull springs back to the floor when the fingers lift (or 160 ms after a mouse wheel's last notch).
+    private func endPull(after e: NSEvent) {
+        settle?.cancel()
+        let lifted = e.phase == .ended || e.phase == .cancelled
+        guard pull < 1, lifted || e.phase.isEmpty else { return }
+        settle = Task {
+            if !lifted { try? await Task.sleep(for: .milliseconds(160)) }
+            guard !Task.isCancelled, pull < 1, model.lens == nil else { return }
+            withAnimation(Motion.pick(Motion.surface, reduce: reduceMotion)) {
+                setZoom(floor, at: pullAt)
+                pull = 1
+            }
+        }
+    }
+
+    /// Pans the camera, with the faint grid out from the pointer until 160 ms after the last move.
+    private func panBy(_ d: CGSize, at p: CGPoint?, animated: Bool = false) {
+        userMoved = true
+        withAnimation(animated && !reduceMotion ? .spring(duration: 0.25) : nil) {
+            camera.pan = CGSize(width: camera.pan.width + d.width, height: camera.pan.height + d.height)
+        }
+        if let p { pulseGrid(at: p) }
+    }
+
+    private func pulseGrid(at p: CGPoint) {
+        guard !reduceMotion, drag == nil, sizing == nil else { return }
+        let at = CGRect(center: world(p), size: .zero)
+        if panning, var g = grid { g.move(to: at, x: nil, y: nil); grid = g } else {
+            panning = true
+            grid = DragGrid(rect: at, others: cards.map { CGRect(center: $0.center, size: $0.size) }, zoom: camera.zoom)
+        }
+        panIdle?.cancel()
+        panIdle = Task {
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled else { return }
+            panning = false
+            retractGrid()
+        }
+    }
+
+    /// Space-drag or middle-drag: the canvas follows 1:1, then glides on (velocity × 0.12 over 250 ms) unless the
+    /// pointer rested 60 ms before letting go or moved slower than 20 pt/s.
+    private func dragPan(_ phase: NSEvent.EventType, at p: CGPoint) {
+        let now = ProcessInfo.processInfo.systemUptime
+        switch phase {
+        case .leftMouseDown, .otherMouseDown:
+            dragPan = [(now, p)]
+        case .leftMouseDragged, .otherMouseDragged:
+            guard let last = dragPan.last else { return }
+            panBy(CGSize(width: p.x - last.p.x, height: p.y - last.p.y), at: p)
+            dragPan = (dragPan + [(now, p)]).suffix(8)
+        default:
+            defer { dragPan = [] }
+            guard let last = dragPan.last, now - last.t < 0.06, let first = dragPan.first(where: { last.t - $0.t <= 0.1 }), last.t > first.t else { return }
+            let v = CGSize(width: (last.p.x - first.p.x) / (last.t - first.t), height: (last.p.y - first.p.y) / (last.t - first.t))
+            guard hypot(v.width, v.height) >= 20, !reduceMotion else { return }
+            withAnimation(.timingCurve(0.2, 0.8, 0.3, 1, duration: 0.75)) {
+                camera.pan = CGSize(width: camera.pan.width + v.width * 0.12, height: camera.pan.height + v.height * 0.12)
+            }
+        }
+    }
+
+    /// Holding a card within 60 pt of an edge pans the canvas that way, faster the closer it gets; the card goes along.
+    private func edge(_ location: CGPoint) {
+        let push = { (d: CGFloat) in d < 60 ? (60 - d) / 60 * 12 : 0 }
+        edgePush = CGSize(width: push(location.x) - push(size.width - location.x), height: push(location.y) - push(size.height - location.y))
+        guard edgePush != .zero, edgeTask == nil else { return }
+        edgeTask = Task {
+            while !Task.isCancelled, edgePush != .zero, drag != nil {
+                camera.pan = CGSize(width: camera.pan.width + edgePush.width, height: camera.pan.height + edgePush.height)
+                edgePanned = CGSize(width: edgePanned.width + edgePush.width, height: edgePanned.height + edgePush.height)
+                if let h = lastHold { hold(h.card, translation: h.translation, velocity: h.velocity) }
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            edgeTask = nil
+        }
+    }
+
+    /// Publishes what the camera shows, so new cards land in it.
+    private func publishVisible() {
+        guard isCurrent else { return }
+        model.visibleWorld = camera.visible(size)
+        if model.stageSize != size { model.stageSize = size }
     }
 
     private func screenRect(_ c: StageCard) -> CGRect {
@@ -345,15 +641,23 @@ struct DayStage: View {
             Color.clear
             // The letter, the Noticed panel, ⌘K and dev notes scroll themselves; the monitor would take their wheel.
             CanvasEvents(enabled: isCurrent && shownID == nil && model.recorderKind == nil && model.openStackID == nil
-                             && model.insight == .spine && !model.searchOpen && !model.devNotesVisible,
-                         onPan: { d in
-                             userMoved = true
-                             camera.pan = CGSize(width: camera.pan.width + d.width, height: camera.pan.height + d.height)
+                             && model.insight == .spine && !model.searchOpen && !model.devNotesVisible && model.lens == nil
+                             && !model.datePickerOpen,
+                         onPan: { d, p, e in
+                             // A mouse wheel's notch springs through its step; a trackpad follows the fingers.
+                             panBy(d, at: p, animated: !e.hasPreciseScrollingDeltas)
                          },
-                         onZoom: { f, p in
+                         onZoom: { f, p, e in
                              userMoved = true
-                             zoom(by: f, at: p)
-                         })
+                             if e.type == .scrollWheel, !e.hasPreciseScrollingDeltas, pull >= 1, camera.zoom * f >= floor {
+                                 withAnimation(reduceMotion ? nil : .spring(duration: 0.25)) { zoom(by: f, at: p) }
+                             } else {
+                                 pinch(by: f, at: p)
+                             }
+                             pulseGrid(at: p)
+                             endPull(after: e)
+                         },
+                         onDragPan: model.replay.active ? nil : { phase, p in dragPan(phase, at: p) })
             if dropTargeted {
                 RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .padding(12)
@@ -434,8 +738,14 @@ struct DayStage: View {
     /// guide when one is close to where it would stop, and settles on the release spring (useCardGesture.ts).
     private func dragGesture(_ c: StageCard) -> some Gesture {
         DragGesture(minimumDistance: 4)
-            .onChanged { v in hold(c, translation: v.translation, velocity: v.velocity) }
+            .onChanged { v in
+                lastHold = (c, v.translation, v.velocity)
+                hold(c, translation: v.translation, velocity: v.velocity)
+                edge(v.location)
+            }
             .onEnded { v in
+                edgeTask?.cancel()
+                (edgeTask, edgePush, edgePanned, lastHold) = (nil, .zero, .zero, nil)
                 guard let d = drag, let g = grid else { return }
                 let speed = hypot(v.velocity.width, v.velocity.height)
                 var total = d.offset
@@ -458,8 +768,11 @@ struct DayStage: View {
     }
 
     /// The first move lifts the card(s) and draws the grid out from them; every move snaps.
-    private func hold(_ c: StageCard, translation t: CGSize, velocity: CGSize) {
+    private func hold(_ c: StageCard, translation: CGSize, velocity: CGSize) {
         userMoved = true
+        // What the edge pan moved the canvas by comes off, so the card stays under the pointer.
+        let t = CGSize(width: translation.width - edgePanned.width, height: translation.height - edgePanned.height)
+        if panning { (panning, grid) = (false, nil) }
         let ids = drag?.ids ?? memberIDs(model.selection.isDisjoint(with: c.ids) ? c.ids : model.selection.union(c.ids))
         guard let box = CanvasMath.bounds(cards.filter { !$0.ids.isDisjoint(with: ids) }.map { CGRect(center: $0.center, size: $0.size) }) else { return }
         if drag == nil {
@@ -837,7 +1150,7 @@ struct DayStateView: View {
                 failed.transition(.asymmetric(insertion: reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)), removal: .opacity)
                     .animation(Motion.easeOut(0.4)))
             case .empty:
-                EmptyDay(today: day == LocalDay.today()).transition(.asymmetric(insertion: .identity, removal: .opacity.animation(Motion.easeOut(0.5))))
+                EmptyDay(day: day).transition(.asymmetric(insertion: .identity, removal: .opacity.animation(Motion.easeOut(0.5))))
             case nil:
                 EmptyView()
             }
@@ -922,17 +1235,21 @@ private struct RetryStyle: ButtonStyle {
     }
 }
 
-/// "Nothing here yet." in Newsreader, rising 6 pt over 500 ms (DayState.tsx).
+/// "Nothing here yet." or "Nothing from yesterday." in Newsreader, rising 6 pt over 500 ms (DayState.tsx). A past day says
+/// a capture now is saved to it, which is what backdating does here.
 private struct EmptyDay: View {
-    let today: Bool
+    let day: String
     @State private var shown = false
 
     var body: some View {
+        let today = day == LocalDay.today()
+        let label = DayFormat.relative(day)
         VStack(spacing: 10) {
-            Text(today ? "Nothing here yet." : "Nothing was saved on this day.").font(Typo.serif(28)).foregroundStyle(Tok.ink)
-            Text("Record a moment, leave a voice note or write. Drop or paste a photo to keep a still.")
+            Text(today ? "Nothing here yet." : "Nothing from \(label == "Yesterday" ? "yesterday" : label).").font(Typo.serif(28)).foregroundStyle(Tok.ink)
+            Text(today ? "Start with a moment, a voice note or a few words." : "Anything you add now is saved to this day.")
                 .font(Typo.ui(14)).foregroundStyle(Tok.ink2)
         }
+        .multilineTextAlignment(.center)
         .opacity(shown ? 1 : 0)
         .offset(y: shown ? 0 : 6)
         .onAppear { withAnimation(Motion.easeOut(0.5)) { shown = true } }
