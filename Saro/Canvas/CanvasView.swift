@@ -323,7 +323,7 @@ struct DayStage: View {
                 RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .padding(12)
             }
-            if cards.isEmpty { EmptyDay(today: day == LocalDay.today()) }
+            DayState(day: day, empty: cards.isEmpty, width: size.width)
         }
         .contentShape(.rect)
         .gesture(marqueeGesture)
@@ -638,6 +638,132 @@ struct MorphFlight: View, @MainActor Animatable {
         .elevation(v > 0.5 ? .overlay : .panel)
         .position(x: cx, y: cy)
         .opacity(crossfadeOnly ? v : 1)
+    }
+}
+
+/// What the canvas says when it has no cards (DayState.tsx): the day is loading (only once that is slow enough to notice,
+/// so a quick load doesn't flash), it couldn't be read, or it is honestly empty.
+struct DayState: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let day: String
+    let empty: Bool
+    let width: CGFloat
+    @State private var slow = false
+
+    private enum Shown { case loading, failed, empty }
+
+    /// A day sliding away keeps what it said.
+    private var current: Bool { model.day == day }
+    /// Not while it shows it failed, so Try again waits its 150 ms before the skeleton, as the first load did.
+    private var loading: Bool { current && model.loadedDay != day && !model.loadFailed }
+
+    private var shown: Shown? {
+        if current && model.loadFailed { return .failed }
+        if loading { return slow && empty ? .loading : nil }
+        return empty ? .empty : nil
+    }
+
+    /// "Today" and "Yesterday" read lower-case mid-sentence ("Couldn't load yesterday.").
+    private var label: String {
+        let s = DayFormat.sidebar(day)
+        return ["Today", "Yesterday"].contains(s) ? s.lowercased() : s
+    }
+
+    var body: some View {
+        ZStack {
+            switch shown {
+            case .loading:
+                Skeleton(width: width)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Loading \(label)…")
+                    .transition(.opacity.animation(Motion.easeOut(0.2)))
+            case .failed:
+                failed.transition(.asymmetric(insertion: reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)), removal: .opacity)
+                    .animation(Motion.easeOut(0.4)))
+            case .empty:
+                EmptyDay(today: day == LocalDay.today()).transition(.asymmetric(insertion: .identity, removal: .opacity.animation(Motion.easeOut(0.5))))
+            case nil:
+                EmptyView()
+            }
+        }
+        .task(id: loading) {
+            slow = false
+            guard loading else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            if !Task.isCancelled { slow = true }
+        }
+    }
+
+    private var failed: some View {
+        VStack(spacing: 8) {
+            Text("Couldn't load \(label).").font(Typo.ui(15, .medium)).foregroundStyle(Tok.ink)
+            Text("Saro couldn't read the journal on this Mac.").font(Typo.ui(13)).tracking(0.13).foregroundStyle(Tok.ink2)
+            Button("Try again") {
+                model.loadFailed = false
+                Task { await model.reload() }
+            }
+            .buttonStyle(RetryStyle())
+            .padding(.top, 8)
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 24).padding(.vertical, 20)
+        // ponytail: sized to its two short lines; the web's 384 pt cap only matters to text long enough to wrap.
+        .fixedSize()
+        .glassPanel()
+        .onAppear { AccessibilityNotification.Announcement("Couldn't load \(label).").post() }
+    }
+}
+
+/// Three shimmer blocks, 24 pt apart, each 120 ms behind the last; the outer two give way on a narrow window.
+private struct Skeleton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let width: CGFloat
+    @State private var start = Date.now
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            let t = context.date.timeIntervalSince(start)
+            HStack(spacing: 24) {
+                if width >= 768 { block(CGSize(width: 220, height: 150), t: t) }
+                block(CGSize(width: min(280, width * 0.6), height: 190), t: t - 0.12)
+                if width >= 640 { block(CGSize(width: 200, height: 150), t: t - 0.24) }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The `shimmer` keyframes: surface-alt light sweeping over line/50, 1.6 s ease-in-out, forever; still under Reduce Motion.
+    private func block(_ size: CGSize, t: Double) -> some View {
+        let p = reduceMotion || t < 0 ? 0 : UnitCurve.easeInOut.value(at: t.truncatingRemainder(dividingBy: 1.6) / 1.6)
+        let line = Tok.line.opacity(0.5)
+        return LinearGradient(stops: [.init(color: line, location: 0), .init(color: Tok.surfaceAlt, location: 0.25),
+                                      .init(color: line, location: 0.5), .init(color: Tok.surfaceAlt, location: 0.75),
+                                      .init(color: line, location: 1)], startPoint: .leading, endPoint: .trailing)
+            .frame(width: size.width * 4, height: size.height)
+            .offset(x: CanvasMath.shimmerOffset(width: size.width, progress: p))
+            .frame(width: size.width, height: size.height, alignment: .leading)
+            .clipShape(.rect(cornerRadius: Radius.sheet))
+    }
+}
+
+/// The web's sage call to action: 44 pt tall, radius 8, sage-dark on hover, 0.98 on press, the cta shadow.
+private struct RetryStyle: ButtonStyle {
+    @State private var hover = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typo.ui(13, .medium)).tracking(0.13)
+            .foregroundStyle(Tok.onPrimary)
+            .padding(.horizontal, 20)
+            .frame(minHeight: 44)
+            .background(hover ? Tok.sageDark : Tok.sage, in: .rect(cornerRadius: Radius.control))
+            .shadow(color: Tok.sage.opacity(0.22), radius: 10, y: 4)
+            .contentShape(.rect(cornerRadius: Radius.control))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
+            .animation(Motion.easeOut(0.16), value: hover)
+            .onHover { hover = $0 }
     }
 }
 

@@ -90,6 +90,10 @@ final class AppModel {
     /// `saro://knows?q=`: what What Saro knows opens filtered by.
     var knowsQuery: String?
 
+    /// The day whose data is on screen; it lags `day` until that day's first load lands (Canvas.tsx's loadedDay).
+    private(set) var loadedDay: String?
+    /// The day on screen couldn't be read, so the canvas says so instead of looking empty (DayState.tsx).
+    var loadFailed = false
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
     private var queue: [String] = []
@@ -210,6 +214,7 @@ final class AppModel {
 
     /// Everything one day's canvas shows, loaded together so a day change swaps it in one step.
     struct DayData {
+        var day: String?
         var entries: [Entry] = []
         var layouts: [String: CardLayout] = [:]
         var annotations: [String: EntryAnnotation] = [:]
@@ -220,7 +225,7 @@ final class AppModel {
     }
 
     private func load(_ day: String) async throws -> DayData {
-        var d = DayData()
+        var d = DayData(day: day)
         d.entries = try await ledger.entries(day: day)
         d.layouts = try await ledger.layouts(day: day)
         d.annotations = try await ledger.annotations(day: day)
@@ -257,6 +262,8 @@ final class AppModel {
     }
 
     private func apply(_ d: DayData) {
+        loadedDay = d.day
+        loadFailed = false
         entries = d.entries
         layouts = d.layouts
         annotations = d.annotations
@@ -281,7 +288,14 @@ final class AppModel {
             try await placeNewCards()
             week = await loadWeek()
         } catch {
-            show(Toast("Couldn't read the journal: \(error.localizedDescription)", style: .error))
+            // An empty canvas would look like lost entries, so a day that never loaded says what happened on the canvas;
+            // one already on screen keeps its cards.
+            if target == day && loadedDay != target {
+                apply(DayData())
+                loadFailed = true
+            } else {
+                show(Toast("Couldn't read the journal: \(error.localizedDescription)", style: .error))
+            }
         }
     }
 
@@ -315,7 +329,8 @@ final class AppModel {
                 openStackID = nil
                 openVoiceID = nil
                 selection = []
-                if let data { apply(data) }
+                // A day that couldn't be read mustn't show the day before's cards; the reload below says why.
+                apply(data ?? DayData())
             }
             await reload()
         }
