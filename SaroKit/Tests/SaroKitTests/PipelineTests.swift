@@ -203,6 +203,29 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "on_device")
 }
 
+/// A model call that never answers is given up once, and deferred like a rate limit (§11.7), so it can't hold the queue.
+@Test func aTimedOutCallIsDeferredLikeARateLimit() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    let asked = CallLog()
+    let p = Pipeline(ledger: l, ai: stubAI { ask in
+        guard ask == .classify else { await asked.hitPermissive(); throw Ladder.Timeout() }
+        return "NONE"
+    })
+    await p.process(entryId: e.id) {}
+    #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "clear")
+    #expect(try await l.annotations(day: e.localDay).isEmpty)
+    #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
+    #expect(await asked.permissive == 1)
+    #expect(await !p.learn(entryId: e.id))
+    #expect(try await l.unlearnedEntryIDs(extractor: MemoryRules.extractorVersion) == [e.id])
+
+    await Pipeline(ledger: l, ai: answers()).process(entryId: e.id) {}
+    #expect(await p.readDay(e.localDay) == nil)
+    #expect(try await l.latestSnapshot(kind: "day_reading", day: e.localDay) == nil)
+}
+
 @Test func heuristicReadingGivesWayOnceTheModelCanRun() async throws {
     let l = try tempLedger()
     let e = Entry(kind: .reflection, body: chai)

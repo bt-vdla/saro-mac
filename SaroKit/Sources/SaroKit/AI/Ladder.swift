@@ -41,19 +41,23 @@ enum Ladder {
         return (fallback, .heuristic, calls, nil)
     }
 
+    /// A call that outlasted `SaroAI.callTimeout`.
+    struct Timeout: Error {}
+
     /// Errors where another call can't help or must not happen: guardrail and refusal (SR-09), an over-long input
-    /// (never retried, §11.5), an unsupported language, missing assets, a rate limit (deferred, §11.7).
+    /// (never retried, §11.5), an unsupported language, missing assets, a rate limit or a timeout (deferred, §11.7).
     static func isStop(_ error: any Error) -> Bool {
-        if error is SystemLanguageModel.Error { return true }
+        if error is SystemLanguageModel.Error || error is Timeout { return true }
         guard let error = error as? LanguageModelError else { return false }
         switch error {
-        case .guardrailViolation, .refusal, .contextSizeExceeded, .unsupportedLanguageOrLocale, .rateLimited: return true
+        case .guardrailViolation, .refusal, .contextSizeExceeded, .unsupportedLanguageOrLocale, .rateLimited, .timeout: return true
         default: return false
         }
     }
 
     static func reason(_ error: any Error) -> String {
         if error is SystemLanguageModel.Error { return "assetsUnavailable" }
+        if error is Timeout { return "timeout" }
         guard let error = error as? LanguageModelError else { return "error" }
         switch error {
         case .guardrailViolation: return "guardrail"

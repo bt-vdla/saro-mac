@@ -70,7 +70,7 @@ extension Pipeline {
             let candidates = Heuristics.candidates(entryId: entryId, field: src.field, text: text)
             let (picks, prov) = await ai.extractMemory(text: text, candidates: candidates)
             switch prov.status {
-            case "rate_limited":
+            case "rate_limited", "timeout":
                 return await retractStale() // deferred (§11.7): no run, so the next pass or the backfill reads it
             case "output_gate":
                 // Layer 3 (SR-08): a hit in the reply holds the entry, as the entry reading does; the hold drops its rows.

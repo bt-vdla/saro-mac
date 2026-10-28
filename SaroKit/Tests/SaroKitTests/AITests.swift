@@ -181,6 +181,17 @@ func walk(permissive: @escaping @Sendable (Int) async throws -> String,
     #expect(try await SaroAI.withTimeout(.seconds(5)) { 7 } == 7)
 }
 
+@Test func aCallThatNeverAnswersTimesOutAndStopsTheLadder() async throws {
+    await #expect(throws: Ladder.Timeout.self) {
+        try await SaroAI.ask(SystemLanguageModel.default, "", "", SaroAI.options, { _ in try await Task.sleep(for: .seconds(60)); return "" },
+                             limit: .milliseconds(50))
+    }
+    let log = CallLog()
+    let result = await walk(permissive: { _ in throw Ladder.Timeout() }, guided: { _ in guidedReading }, log: log)
+    #expect(result.stop == "timeout" && result.calls == 1)
+    #expect(await log.guided == 0)
+}
+
 // MARK: Live model (synthetic text only, SR-28)
 
 let liveModelAvailable = SystemLanguageModel.default.availability == .available

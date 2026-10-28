@@ -153,7 +153,7 @@ public actor Pipeline {
                                                     osBuild: SaroAI.osBuild, contextSize: nil, promptVersion: SaroAI.entryPromptVersion,
                                                     tokensIn: nil, modelCalls: 0, latencyMs: 0))
         }
-        if prov.status == "rate_limited" {
+        if prov.status == "rate_limited" || prov.status == "timeout" {
             // Deferred, not failed (§11.7): nothing stored, so a later pass reads it.
             await status(ProcessingStatus.pending)
             return
@@ -307,7 +307,7 @@ public actor Pipeline {
             (reading, prov) = (fallback, Provenance(executor: "heuristic", rung: .heuristic, guardrails: nil, variant: nil, osBuild: SaroAI.osBuild,
                                                     contextSize: nil, promptVersion: SaroAI.dayPromptVersion, tokensIn: nil, modelCalls: 0, latencyMs: 0))
         }
-        if prov.status == "rate_limited" { return nil } // deferred (§11.7): the next readDay asks again
+        if prov.status == "rate_limited" || prov.status == "timeout" { return nil } // deferred (§11.7): the next readDay asks again
         let locked = await answeredQuestion(day)
         if let locked { reading.question = locked.question }
         let narrative = DayNarrative.draft(day: day, entries: told, recent: await recentNarrativeEntries(before: day), avoidTitle: avoid)

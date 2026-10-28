@@ -54,6 +54,8 @@ public actor SaroAI {
     static let outputReserve = 600
     static let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: outputReserve)
     static let classifierTimeout: Duration = .seconds(6)
+    /// Every other call. // calibration knob: a reading answers in a few seconds; this only catches one that never does.
+    static let callTimeout: Duration = .seconds(30)
 
     let base = SystemLanguageModel.default
     private let permissive = SystemLanguageModel(guardrails: .permissiveContentTransformations)
@@ -360,18 +362,25 @@ public actor SaroAI {
         }
     }
 
-    /// One call in a fresh session (§11.7); the test stub answers in the model's place.
+    /// One call in a fresh session (§11.7); the test stub answers in the model's place. A call that outlasts `limit`
+    /// throws `Ladder.Timeout`, so one that never answers can't hold the one-job queue.
     static func ask(_ model: SystemLanguageModel, _ instructions: String, _ prompt: String, _ options: GenerationOptions,
-                    _ stub: (@Sendable (String) async throws -> String)?) async throws -> String {
-        if let stub { return try await stub(prompt) }
-        return try await LanguageModelSession(model: model, instructions: instructions).respond(to: prompt, options: options).content
+                    _ stub: (@Sendable (String) async throws -> String)?, limit: Duration = callTimeout) async throws -> String {
+        guard let reply = try await withTimeout(limit, {
+            if let stub { return try await stub(prompt) }
+            return try await LanguageModelSession(model: model, instructions: instructions).respond(to: prompt, options: options).content
+        }) else { throw Ladder.Timeout() }
+        return reply
     }
 
-    static func ask<T: Generable>(_ type: T.Type, _ model: SystemLanguageModel, _ instructions: String, _ prompt: String,
-                                  _ options: GenerationOptions, _ stub: (@Sendable (String) async throws -> String)?) async throws -> T {
-        if let stub { return try await Ladder.decode(T.self, from: stub(prompt)) }
-        return try await LanguageModelSession(model: model, instructions: instructions)
-            .respond(to: prompt, generating: T.self, options: options).content
+    static func ask<T: Generable & Sendable>(_ type: T.Type, _ model: SystemLanguageModel, _ instructions: String, _ prompt: String,
+                                             _ options: GenerationOptions, _ stub: (@Sendable (String) async throws -> String)?) async throws -> T {
+        guard let reply = try await withTimeout(callTimeout, {
+            if let stub { return try await Ladder.decode(T.self, from: stub(prompt)) }
+            return try await LanguageModelSession(model: model, instructions: instructions)
+                .respond(to: prompt, generating: T.self, options: options).content
+        }) else { throw Ladder.Timeout() }
+        return reply
     }
 
     private func provenance(_ rung: Rung, _ calls: Int, _ tokensIn: Int?, _ promptVersion: String,
