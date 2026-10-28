@@ -3,13 +3,17 @@ import Foundation
 /// Schema migrations, indexed by `PRAGMA user_version`: position decides the version, the names are only labels.
 /// Append a new migration at the END for every change; never insert, reorder or edit a shipped one.
 enum Schema {
-    static let migrations: [String] = [v1, v3, stills, v4, v5]
+    // cardSize shipped third on dogfood/v0 before the packages' migrations, so it keeps that place.
+    static let migrations: [String] = [v1, v3, cardSize, stills, v4, v5]
 
     /// Tables that may only be inserted into (DR-05). The trigger aborts any UPDATE.
     static let appendOnly = [
         "ai_run", "ai_run_input", "entry_annotation", "observation", "observation_retraction",
         "insight_snapshot", "safety_verdict", "decision_event", "screen_note",
     ]
+
+    /// A card's own size, set by its resize handles; NULL is the default size for its type.
+    static let cardSize = "ALTER TABLE card_layout ADD COLUMN w REAL; ALTER TABLE card_layout ADD COLUMN h REAL;"
 
     static let v1 = """
     CREATE TABLE media_asset (

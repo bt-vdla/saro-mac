@@ -214,10 +214,11 @@ public actor Ledger {
         try db.transaction {
             for l in layouts {
                 try db.run("""
-                    INSERT INTO card_layout (entry_id, x, y, z, stack_id, user_placed, updated_at) VALUES (?,?,?,?,?,?,?)
+                    INSERT INTO card_layout (entry_id, x, y, z, stack_id, user_placed, w, h, updated_at) VALUES (?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(entry_id) DO UPDATE SET x=excluded.x, y=excluded.y, z=excluded.z, stack_id=excluded.stack_id,
-                      user_placed=excluded.user_placed, updated_at=excluded.updated_at
-                    """, [.text(l.entryId), .real(l.x), .real(l.y), .int(Int64(l.z)), l.stackId.sql, .int(l.userPlaced ? 1 : 0), .text(Date.now.iso)])
+                      user_placed=excluded.user_placed, w=excluded.w, h=excluded.h, updated_at=excluded.updated_at
+                    """, [.text(l.entryId), .real(l.x), .real(l.y), .int(Int64(l.z)), l.stackId.sql, .int(l.userPlaced ? 1 : 0),
+                          l.w.sql, l.h.sql, .text(Date.now.iso)])
             }
         }
     }
@@ -228,7 +229,7 @@ public actor Ledger {
         for r in rows {
             let id = r.str("entry_id") ?? ""
             out[id] = CardLayout(entryId: id, x: r.dbl("x") ?? 0, y: r.dbl("y") ?? 0, z: r.int("z") ?? 0,
-                                 stackId: r.str("stack_id"), userPlaced: r.int("user_placed") == 1)
+                                 stackId: r.str("stack_id"), userPlaced: r.int("user_placed") == 1, w: r.dbl("w"), h: r.dbl("h"))
         }
         return out
     }
@@ -403,4 +404,8 @@ extension Optional where Wrapped == String {
 
 extension Optional where Wrapped == Int {
     var sql: SQLValue { map { .int(Int64($0)) } ?? .null }
+}
+
+extension Optional where Wrapped == Double {
+    var sql: SQLValue { map { .real($0) } ?? .null }
 }

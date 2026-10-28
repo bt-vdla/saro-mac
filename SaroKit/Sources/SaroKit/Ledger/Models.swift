@@ -127,14 +127,20 @@ public struct CardLayout: Sendable, Hashable, Codable {
     public var z: Int
     public var stackId: String?
     public var userPlaced: Bool
+    /// Set by resizing; nil is the type's default (a nil height follows the width where the card keeps proportions).
+    public var w: Double?
+    public var h: Double?
 
-    public init(entryId: String, x: Double, y: Double, z: Int = 0, stackId: String? = nil, userPlaced: Bool = false) {
+    public init(entryId: String, x: Double, y: Double, z: Int = 0, stackId: String? = nil, userPlaced: Bool = false,
+                w: Double? = nil, h: Double? = nil) {
         self.entryId = entryId
         self.x = x
         self.y = y
         self.z = z
         self.stackId = stackId
         self.userPlaced = userPlaced
+        self.w = w
+        self.h = h
     }
 }
 
