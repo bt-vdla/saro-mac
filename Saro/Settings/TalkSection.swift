@@ -29,15 +29,17 @@ struct TalkSection: View {
             }
         }
         .task { await load() }
-        .task(id: model.days.first.map { "\($0.day)-\($0.count)" }) {
+        // A day held by an answer or a mood note changes no count, only its status: either picks the sentence again (SR-13).
+        .task(id: "\(model.days.first.map { "\($0.day)-\($0.count)" } ?? "")-\(model.day)-\(model.dayStatus)") {
             let next = await ToneSource.latest(model)
             source = next
             lines = Self.rewrites[next.sentence]
             guard lines == nil, Readiness.model().isReady else { return }
             // The rules show at once; the model's lines replace them once they pass the output gate and drift check.
-            let (tones, run) = await model.ai.tonePreview(next.sentence, localDay: next.day)
+            let (tones, run) = await model.exclusive { await model.ai.tonePreview(next.sentence, localDay: next.day) }
             try? await model.ledger.insertRun(run, inputs: next.inputs)
-            Self.rewrites[next.sentence] = tones
+            // A busy or failed model is tried again next time, not kept as the rules' lines for the session.
+            if run.status == "ok" { Self.rewrites[next.sentence] = tones }
             if source == next { withAnimation(Motion.fade) { lines = tones } }
         }
     }
