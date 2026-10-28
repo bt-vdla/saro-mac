@@ -216,6 +216,8 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         try await l.insertEntry(e)
         try await l.updateSummary(id: e.id, "About the move.")
         #expect(try await l.summaryUser(id: e.id) == "About the move.")
+        #expect(try await l.entry(e.id)?.summaryUser == "About the move.")
+        #expect(try await l.entries(day: e.localDay).first?.summaryUser == "About the move.")
         try await l.updateSummary(id: e.id, nil)
         #expect(try await l.summaryUser(id: e.id) == nil)
     }

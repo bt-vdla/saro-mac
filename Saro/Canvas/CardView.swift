@@ -185,12 +185,22 @@ struct CardFace: View {
         let (title, body) = model.titleAndBody(entry)
         // Given its own height, the page fills it; otherwise its words stop at 128 pt, as on the web.
         let sized = box.height != CanvasMath.size(entry.kind).height
+        // Edit Details' caption under a page (TextReflectionCard.tsx); a song's artist is its byline in the link's place
+        // (MusicCard.tsx).
+        let caption = entry.captionUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let shown = entry.kind == .music && !caption.isEmpty ? caption : body
         return VStack(alignment: .leading, spacing: 8) {
             Text(title).font(Typo.ui(15, .semibold)).foregroundStyle(Tok.reflectionInk).lineLimit(2)
-            Text(body.isEmpty ? "Empty page" : body)
-                .font(Typo.ui(13)).lineSpacing(2.5).foregroundStyle(body.isEmpty ? Tok.ink4 : Tok.ink2)
+            Text(shown.isEmpty ? "Empty page" : shown)
+                .font(Typo.ui(13)).lineSpacing(2.5).foregroundStyle(shown.isEmpty ? Tok.ink4 : Tok.ink2)
                 .frame(maxWidth: .infinity, maxHeight: sized ? .infinity : 128, alignment: .topLeading)
                 .clipped()
+            if entry.kind == .reflection, !caption.isEmpty {
+                Text(caption).font(Typo.ui(13, .medium)).foregroundStyle(Tok.reflectionInk).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+                    .overlay(alignment: .top) { Rectangle().fill(Tok.reflection.opacity(0.25)).frame(height: 1) }
+            }
             if !sized { Spacer(minLength: 0) }
             CardMeta(entry: entry, showTitle: false)
         }
