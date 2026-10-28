@@ -93,6 +93,8 @@ final class CaptureController {
     @ObservationIgnored private var ended: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var closed: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var promptRow: (generator: String, runId: String?) = ("curated", nil)
+    /// `dayHeld` for a day the window isn't showing; held until read.
+    private var heldElsewhere = true
 
     private init() {
         for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
@@ -116,7 +118,31 @@ final class CaptureController {
     var takeURL: URL? { take.flatMap { pending[$0.url] == nil ? $0.url : nil } }
     var hasKept: Bool { keptCount > 0 }
     /// The prompt as shown: none on a held day (SR-13), as a page's prompt row.
-    var shownPrompt: String? { prompt.isEmpty || model?.isDayHeld != false ? nil : prompt }
+    var shownPrompt: String? { prompt.isEmpty || dayHeld ? nil : prompt }
+
+    /// The day this session records into: today from the panel, the window's day from the window.
+    var sessionDay: String? { turn > 0 ? day : owner == .panel ? LocalDay.today() : model?.day }
+
+    /// SR-13 for the session's day, which the window may not be showing (the panel always records into today).
+    var dayHeld: Bool {
+        guard let model else { return true }
+        return sessionDay == model.day ? model.isDayHeld : heldElsewhere
+    }
+
+    /// Whether `day` is held, from the ledger when the window isn't showing it.
+    func isHeld(_ day: String) async -> Bool {
+        guard let model else { return true }
+        if day == model.day, model.isDayHeld { return true }
+        return await model.pipeline.dayStatus(day) == .held
+    }
+
+    /// Reads the hold on the session's day again, for when the window isn't showing it: as the session opens, as each part
+    /// starts, and after each reload.
+    func refreshHeld() async {
+        guard owner != nil, let d = sessionDay else { return }
+        let held = await isHeld(d)
+        if sessionDay == d { heldElsewhere = held }
+    }
 
     // MARK: Lifecycle
 
@@ -127,6 +153,8 @@ final class CaptureController {
         owner = surface
         self.model = model
         self.kind = kind
+        heldElsewhere = true
+        Task { await refreshHeld() }
         // The first reflection's question, from the onboarding hand-off, before today's.
         prompt = (surface == .window ? model.handoffPrompt : nil) ?? model.todaysPrompt
         let reading = model.dayReading
@@ -191,6 +219,7 @@ final class CaptureController {
             day = owner == .panel ? LocalDay.today() : model.day
             savedTurns = 0
             startListening()
+            Task { await refreshHeld() }
         }
         turn += 1
         starting = true

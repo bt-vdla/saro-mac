@@ -325,6 +325,8 @@ final class AppModel {
         // Something was written: a day read ahead may no longer be what the ledger says (a new hold hides its readings).
         neighbours = []
         neighboursVersion += 1
+        // A recorder on a day the window isn't showing (the panel's today) reads its hold again too (SR-13).
+        Task { await CaptureController.shared.refreshHeld() }
         do {
             days = try await ledger.days()
             var data = try await load(target)

@@ -193,7 +193,7 @@ struct RecorderView: View {
                                                                      removal: .opacity.combined(with: .scale(scale: 1.04))))
             }
             // No prompt or question on a held day (SR-13), as a held part shows none.
-            if !held, !model.isDayHeld {
+            if !held, !capture.dayHeld {
                 SaroVoice(question: checkpoint.followUp?.question ?? capture.prompt, observation: checkpoint.followUp?.observation,
                           followUp: checkpoint.followUp != nil, dimmed: countdown != nil, orb: orbState, compact: compact,
                           instant: checkpoint.instant)

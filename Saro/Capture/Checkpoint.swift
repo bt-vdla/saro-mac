@@ -53,13 +53,14 @@ final class Checkpoint {
         var next = Phase.quiet
         var result: FollowUp?
         if !text.isEmpty {
-            let day = source.flatMap { model.entry($0.entryId)?.localDay } ?? model.day
+            // The session's own day: the panel records into today, whichever day the window shows.
+            let day = capture.sessionDay ?? model.day
             let (exclude, observations, seed) = (asked + [capture.prompt], observed, FollowUps.seed("\(text)\n\(count)"))
             // The gate, then the question, as one turn in the model's queue, ahead of the parts still being read.
             let answer = await model.exclusive { () async -> (state: EntryState?, question: (FollowUp, AIRun)?) in
                 let state = await model.pipeline.check(text)?.state
                 // A held day asks nothing: no Saro text shows on it (SR-13).
-                guard state == .clear || state == .modelUnavailable, !model.isDayHeld else { return (state, nil) }
+                guard state == .clear || state == .modelUnavailable, await !capture.isHeld(day) else { return (state, nil) }
                 return (state, await model.ai.followUp(text: text, verb: "said", exclude: exclude, excludeObservations: observations,
                                                        seed: seed, localDay: day))
             }
