@@ -50,7 +50,7 @@ struct TrashView: View {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("videoQuality") private var videoQuality = "720p"
-    @AppStorage("tourSeen") private var tourSeen = false
+    @Environment(\.openWindow) private var openWindow
     @State private var previousScreen: ScreenID = .canvas
 
     var body: some View {
@@ -81,7 +81,12 @@ struct SettingsView: View {
                 LabeledContent("Journal", value: model.isDemo ? "Demo (temporary)" : "Application Support/Saro")
                 Button("Export Everything…") { Task { await model.exportEverything() } }
                 Button("Show Journal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.ledger.rootURL]) }
-                Button("Take the Tour Again") { tourSeen = false }
+                #if DOGFOOD
+                Button("Take the Tour Again") {
+                    openWindow(id: "main")
+                    DevMode.shared.startTour(model)
+                }
+                #endif
             }
             .tabItem { Label("Data", systemImage: "externaldrive") }
         }
