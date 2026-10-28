@@ -32,10 +32,13 @@ extension Ledger {
         try db.run("DELETE FROM reflection_turn WHERE id=? AND answer IS NULL", [.text(turnId)])
     }
 
-    /// When the entry's row last changed, for the reading page's "Edited 4:20 PM".
-    // ponytail: updated_at also moves when a pass re-reads the entry; an edited_at column if that misleads.
-    public func updatedAt(entryId: String) throws -> Date? {
-        try db.run("SELECT updated_at FROM entry WHERE id=?", [.text(entryId)]).first?.date("updated_at")
+    /// When the page's words were last changed after they were first checked, for the reading page's "Edited 4:20 PM": the
+    /// newest check of words other than the first ones. A re-check of the same words (a launch re-gate) isn't an edit.
+    // ponytail: the time of the check, seconds after the edit; an edited_at column if that ever reads wrong.
+    public func editedAt(entryId: String) throws -> Date? {
+        let checks = try db.run("SELECT text_sha256, created_at FROM safety_verdict WHERE entry_id=? ORDER BY rowid", [.text(entryId)])
+        guard let first = checks.first?.str("text_sha256") else { return nil }
+        return checks.last { $0.str("text_sha256") != first }?.date("created_at")
     }
 
     /// A follow-up asked from an entry's words, once that entry is held, is generated text from a held entry (SR-15): the

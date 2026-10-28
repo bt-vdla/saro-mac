@@ -324,6 +324,23 @@ extension FollowUp {
     #expect(kept.map(\.question) == [""] && kept.map(\.answer) == ["The quiet."])
 }
 
+// MARK: Edited is an edit, not a re-check
+
+@Test func editedIsOnlyAChangeOfWords() async throws {
+    let l = try tempLedger()
+    let page = Entry(kind: .reflection, body: "Walked by the river.")
+    try await l.insertEntry(page)
+    let check = { (hash: String) in
+        SafetyVerdictRow(entryId: page.id, textSha256: hash, safetyVersion: SafetyGate.version, layer: 2, verdict: "clear", reasonCode: "clear")
+    }
+    #expect(try await l.editedAt(entryId: page.id) == nil)
+    try await l.insertVerdict(check("a"))
+    try await l.insertVerdict(check("a"))
+    #expect(try await l.editedAt(entryId: page.id) == nil, "a re-check of the same words")
+    try await l.insertVerdict(check("b"))
+    #expect(try await l.editedAt(entryId: page.id) != nil)
+}
+
 // MARK: A song is never read
 
 @Test func aSongIsNeverGatedOrRead() async throws {

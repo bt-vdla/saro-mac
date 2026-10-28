@@ -482,13 +482,13 @@ private struct WritingEditor: View {
             do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
             await save(process: false)
         }
-        .task(id: model.entry(entry.id)?.processingStatus) { editedAt = try? await model.ledger.updatedAt(entryId: entry.id) }
+        .task(id: model.entry(entry.id)?.processingStatus) { editedAt = try? await model.ledger.editedAt(entryId: entry.id) }
         .onDisappear { Task { await save(process: true) } }
     }
 
     /// "TODAY · 4:16 PM", and "EDITED 4:20 PM" once it changed after it was written.
     private var details: String {
-        let edited = editedAt.flatMap { $0.timeIntervalSince(entry.capturedAt) > 120 ? "Edited \($0.formatted(date: .omitted, time: .shortened))" : nil }
+        let edited = editedAt.map { "Edited \($0.formatted(date: .omitted, time: .shortened))" }
         return [MusicDetail.when(entry), edited].compactMap { $0 }.joined(separator: " · ")
     }
 
