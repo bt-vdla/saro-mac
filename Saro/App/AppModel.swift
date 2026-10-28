@@ -215,9 +215,11 @@ final class AppModel {
         // Only what was checked and read from the entry's current text shows (§13.2): an edit is unchecked until gated.
         for e in d.entries {
             guard let v = d.verdicts[e.id] else { d.annotations[e.id] = nil; continue }
-            if Self.typedText(e).map({ sha256($0) != v.textSha256 }) ?? false {
-                // A stale all-clear allows nothing; a stale hold still hides the AI text and keeps the hold shown.
-                if v.verdict == "clear" || v.verdict == "unavailable_clear" { d.verdicts[e.id] = nil }
+            if let text = Self.typedText(e), sha256(text) != v.textSha256 {
+                // A stale all-clear allows nothing; a stale hold still hides the AI text and keeps the hold shown, until
+                // the text is emptied: then nothing is left to hold, as the pipeline's day status already counts it.
+                let emptied = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                if emptied || v.verdict == "clear" || v.verdict == "unavailable_clear" { d.verdicts[e.id] = nil }
                 d.annotations[e.id] = nil
             } else if d.annotations[e.id] != nil, (try? await ledger.hasAnnotation(entryId: e.id, inputHash: v.textSha256)) != true {
                 d.annotations[e.id] = nil
