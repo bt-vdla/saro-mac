@@ -338,6 +338,10 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(Rhythm.formatClock(22 * 60 + 40) == "10:40 pm")
         #expect(Rhythm.formatRange(590 + 720, 690 + 720) == "9:50 to 11:30 pm")
         #expect(Rhythm.formatRange(23 * 60 + 30, 40) == "11:30 pm to 12:40 am")
+        #expect(Rhythm.step(1290, by: 1) == 1295 && Rhythm.step(1290, by: -1) == 1285)
+        #expect(Rhythm.step(1287, by: 1) == 1290 && Rhythm.step(1287, by: -1) == 1285)
+        #expect(Rhythm.step(1435, by: 1) == 0 && Rhythm.step(0, by: -1) == 1435)
+        #expect(Rhythm.step(1290, by: 1, hour: true) == 1350 && Rhythm.step(30, by: -1, hour: true) == 1410)
         #expect(Rhythm.circularGap(23 * 60 + 50, 10) == 20)
     }
 

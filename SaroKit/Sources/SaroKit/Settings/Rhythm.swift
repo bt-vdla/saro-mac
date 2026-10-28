@@ -61,6 +61,13 @@ public enum Rhythm {
     /// Math.round's halves (toward +∞), so a mean of −12.5 minutes rounds as the web's does.
     static func round5(_ m: Double) -> Int { mod(Int((m / 5 + 0.5).rounded(.down)) * 5) }
 
+    /// A time field's step (the web's `step=300`): 5 minutes onto the 5-minute grid, so 9:27 steps to 9:30 or 9:25, or
+    /// an hour; either way past midnight wraps.
+    public static func step(_ m: Int, by: Int, hour: Bool = false) -> Int {
+        if hour { return mod(m + 60 * by) }
+        return mod(by > 0 ? (m / 5 + 1) * 5 : ((m + 4) / 5 - 1) * 5)
+    }
+
     /// 1290 → "9:30 pm".
     public static func formatClock(_ minutes: Int) -> String {
         let m = mod(minutes)

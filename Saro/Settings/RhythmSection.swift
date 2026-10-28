@@ -71,7 +71,7 @@ struct RhythmSection: View {
             SettingsRow("Evening letter", caption: "Your letter arrives after \(Rhythm.formatClock(prefs.letterMinutes)) on days you wrote.") {
                 TimePill(label: "Evening letter time", minutes: Binding(get: { prefs.letterMinutes }, set: { m in
                     prefs.letterMinutes = m
-                    save.saved()
+                    save.run { await Reminders.shared.moveTodaysLetter(to: m) }
                 }))
             }
             if prefs.letterMinutes < 17 * 60 {
@@ -207,25 +207,34 @@ struct RhythmSection: View {
     }
 }
 
-/// A mono time field that steps in 5 minutes with the arrow keys, as the web's `step=300` input.
+/// A mono time pill in Saro's own clock ("9:30 pm"), as the web's `step=300` input: ↑ and ↓ or the stepper move it
+/// 5 minutes onto the 5-minute grid, ⇧↑ and ⇧↓ an hour, wrapping past midnight.
 struct TimePill: View {
     let label: String
     @Binding var minutes: Int
 
     var body: some View {
-        DatePicker(label, selection: Binding(get: {
-            Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: .now) ?? .now
-        }, set: { date in
-            let c = Calendar.current.dateComponents([.hour, .minute], from: date)
-            let next = (c.hour ?? 0) * 60 + (c.minute ?? 0)
-            if next != minutes { minutes = next }
-        }), displayedComponents: .hourAndMinute)
-        .labelsHidden()
-        .datePickerStyle(.stepperField)
-        .font(Typo.mono(13))
-        .monospacedDigit()
+        HStack(spacing: 4) {
+            Text(Rhythm.formatClock(minutes)).font(Typo.mono(13)).monospacedDigit().foregroundStyle(Tok.ink)
+                .frame(minWidth: 62)
+                .padding(.horizontal, 12).frame(height: 30)
+                .background(Tok.surfaceAlt, in: .capsule)
+                .overlay(Capsule().strokeBorder(Tok.border))
+                .contentShape(.focusEffect, .capsule)
+                .focusable()
+                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                    step(press.key == .upArrow ? 1 : -1, hour: press.modifiers.contains(.shift))
+                    return .handled
+                }
+            Stepper(label, onIncrement: { step(1) }, onDecrement: { step(-1) }).labelsHidden()
+        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+        .accessibilityValue(Rhythm.formatClock(minutes))
+        .accessibilityAdjustableAction { step($0 == .increment ? 1 : -1) }
     }
+
+    private func step(_ by: Int, hour: Bool = false) { minutes = Rhythm.step(minutes, by: by, hour: hour) }
 }
 
 /// M T W T F S S, Monday first; the mask keeps Sunday as bit 0.
@@ -291,5 +300,15 @@ struct RhythmStrip: View {
         }
         .accessibilityElement()
         .accessibilityLabel(Rhythm.describe(stats))
+    }
+}
+
+extension Reminders {
+    /// A new letter time moves today's letter too, while it's still on its way.
+    func moveTodaysLetter(to minutes: Int) async {
+        let day = LocalDay.today()
+        guard await UNUserNotificationCenter.current().pendingNotificationRequests().contains(where: { $0.identifier == "saro-letter-\(day)" }),
+              let at = Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: .now) else { return }
+        await scheduleLetter(day: day, at: at)
     }
 }

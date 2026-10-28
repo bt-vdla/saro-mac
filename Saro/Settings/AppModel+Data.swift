@@ -32,7 +32,9 @@ extension AppModel {
                 prefs.ritualSource = .user
             }
             await Reminders.shared.scheduleRitual()
-        case .letterTime: prefs.letterMinutes = v.letterMinutes
+        case .letterTime:
+            prefs.letterMinutes = v.letterMinutes
+            await Reminders.shared.moveTodaysLetter(to: v.letterMinutes)
         case .theme: Daylight.shared.mode = Daylight.Mode(rawValue: v.theme.rawValue) ?? .clock
         case .textScale: prefs.textScale = v.textScale
         case .captionsAlways: prefs.captionsAlways = v.captionsAlways
