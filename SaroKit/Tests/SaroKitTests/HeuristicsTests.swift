@@ -20,6 +20,14 @@ let hinglishEntry = "Aaj bahut thak gayi hoon. Office mein sab kuch galat ho rah
     }
 }
 
+@Test func summaryAddsSomethingCases() {
+    #expect(!Heuristics.summaryAddsSomething(" … ", title: nil, transcript: nil))
+    #expect(!Heuristics.summaryAddsSomething("Walked home.", title: "walked  home", transcript: nil))
+    #expect(!Heuristics.summaryAddsSomething("I walked home, through the park", title: nil, transcript: "I walked home through the park after work."))
+    #expect(Heuristics.summaryAddsSomething("A lighter walk home.", title: "Walk home", transcript: "I walked home through the park."))
+    #expect(Heuristics.summaryAddsSomething("घर लौटते हुए हल्का लगा", title: "", transcript: ""))
+}
+
 @Test func firstSentenceCases() {
     #expect(Heuristics.firstSentence("We launched this morning. Nothing broke.") == "We launched this morning.")
     let s = Heuristics.firstSentence(String(repeating: "word ", count: 60) + "end.")

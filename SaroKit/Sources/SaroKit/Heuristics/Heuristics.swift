@@ -120,6 +120,18 @@ public enum Heuristics {
         return kept.replacingOccurrences(of: #"[\s,;:.!?-]+$"#, with: "", options: .regularExpression) + "…"
     }
 
+    /// A summary worth showing: not empty, and not the title or the transcript's opening again (utils.ts).
+    public static func summaryAddsSomething(_ summary: String, title: String?, transcript: String?) -> Bool {
+        let plain = { (s: String) in
+            s.lowercased().replacingOccurrences(of: #"[^\p{L}\p{N}]+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+        }
+        let words = plain(summary)
+        guard !words.isEmpty else { return false }
+        if let title, plain(title) == words { return false }
+        return !(transcript.map { plain($0).hasPrefix(words) } ?? false)
+    }
+
     /// A title of at most `maxWords` from the first clause of the first sentence: fillers and hedges dropped, then
     /// articles and intensifiers if that makes it fit, otherwise cut at a clean word.
     public static func compressTitle(_ text: String, maxWords: Int = 7) -> String {
