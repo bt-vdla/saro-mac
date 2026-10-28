@@ -221,6 +221,26 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         try await l.updateSummary(id: e.id, nil)
         #expect(try await l.summaryUser(id: e.id) == nil)
     }
+
+    @Test func aCopyKeepsItsDayListedButIsntCounted() async throws {
+        let l = try tempLedger()
+        let today = LocalDay.today()
+        let yesterday = LocalDay.adding(-1, to: today)
+        let (e, _) = try await richMoment(l)
+        try await l.insertEntry(Entry(kind: .reflection, body: "Tea with Ravi."))
+        let copy = try await l.duplicate(id: e.id, toDay: yesterday)
+        _ = try await l.duplicate(id: e.id, toDay: today)
+
+        let days = try await l.days()
+        #expect(days.first { $0.day == today }?.count == 2)
+        #expect(days.first { $0.day == yesterday }?.count == 0)
+        let moments = try await l.storageSummary().kinds.first { $0.kind == .moment }
+        #expect(moments?.count == 1)
+        #expect(try await l.entryTimes(today: today).count == 2)
+        // The copy inherited the moment's all-clear, and still only the moment counts.
+        #expect(try await l.verdicts(day: yesterday)[copy.id]?.verdict == "clear")
+        #expect(try await l.clearedEntryCount() == 1)
+    }
 }
 
 @Suite struct ShellRulesTests {
