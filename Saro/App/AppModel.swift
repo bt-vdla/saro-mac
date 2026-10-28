@@ -489,9 +489,11 @@ final class AppModel {
                 var days = unreadDays
                 unreadDays = []
                 while !queue.isEmpty {
-                    // A job waiting its turn (a refresh, a gate check, Settings' model calls) goes before the next entry,
-                    // so a backlog of entries doesn't hold it.
-                    while !jobs.isEmpty { await jobs.removeFirst()() }
+                    // The jobs waiting now (a refresh, a gate check, Settings' model calls) go before the next entry, so
+                    // a backlog of entries doesn't hold them; ones that arrive meanwhile wait one entry, so neither starves.
+                    let waiting = jobs
+                    jobs = []
+                    for job in waiting { await job() }
                     let id = queue.removeFirst()
                     current = id
                     if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
