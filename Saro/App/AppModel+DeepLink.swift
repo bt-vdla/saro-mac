@@ -13,9 +13,14 @@ extension AppModel {
             return
         }
         WindowActions.openMain()
-        // Onboarding's own test reminder carries Voice and Write: nothing lands in the journal until it ends.
-        guard !showsOnboarding else { return }
-        Task { await follow(link) }
+        Task {
+            // A link that launches Saro comes before the profile is read, and no profile reads as onboarding: wait for
+            // it (a read that fails gives up after 10 s, and onboarding shows).
+            for _ in 0..<200 where profile == nil { try? await Task.sleep(for: .milliseconds(50)) }
+            // Onboarding's own test reminder carries Voice and Write: nothing lands in the journal until it ends.
+            guard !showsOnboarding else { return }
+            await follow(link)
+        }
     }
 
     private func follow(_ link: DeepLink) async {
