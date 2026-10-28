@@ -73,26 +73,30 @@ extension SafetyGate {
         }
     }
 
-    /// A whole-word phrase with `safety.ts`'s guards on the word just before or just after ("don't want to die",
-    /// "take my life back").
+    /// A whole-word phrase with `safety.ts`'s guards on the word just before or the words just after ("don't want to die",
+    /// "take my life back", "wake up the kids").
     private struct Phrase: Sendable {
         let words: [String]
         let notBefore: Set<String>
-        let notAfter: Set<String>
+        let notAfter: [[String]]
     }
 
-    /// Each pattern also in its squeezed spelling ("kill" -> "kil"), which is what elongated text ("killll") normalises to.
     private static func phrases(_ list: [String], notBefore: [String] = [], notAfter: [String] = []) -> [Phrase] {
-        let forms = list.map(normalise)
-        return Set(forms + forms.map(squeezed)).map {
-            Phrase(words: $0.split(separator: " ").map(String.init), notBefore: Set(notBefore), notAfter: Set(notAfter))
+        let guards = notAfter.map { normalise($0).split(separator: " ").map(String.init) }
+        return Set(list.map(normalise).flatMap(squeezings)).map {
+            Phrase(words: $0.split(separator: " ").map(String.init), notBefore: Set(notBefore), notAfter: guards)
         }
     }
 
-    private static func squeezed(_ s: String) -> String {
-        var out = String.UnicodeScalarView()
-        for c in s.unicodeScalars where !(c.isASCII && c.properties.isAlphabetic && c == out.last) { out.append(c) }
-        return String(out)
+    /// The pattern with each double letter kept or squeezed ("all pills" -> "al pills", "all pils", "al pils"): elongated
+    /// text ("alll my pills") normalises its run to one letter and leaves the phrase's other doubles alone.
+    private static func squeezings(_ s: String) -> [String] {
+        var forms = [""], last: Unicode.Scalar = " "
+        for c in s.unicodeScalars {
+            forms = c == last && ("a"..."z").contains(c) ? forms + forms.map { $0 + String(c) } : forms.map { $0 + String(c) }
+            last = c
+        }
+        return forms
     }
 
     /// Every combination of the parts, in order; an empty string skips that part.
@@ -132,7 +136,9 @@ extension SafetyGate {
                 (node, end) = (child, end + 1)
                 for p in node.ends {
                     if i > 0, !paused[i], p.notBefore.contains(words[i - 1]) { continue }
-                    if end < words.count, !paused[end], p.notAfter.contains(words[end]) { continue }
+                    if p.notAfter.contains(where: { g in
+                        g.indices.allSatisfy { end + $0 < words.count && !paused[end + $0] && words[end + $0] == g[$0] }
+                    }) { continue }
                     return true
                 }
             }
@@ -143,9 +149,11 @@ extension SafetyGate {
     private static let negated = ["dont", "didnt", "doesnt", "never", "not"]
     private static let housing = ["in", "with", "near", "there", "here", "at", "on", "together", "alone", "by", "next", "so",
                                   "far", "somewhere", "abroad", "close"]
-    // DRAFT: clinician review (SR-32), safety-2 — "late" onwards: "wake up the kids", "wake up with a headache".
-    private static let wakeGuard = ["early", "at", "before", "for", "so", "too", "yet", "late", "the", "my", "his", "her", "him",
-                                    "them", "everyone", "anyone", "you", "us", "with", "until", "till"]
+    // DRAFT: clinician review (SR-32), safety-2 — "late" onwards, as whole phrases so "wake up the next day" and
+    // "wake up with this feeling" still hit.
+    private static let wakeGuard = ["early", "at", "before", "for", "so", "too", "yet", "late", "the house", "the whole house"]
+        + combos(["the", "my", "our", "his", "her"], ["kids", "baby", "family", "neighbours", "neighbors"])
+        + combos(["with a"], ["migraine", "headache", "hangover", "cold", "fever"])
     // DRAFT: clinician review (SR-32), safety-2 — "in" dropped: it cancelled "cut myself in the bathroom" and
     // "used to cut myself in college" to spare the rare "cutting myself in on the deal".
     private static let cutGuard = ["some", "a", "slack", "off", "loose", "free", "out", "short", "up"]
@@ -175,7 +183,7 @@ extension SafetyGate {
                  "sick of being alive"]),
         // DRAFT: clinician review (SR-32), safety-2 — guarded: "no point going on about it", "tired of living out of a suitcase".
         phrases(["no point going on", "no point in going on"], notAfter: ["about"]),
-        phrases(["tired of living"], notAfter: housing + ["out", "under", "paycheck", "off", "from"]),
+        phrases(["tired of living"], notAfter: ["out", "under", "paycheck", "off", "from"]),
         phrases(["self harm", "selfharm", "self harming", "self harmed", "self injury", "self injuring"]),
         phrases(["harm myself", "harming myself", "hurt myself on purpose", "want to hurt myself", "wanna hurt myself",
                  "going to hurt myself", "gonna hurt myself", "thinking about hurting myself", "thought about hurting myself",
@@ -298,8 +306,9 @@ extension SafetyGate {
 
     // safety.py's one pattern with a gap: "wish I could just not wake up". Written in normalised form.
     // DRAFT: clinician review (SR-32), safety-2 — the -ing and "pray" triggers, and "I don't / won't / wouldn't wake up".
+    // A " , " clause break counts as one character of the 30, as the one space it was before the normaliser kept pauses.
     private static let wakeRegex = try! NSRegularExpression(
-        pattern: "\\b(?:wish|wishing|hope|hoping|want|wanting|pray|praying)\\b[^.]{0,30}"
+        pattern: "\\b(?:wish|wishing|hope|hoping|want|wanting|pray|praying)\\b(?:[^.,]| , ){0,30}"
             + "\\b(?:not|never|i dont|i wont|i wouldnt|i didnt) wake up\\b(?! (?:\(wakeGuard.joined(separator: "|")))\\b)")
 
     // P0 draft (SR-06): broad on purpose. A hit only blocks quote-backs and heuristic questions until layer 2 reads the entry.
