@@ -32,11 +32,13 @@ enum SettingsSnapshots {
                 SayItBar.propose = "remind me at half past nine and bigger text, be more direct"
                 host(nil)
             }),
-            // Words that match no setting: the example chips, once the on-device model, where ready, finds nothing either.
-            ("settings-sayit-none", {
+            // Words that match no setting: the gate and then the on-device model, where ready, read them in the queue…
+            ("settings-sayit-reading", {
                 SayItBar.propose = "zqxv"
                 host(nil)
             }),
+            // …and the example chips once it finds nothing either: the same window, a step later.
+            ("settings-sayit-none", {}),
             // Words the phrase gate holds: the SafetyCard, never a setting or the example chips (synthetic text).
             ("settings-sayit-held", {
                 SayItBar.propose = "turn off reminders, there is no point anymore"
