@@ -238,7 +238,7 @@ enum CardMenuKeys {
 
     private static func open(for event: NSEvent, _ model: AppModel) -> Bool {
         // 109 is F10, 110 the PC keyboard's Menu key.
-        guard event.keyCode == 110 || event.keyCode == 109 && event.modifierFlags.contains(.shift),
+        guard event.keyCode == 110 || event.keyCode == 109 && event.modifierFlags.contains(.shift), !Locker.shared.locked,
               model.pane == .day, !(event.window?.firstResponder is NSTextView) else { return false }
         let targets = model.entryTargets
         guard !targets.isEmpty, let view = event.window?.contentView else { return false }

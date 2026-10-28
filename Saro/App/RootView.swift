@@ -36,7 +36,6 @@ struct RootView: View {
         }
         .background(Tok.bg)
         .tint(Tok.sage)
-        .sheet(isPresented: $model.safetyCardRequested) { SafetyCardView() }
         #if DOGFOOD
         .devMode()
         .overlay(alignment: .top) {
@@ -45,7 +44,16 @@ struct RootView: View {
         #endif
         .searchPalette(isPresented: $model.searchOpen)
         .shellSheets()
-        .overlay { LockScreen() }
+        .lockable()
+        // Nothing stays open over the lock: the palette, the safety card and Adjust Mood close with it.
+        .onChange(of: Locker.shared.locked) { _, locked in
+            guard locked else { return }
+            model.searchOpen = false
+            model.safetyCardRequested = false
+            model.reflection.adjustingMood = false
+        }
+        // Outside the lock, so If You're Struggling opens even while Saro is locked: it shows nothing of the journal.
+        .sheet(isPresented: $model.safetyCardRequested) { SafetyCardView() }
         .background(ScreenShare())
     }
 }

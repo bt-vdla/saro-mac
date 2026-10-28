@@ -61,7 +61,7 @@ struct SaroApp: App {
 
         Settings {
             if case .success(let model) = boot {
-                SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment().overlay { LockScreen() }
+                SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment().lockable()
             }
         }
         .defaultSize(width: 920, height: 720)
