@@ -49,7 +49,7 @@ enum SettingsSnapshots {
             // Your data whole, so the export, book, What Saro read and erase rows can be seen.
             ("settings-data-full", {
                 p.setContentSize(NSSize(width: 760, height: 2400))
-                p.contentView = NSHostingView(rootView: DataSection().padding(32).frame(maxHeight: .infinity, alignment: .top).background(Tok.bg)
+                p.contentView = NSHostingView(rootView: DataSection().padding(32).frame(width: 760, height: 2400, alignment: .top).background(Tok.bg)
                     .environment(model).environment(prefs).comfortEnvironment())
             }),
             ("text150-settings", {
