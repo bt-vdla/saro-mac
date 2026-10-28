@@ -256,19 +256,39 @@ private func fillEveryTable(_ l: Ledger) async throws -> Entry {
     #expect(try await l.entryIDs(withLatestVerdictIn: ["clear"]).isEmpty)
 }
 
-@Test func cachedVerdictMatchesEntryTextAndVersion() async throws {
+@Test func onlyTheNewestVerdictIsCachedForItsTextAndVersion() async throws {
     let l = try tempLedger()
     let a = try await page(l, "Watered the fern."), b = try await page(l, "Watered the fern.")
     try await verdict(l, a, "clear", sha: "s1", version: "1")
-    try await verdict(l, a, "technical_hold", sha: "s2", version: "1")
-    try await verdict(l, a, "unavailable_caution", sha: "s1", version: "2")
     #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "1")?.verdict == "clear")
+    try await verdict(l, a, "technical_hold", sha: "s2", version: "1")
     #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s2", safetyVersion: "1")?.verdict == "technical_hold")
+    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "1") == nil)
+    try await verdict(l, a, "unavailable_caution", sha: "s1", version: "2")
     #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "2")?.verdict == "unavailable_caution")
-    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s2", safetyVersion: "2") == nil)
-    #expect(try await l.cachedVerdict(entryId: b.id, textSha256: "s1", safetyVersion: "1") == nil)
+    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s1", safetyVersion: "1") == nil)
+    #expect(try await l.cachedVerdict(entryId: a.id, textSha256: "s2", safetyVersion: "1") == nil)
+    #expect(try await l.cachedVerdict(entryId: b.id, textSha256: "s1", safetyVersion: "2") == nil)
     #expect(try await l.verdicts(day: a.localDay)[a.id]?.verdict == "unavailable_caution")
     #expect(try await l.verdicts(day: a.localDay)[b.id] == nil)
+}
+
+@Test func textEditedBackToAGatedVersionDoesNotStrandTheDay() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    #expect(await p.dayStatus(e.localDay) == .ready)
+    try await l.updateEntryText(id: e.id, body: chai + " Then the bus home.", titleUser: nil)
+    await p.process(entryId: e.id) {}
+    #expect(await p.dayStatus(e.localDay) == .ready)
+    // Undo, back to text gated two verdicts ago.
+    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil)
+    await p.process(entryId: e.id) {}
+    #expect(try await l.verdicts(day: e.localDay)[e.id]?.textSha256 == sha256(chai))
+    #expect(await p.dayStatus(e.localDay) == .ready)
+    #expect(await p.readDay(e.localDay) != nil)
 }
 
 @Test func latestVerdictLookupIsPerEntry() async throws {
