@@ -89,6 +89,7 @@ struct CardFace: View {
     let entry: Entry
     var selected = false
     @State private var hover = false
+    @State private var discHover = false
 
     var body: some View {
         content
@@ -123,9 +124,12 @@ struct CardFace: View {
             ZStack {
                 MediaThumb(url: model.mediaURL(for: entry), kind: .moment, ready: ready)
                 Color.black.opacity(hover ? 0.10 : 0)
+                // ponytail: hover only, no 0.95 press; a gesture on the disc would take the card's tap and drag.
                 Circle().fill(.white.opacity(0.9)).frame(width: 56, height: 56).elevation(.float)
-                    .overlay(Image(systemName: "play.fill").font(.system(size: 18)).foregroundStyle(Tok.ink).offset(x: 2))
-                    .scaleEffect(hover ? 1.05 : 1)
+                    .overlay(Image(systemName: "play.fill").font(.system(size: 20)).foregroundStyle(Tok.momentInk).offset(x: 2))
+                    .scaleEffect(discHover ? 1.05 : 1)
+                    .onHover { discHover = $0 }
+                    .animation(Motion.small, value: discHover)
                 if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
                     Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond)))
                         .font(Typo.ui(12, .medium).monospacedDigit()).foregroundStyle(.white)
@@ -140,7 +144,7 @@ struct CardFace: View {
             CardMeta(entry: entry).padding(.horizontal, 16).frame(maxHeight: .infinity)
         }
         .frame(width: size.width, height: size.height)
-        .cardSurface(radius: radius, tint: Tok.moment, hover: hover)
+        .cardSurface(radius: radius, tint: Tok.moment)
     }
 
     private var still: some View {
@@ -167,7 +171,7 @@ struct CardFace: View {
         }
         .padding(.horizontal, 20).padding(.vertical, 16)
         .frame(width: size.width, height: size.height)
-        .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3, hover: hover)
+        .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3)
     }
 
     /// The orb and a one-line "title · time · duration" pill that hugs its words; the selection ring hugs both.
@@ -232,8 +236,10 @@ struct StackFace: View {
         let first = entries[0]
         let r: CGFloat = 18
         ZStack {
-            RoundedRectangle(cornerRadius: r).fill(Tok.rim.opacity(0.4)).rotationEffect(.degrees(3.5)).offset(x: 10, y: 10)
-            RoundedRectangle(cornerRadius: r).fill(Tok.rim.opacity(0.6)).rotationEffect(.degrees(2)).offset(x: 6, y: 6)
+            if entries.count > 2 {
+                RoundedRectangle(cornerRadius: r).fill(Tok.rim.opacity(0.4)).elevation(.float).rotationEffect(.degrees(3.5)).offset(x: 10, y: 10)
+            }
+            RoundedRectangle(cornerRadius: r).fill(Tok.rim.opacity(0.6)).elevation(.float).rotationEffect(.degrees(2)).offset(x: 6, y: 6)
             ZStack(alignment: .bottomLeading) {
                 Tok.ink
                 if first.kind == .moment {
@@ -243,6 +249,12 @@ struct StackFace: View {
                 }
                 LinearGradient(stops: [.init(color: .black.opacity(0.3), location: 0), .init(color: .black.opacity(0.2), location: 0.45),
                                        .init(color: .black.opacity(0.75), location: 1)], startPoint: .top, endPoint: .bottom)
+                if first.kind == .moment {
+                    Circle().fill(.white.opacity(0.9)).frame(width: 48, height: 48).elevation(.float)
+                        .overlay(Image(systemName: "play.fill").font(.system(size: 17)).foregroundStyle(Tok.ink).offset(x: 2))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .opacity(hover ? 1 : 0)
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(model.title(for: entries.last!)).font(Typo.ui(14, .semibold)).foregroundStyle(.white).lineLimit(2)
                     Text(first.capturedAt.formatted(date: .omitted, time: .shortened)).font(Typo.ui(12)).foregroundStyle(.white.opacity(0.75))
@@ -293,8 +305,9 @@ struct EchoOrb: View {
 }
 
 extension View {
-    /// A card's material: surface at 85%, a lit rim, an optional type-coloured ring, and the panel shadow (overlay on hover).
-    func cardSurface(radius: CGFloat, tint: Color?, tintOpacity: Double = 0.2, hover: Bool) -> some View {
+    /// A card's material: surface at 85%, a lit rim, an optional type-coloured ring, and the panel shadow (overlay on
+    /// hover, which on the web only the still takes).
+    func cardSurface(radius: CGFloat, tint: Color?, tintOpacity: Double = 0.2, hover: Bool = false) -> some View {
         background(Tok.surface.opacity(0.92), in: .rect(cornerRadius: radius))
             .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Tok.rim.opacity(0.6), lineWidth: 1))
             .overlay { if let tint { RoundedRectangle(cornerRadius: radius).strokeBorder(tint.opacity(tintOpacity), lineWidth: 1) } }
