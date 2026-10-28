@@ -97,10 +97,17 @@ struct BottomBar: View {
                     .keyboardShortcut("n", modifiers: [.command, .shift]).help("Leave a voice note  ⇧⌘N")
                 CaptureTile(face: CaptureFace(title: "Still", symbol: "photo", tint: Tok.stillInk)) { model.pickStill() }
                     .help("Add a photo (or drop or paste one onto the canvas)")
-                CaptureTile(face: CaptureFace(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk)) {
+                CaptureTile(face: CaptureFace(title: "Reflection", symbol: "text.alignleft", tint: Tok.reflectionInk)) {
                     Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
                 }
-                .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
+                .keyboardShortcut("w", modifiers: [.command, .option]).help("Write a reflection  ⌥⌘W")
+                CaptureTile(face: CaptureFace(title: "Music", symbol: "opticaldisc", tint: Tok.music)) {
+                    CaptureUI.shared.musicGrows = !Motion.byKey
+                    CaptureUI.shared.musicOpen = true
+                }
+                .opacity(CaptureUI.shared.musicOpen && CaptureUI.shared.musicGrows ? 0 : 1)
+                .anchorPreference(key: CaptureOriginKey.self, value: .bounds) { [.music: $0] }
+                .help("Add a song from a link")
             }
             .disabled(model.recorderKind != nil)
         }
@@ -172,15 +179,22 @@ struct CaptureFace: View {
     }
 }
 
-/// A capture (CaptureDock.tsx): its face, whose label turns ink on hover.
+/// A capture (CaptureDock.tsx): its face, whose label turns ink on hover. A double click, or a held key's repeats within
+/// 500 ms, counts as one press, so one press never makes two entries.
 private struct CaptureTile: View {
     let face: CaptureFace
     let action: () -> Void
     @Environment(\.isEnabled) private var enabled
     @State private var hover = false
+    @State private var last: ContinuousClock.Instant?
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            let now = ContinuousClock.now
+            defer { last = now }
+            if let last, now - last < .milliseconds(500) { return }
+            action()
+        } label: {
             CaptureFace(title: face.title, symbol: face.symbol, tint: face.tint, lit: hover)
                 .contentShape(.rect(cornerRadius: Radius.panel))
         }

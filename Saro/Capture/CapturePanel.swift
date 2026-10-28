@@ -106,6 +106,7 @@ final class CapturePanel: NSPanel {
 struct CapturePanelView: View {
     @Environment(AppModel.self) private var model
     @FocusState private var writing: Bool
+    @State private var dropping = false
     @Namespace private var tabs
 
     var body: some View {
@@ -132,6 +133,22 @@ struct CapturePanelView: View {
             }
         }
         .animation(CaptureMotion.small, value: panel.saved)
+        // Photos, audio and video dropped on the panel go to today, as everything captured here does.
+        .onDrop(of: CaptureInput.dropTypes, isTargeted: $dropping) { providers in
+            guard !CaptureController.shared.hasSession(.panel) else { return false }
+            return CaptureInput.drop(providers, at: nil, day: LocalDay.today(), model: model) { CapturePanelController.shared.confirmSaved() }
+        }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: Radius.panel).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                    .overlay(Text("Drop to add to Today").font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
+                        .padding(.horizontal, 16).padding(.vertical, 10).background(Tok.surfaceAlt.opacity(0.9), in: .capsule))
+                    .padding(6)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.easeOut(0.16), value: dropping)
         // Capture errors arrive as toasts, and the window's host is out of sight when the panel is in use.
         .overlay { ToastHost() }
         .padding(.horizontal, 14)

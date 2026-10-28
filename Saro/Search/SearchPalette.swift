@@ -155,6 +155,20 @@ struct SearchPalette: View {
             },
             PaletteCommand(id: "write", title: "Write", symbol: "square.and.pencil", keywords: "writing reflection text page journal new",
                            shortcut: "⌥⌘W") { write("", in: $0) },
+            PaletteCommand(id: "still", title: "Add a still", symbol: "photo", keywords: "photo image picture import") { m in
+                m.pane = .day
+                m.pickStill()
+            },
+            PaletteCommand(id: "music", title: "Add music", symbol: "opticaldisc", keywords: "song link spotify apple music youtube soundcloud") { m in
+                m.pane = .day
+                CaptureUI.shared.musicGrows = false
+                CaptureUI.shared.musicOpen = true
+            },
+            PaletteCommand(id: "import", title: "Import media…", symbol: "square.and.arrow.down", keywords: "file audio video photo drop add",
+                           shortcut: "⇧⌘I") { m in
+                m.pane = .day
+                m.pickMedia()
+            },
             PaletteCommand(id: "noticed", title: "What Saro noticed", symbol: "sparkles", keywords: "insight inspector patterns mood",
                            shortcut: "⌥⌘I") {
                 $0.pane = .day
@@ -400,7 +414,7 @@ struct SearchPalette: View {
                 title("Search \(k.plural)")
                 Kbd("Tab").frame(width: 72, alignment: .trailing)
             case .write(let text):
-                title("Write “\(text)”")
+                title("New writing starting “\(text)”")
             case .memory(let m):
                 Text(marked(m.text, Typo.ui(14, .semibold))).font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
                     .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)

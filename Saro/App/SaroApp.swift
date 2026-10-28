@@ -132,8 +132,14 @@ struct SaroCommands: Commands {
                 model.safetyCardRequested = true
             }
         }
+        CommandGroup(after: .pasteboard) {
+            Button("Edit Details…") { CaptureUI.shared.details = model.openEntryID ?? model.selection.first }
+                .keyboardShortcut("i", modifiers: .command)
+                .disabled(model.showsOnboarding || (model.openEntryID == nil && model.selection.count != 1))
+        }
         CommandGroup(after: .importExport) {
             Group {
+                Button("Import Media…") { model.pane = .day; model.pickMedia() }.keyboardShortcut("i", modifiers: [.command, .shift])
                 Button("Export Everything…") { Task { await model.exportEverything() } }
                 Button("Import…") { Task { await model.importJournal() } }
             }

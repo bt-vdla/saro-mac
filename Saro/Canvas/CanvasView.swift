@@ -37,6 +37,12 @@ struct DayView: View {
                 }
             }
             .animation(Motion.pick(Motion.easeOut(0.3), reduce: reduceMotion), value: model.recorderKind)
+            .overlayPreferenceValue(CaptureOriginKey.self) { origins in
+                if CaptureUI.shared.musicOpen {
+                    MusicField(origin: CaptureUI.shared.musicGrows ? origins[.music] : nil)
+                        .transition(.opacity.animation(Motion.easeOut(0.16)))
+                }
+            }
             .coordinateSpace(.named(Self.space))
         }
         .clipped()
@@ -72,7 +78,12 @@ struct DayView: View {
             }
             return .handled
         }
-        .onPasteCommand(of: [.image, .png, .tiff, .heic, .jpeg]) { providers in model.loadStills(providers, at: nil, origin: "pasted") }
+        .onKeyPress(.space) { CaptureInput.space(model) }
+        .onPasteCommand(of: CaptureInput.pasteTypes) { CaptureInput.paste($0, model: model) }
+        .task(id: model.entries.map(\.id)) { await CaptureUI.shared.loadPrompts(model) }
+        .sheet(isPresented: Binding(get: { CaptureUI.shared.details != nil }, set: { if !$0 { CaptureUI.shared.details = nil } })) {
+            if let e = CaptureUI.shared.details.flatMap(model.entry) { EditDetails(entry: e).environment(model) }
+        }
         .onChange(of: screenID, initial: true) { _, s in model.screen = s }
         .onChange(of: model.replayItems) { _, items in model.replay.update(items) }
         .onChange(of: model.replay.active) { _, on in if on { focused = true } }
@@ -155,16 +166,6 @@ extension AppModel {
                              radius: item.isStack ? 18 : CanvasMath.radius(item.top.kind))
         }
     }
-
-    func loadStills(_ providers: [NSItemProvider], at point: CGPoint?, origin: String) {
-        for (i, provider) in providers.enumerated() {
-            let at = point.map { CGPoint(x: $0.x + CGFloat(i) * 30, y: $0.y + CGFloat(i) * 30) }
-            _ = provider.loadDataRepresentation(for: .image) { data, _ in
-                guard let data else { return }
-                Task { @MainActor in await self.importStill(data, origin: origin, at: at) }
-            }
-        }
-    }
 }
 
 /// The camera: screen = world × zoom + pan.
@@ -186,6 +187,13 @@ extension Comparable {
     func clamped(to r: ClosedRange<Self>) -> Self { min(max(self, r.lowerBound), r.upperBound) }
 }
 
+extension View {
+    /// The modifier, except while `skip` holds (the view is rebuilt as it changes).
+    @ViewBuilder func modifier(_ m: some ViewModifier, unless skip: Bool) -> some View {
+        if skip { self } else { modifier(m) }
+    }
+}
+
 /// One day's canvas: cards on a camera, marquee, stack fan-out and the open/close flight. Keyed by day, so each day
 /// arrives with its own fitted camera.
 struct DayStage: View {
@@ -202,7 +210,10 @@ struct DayStage: View {
     @State private var marqueeBase: Set<String> = []
     @State private var drag: (ids: Set<String>, offset: CGSize, tilt: Double)?
     @State private var grid: DragGrid?
-    @State private var dropTargeted = false
+    /// What a file dragged over the canvas would become.
+    @State private var dropKind: EntryKind?
+    /// The recorder's developed frame on its way into its card, which waits hidden until it lands.
+    @State private var landing: (image: Image, from: CGRect, to: CGRect, radius: CGFloat, card: String, v: Double)?
     @State private var shownID: String?
     @State private var flightFrom: (rect: CGRect, radius: CGFloat) = (.zero, 28)
     @State private var flight: Double = 0
@@ -251,6 +262,7 @@ struct DayStage: View {
                     .frame(width: m.width, height: m.height).position(x: m.midX, y: m.midY).allowsHitTesting(false)
             }
             if let id = shownID, let entry = model.entry(id) { detail(entry) }
+            if let l = landing { LandingFlight(image: l.image, from: l.from, to: l.to, toRadius: l.radius, v: l.v).allowsHitTesting(false) }
             ForEach(flying) { c in
                 if let face = faces[c.id] {
                     let r = screenRect(c)
@@ -266,11 +278,10 @@ struct DayStage: View {
             faces = faces.filter { ids.contains($0.key) }
             for c in flying where faces[c.id] == nil { faces[c.id] = c.face(model, scheme: colorScheme, scale: displayScale * camera.zoom) }
         }
-        .onDrop(of: [.image], isTargeted: $dropTargeted) { providers, location in
-            model.loadStills(providers, at: world(location), origin: "dropped")
-            return true
-        }
+        .onDrop(of: CaptureInput.dropTypes, delegate: CaptureDrop(model: model, kind: $dropKind, world: world))
+        .overlay { DropOverlay(kind: dropKind, day: day) }
         .onChange(of: model.openEntryID) { _, id in if isCurrent { morph(to: id) } }
+        .onChange(of: CaptureUI.shared.landing) { _, l in if isCurrent, let l { land(l) } }
         .onContinuousHover { phase in
             guard case .active(let p) = phase else { return hover(nil) }
             hover(cards.last { underPointer($0, p) }.flatMap { resizable($0) ? $0.id : nil })
@@ -354,10 +365,6 @@ struct DayStage: View {
                              userMoved = true
                              zoom(by: f, at: p)
                          })
-            if dropTargeted {
-                RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-                    .padding(12)
-            }
             DayStateView(day: day, empty: cards.isEmpty, width: size.width)
         }
         .contentShape(.rect)
@@ -388,9 +395,10 @@ struct DayStage: View {
         }
         // An open voice note grows right and down from the card's top-left corner.
         .frame(width: c.size.width, height: c.size.height, alignment: .topLeading), c, moving: moving)
-        // Held or thrown only (useCardGesture.ts); an open voice note holds a scroller the shader can't draw.
+        // Held or thrown only (useCardGesture.ts); an open voice note holds a scroller the shader can't draw, and a page
+        // being typed into on its card holds AppKit editors the shader's layer can't host at all.
         .modifier(MotionBlurred(position: at, coverage: c.size.width * c.size.height * camera.zoom * camera.zoom / (size.width * size.height),
-                                enabled: !open && (moving || !thrown.isDisjoint(with: c.ids))))
+                                enabled: !open && (moving || !thrown.isDisjoint(with: c.ids))), unless: CaptureUI.shared.editing?.id == c.id)
         // Over the blur, so the handles stay crisp on a thrown card, as the web's sit beside the card it blurs.
         .overlay {
             if showsHandles(c) {
@@ -403,7 +411,8 @@ struct DayStage: View {
             }
         }
         .position(at)
-        .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) || inFlight(c) ? 0 : 1)
+        .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) || inFlight(c)
+            || landing.map { $0.card == c.id && $0.v < 1 } == true ? 0 : 1)
         .zIndex(moving ? 10 : open ? 5 : 0)
         .gesture(dragGesture(c))
         .onTapGesture { tap(c) }
@@ -425,7 +434,8 @@ struct DayStage: View {
         if let sid = c.item.stackID {
             fanned = false
             withAnimation(Motion.pick(Motion.surface, reduce: reduceMotion)) { model.openStackID = sid }
-        } else {
+        } else if c.item.top.kind != .reflection {
+            // A reflection's next click edits it on the card; its corner button (or Return) opens the page.
             model.openEntryID = c.item.top.id
         }
     }
@@ -621,6 +631,23 @@ struct DayStage: View {
         return !f.into || faces[c.id] != nil
     }
 
+    // MARK: The recorder's last frame into its card (VideoReflectionScreen.tsx captureMorph)
+
+    /// The camera centres the session's card, then the developed frame flies from where the recorder held it into the card.
+    private func land(_ l: CaptureUI.Landing) {
+        CaptureUI.shared.landing = nil
+        guard let c = cards.first(where: { $0.ids.contains(l.entryId) }) else { return }
+        userMoved = true
+        let pan = CGSize(width: size.width / 2 - c.center.x * camera.zoom, height: size.height / 2 - c.center.y * camera.zoom)
+        withAnimation(Motion.surface) { camera.pan = pan }
+        let to = CGRect(center: CGPoint(x: size.width / 2, y: size.height / 2),
+                        size: CGSize(width: c.size.width * camera.zoom, height: c.size.height * camera.zoom))
+        landing = (Image(decorative: l.image, scale: 1), l.from, to, c.radius * camera.zoom, c.id, 0)
+        DispatchQueue.main.async {
+            withAnimation(Motion.surface) { landing?.v = 1 } completion: { landing = nil }
+        }
+    }
+
     // MARK: The set, fanned out (VideoStackOverlay.tsx)
 
     private func fanPoints(_ sid: String) -> [String: CGPoint] {
@@ -641,9 +668,14 @@ struct DayStage: View {
                 .onTapGesture { close(sid) }
             ForEach(Array(members.enumerated()), id: \.element.id) { i, e in
                 let p = fanned || reduceMotion ? points[e.id] ?? origin : origin
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     CardFace(entry: e, selected: model.selection.contains(e.id))
-                    Text("Turn \(e.turnNumber ?? i + 1)").monoCaps(10).foregroundStyle(Tok.ink3)
+                    Text(["Turn \(e.turnNumber ?? i + 1)", model.media[e.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) }]
+                        .compactMap { $0 }.joined(separator: " · ")).monoCaps(10).foregroundStyle(Tok.ink3)
+                    if let q = model.prompt(for: e) {
+                        Text(q).font(Typo.serif(15, italic: true)).foregroundStyle(Tok.voice).lineLimit(2)
+                            .multilineTextAlignment(.center).frame(width: tile.width)
+                    }
                 }
                 .scaleEffect(fanned || reduceMotion ? 1 : 0.6)
                 .modifier(MotionBlurred(position: p, coverage: tile.width * tile.height / (size.width * size.height)))
@@ -654,6 +686,13 @@ struct DayStage: View {
             }
             HStack(spacing: 12) {
                 Text("\(members.count) turns").monoCaps(10).foregroundStyle(Tok.ink3)
+                if let first = members.first, first.kind == .moment {
+                    Button("Play all") {
+                        CaptureUI.shared.playAll = true
+                        model.openEntryID = first.id
+                    }
+                    .foregroundStyle(Tok.sage)
+                }
                 Button("Unstack") { withAnimation(Motion.pick(Motion.small, reduce: reduceMotion)) { model.unstack(sid) } }
                 Button("Done") { close(sid) }
             }
@@ -690,7 +729,8 @@ struct DayStage: View {
         case .still:
             return CanvasMath.stillFrame(in: size, aspect: ThumbCache.aspect(model.mediaURL(for: e)),
                                          below: StillBelow.room(held: model.verdicts[e.id]?.verdict == "safety_hold"))
-        case .reflection, .music: (w, h) = (min(820, size.width - 96), min(820, size.height - 96))
+        case .reflection: (w, h) = (min(820, size.width - 96), min(820, size.height - 96))
+        case .music: (w, h) = (min(560, size.width - 96), min(460, size.height - 96))
         }
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
     }
@@ -793,6 +833,32 @@ struct MorphFlight: View, @MainActor Animatable {
         .elevation(v > 0.5 ? .overlay : .panel)
         .position(x: cx, y: cy)
         .opacity(crossfadeOnly ? v : 1)
+    }
+}
+
+/// The developed frame on its way into its card: the morph's log-space box and straight-line centre, the recorder's 28 pt
+/// corners easing to the card's, handing over to the card in the last 30% of the way.
+private struct LandingFlight: View, @MainActor Animatable {
+    let image: Image
+    let from: CGRect
+    let to: CGRect
+    let toRadius: CGFloat
+    var v: Double
+
+    var animatableData: Double {
+        get { v }
+        set { v = newValue }
+    }
+
+    var body: some View {
+        let box = CanvasMath.flightBox(from: from, to: to, v: CGFloat(v))
+        image.resizable().scaledToFill()
+            .frame(width: box.width, height: box.height)
+            .clipShape(.rect(cornerRadius: Radius.sheet + (toRadius - Radius.sheet) * v))
+            .elevation(.overlay)
+            .opacity(1 - min(max((v - 0.7) / 0.3, 0), 1))
+            .position(x: box.midX, y: box.midY)
+            .accessibilityHidden(true)
     }
 }
 
