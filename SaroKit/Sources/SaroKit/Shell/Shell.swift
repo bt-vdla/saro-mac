@@ -97,6 +97,20 @@ public enum ShellText {
 
     public static func dayImageName(_ day: String) -> String { "saro-\(day).png" }
 
+    /// Where a song's link goes, as its card names it (lib/demo/music.ts sourceFor, MusicCard.tsx's labels).
+    public static func musicSource(_ link: String) -> String {
+        guard let host = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines))?.host()?.lowercased() else { return "Music link" }
+        let on = { (domain: String) in host == domain || host.hasSuffix("." + domain) }
+        if on("music.youtube.com") { return "YouTube Music" }
+        if on("youtube.com") || on("youtu.be") || on("youtube-nocookie.com") { return "YouTube" }
+        if on("spotify.com") || on("spotify.link") { return "Spotify" }
+        if on("music.apple.com") { return "Apple Music" }
+        if on("jiosaavn.com") { return "JioSaavn" }
+        if on("soundcloud.com") { return "SoundCloud" }
+        if on("tidal.com") { return "Tidal" }
+        return "Music link"
+    }
+
     /// Text laid out right to left when its first strong character is (dir="auto"): Hebrew, Arabic, Syriac, Thaana,
     /// N'Ko and their presentation forms. Digits, spaces and punctuation are weak and are skipped.
     public static func isRightToLeft(_ text: String) -> Bool {

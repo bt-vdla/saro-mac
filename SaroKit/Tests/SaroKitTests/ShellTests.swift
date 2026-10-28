@@ -246,6 +246,16 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
 @Suite struct ShellRulesTests {
     private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 
+    @Test func aSongNamesWhereItsLinkGoes() {
+        #expect(ShellText.musicSource("https://open.spotify.com/search/weightless") == "Spotify")
+        #expect(ShellText.musicSource(" https://music.youtube.com/watch?v=x ") == "YouTube Music")
+        #expect(ShellText.musicSource("https://youtu.be/x") == "YouTube")
+        #expect(ShellText.musicSource("https://music.apple.com/gb/album/x") == "Apple Music")
+        #expect(ShellText.musicSource("https://www.jiosaavn.com/song/x") == "JioSaavn")
+        #expect(ShellText.musicSource("https://notspotify.com/x") == "Music link")
+        #expect(ShellText.musicSource("") == "Music link")
+    }
+
     @Test func sameTitleWithinASecondFolds() {
         let shown = [ToastRules.Shown(title: "Moved to Trash", destructive: false, at: t0, hasAction: true, count: 2)]
         let r = ToastRules.arrive(.init(title: "Moved to Trash", destructive: false, at: t0.addingTimeInterval(0.5), hasAction: true), over: shown)

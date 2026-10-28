@@ -137,7 +137,8 @@ struct CardFace: View {
         case .moment: moment
         case .voice: VoiceFace(entry: entry, selected: selected, open: open)
         case .still: still
-        case .reflection, .music: reflection
+        case .reflection: reflection
+        case .music: music
         }
     }
 
@@ -185,17 +186,15 @@ struct CardFace: View {
         let (title, body) = model.titleAndBody(entry)
         // Given its own height, the page fills it; otherwise its words stop at 128 pt, as on the web.
         let sized = box.height != CanvasMath.size(entry.kind).height
-        // Edit Details' caption under a page (TextReflectionCard.tsx); a song's artist is its byline in the link's place
-        // (MusicCard.tsx).
+        // Edit Details' caption under a page (TextReflectionCard.tsx).
         let caption = entry.captionUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let shown = entry.kind == .music && !caption.isEmpty ? caption : body
         return VStack(alignment: .leading, spacing: 8) {
             Text(title).font(Typo.ui(15, .semibold)).foregroundStyle(Tok.reflectionInk).lineLimit(2)
-            Text(shown.isEmpty ? "Empty page" : shown)
-                .font(Typo.ui(13)).lineSpacing(2.5).foregroundStyle(shown.isEmpty ? Tok.ink4 : Tok.ink2)
+            Text(body.isEmpty ? "Empty page" : body)
+                .font(Typo.ui(13)).lineSpacing(2.5).foregroundStyle(body.isEmpty ? Tok.ink4 : Tok.ink2)
                 .frame(maxWidth: .infinity, maxHeight: sized ? .infinity : 128, alignment: .topLeading)
                 .clipped()
-            if entry.kind == .reflection, !caption.isEmpty {
+            if !caption.isEmpty {
                 Text(caption).font(Typo.ui(13, .medium)).foregroundStyle(Tok.reflectionInk).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 8)
@@ -207,6 +206,37 @@ struct CardFace: View {
         .padding(.horizontal, 20).padding(.vertical, 16)
         .frame(width: box.width, height: box.height)
         .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3)
+    }
+
+    /// A song (MusicCard.tsx): a disc in the artwork's place, then the title, the artist and where its link goes.
+    private var music: some View {
+        let (title, link) = model.titleAndBody(entry)
+        let artist = entry.captionUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let source = ShellText.musicSource(link)
+        return HStack(spacing: 0) {
+            ZStack {
+                Tok.music.opacity(0.15)
+                Image(systemName: "opticaldisc").font(.system(size: 26)).foregroundStyle(Tok.musicInk.opacity(0.7))
+            }
+            .frame(width: box.height * 74 / 88)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title.isEmpty ? source : title).font(Typo.ui(13.5, .semibold)).foregroundStyle(Tok.ink).lineLimit(1)
+                if !artist.isEmpty { Text(artist).font(Typo.ui(12)).foregroundStyle(Tok.ink2).lineLimit(1) }
+                Group {
+                    if let url = URL(string: link), ["http", "https"].contains(url.scheme) {
+                        Link(source, destination: url).help("Open in \(source)").pointerStyle(.link)
+                    } else {
+                        Text(source)
+                    }
+                }
+                .font(Typo.ui(12, .medium)).foregroundStyle(Tok.musicInk).lineLimit(1)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: box.width, height: box.height)
+        .clipShape(.rect(cornerRadius: radius))
+        .cardSurface(radius: radius, tint: nil)
     }
 }
 
