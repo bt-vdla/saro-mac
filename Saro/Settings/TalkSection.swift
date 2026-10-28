@@ -9,6 +9,8 @@ struct TalkSection: View {
     @State private var source: ToneSource?
     @State private var lines: [Tone: String]?
     @State private var loadFailed = false
+    /// Sentences this opening has asked for: a failed one waits for the next opening, not the next status change.
+    @State private var asked: Set<String> = []
     /// One on-device rewrite per sentence, for the session.
     private static var rewrites: [String: [Tone: String]] = [:]
 
@@ -34,18 +36,19 @@ struct TalkSection: View {
             let next = await ToneSource.latest(model)
             source = next
             lines = Self.rewrites[next.sentence]
-            guard lines == nil, Readiness.model().isReady else { return }
+            guard lines == nil, !asked.contains(next.sentence), Readiness.model().isReady else { return }
+            asked.insert(next.sentence)
             // The rules show at once; the model's lines replace them once they pass the output gate and drift check.
-            let asked = await model.exclusive { () -> (tones: [Tone: String], run: AIRun)? in
+            let reply = await model.exclusive { () -> (tones: [Tone: String], run: AIRun)? in
                 // Openings that queued the same sentence meanwhile have nothing to ask once one has its rewrite.
                 guard Self.rewrites[next.sentence] == nil else { return nil }
                 return await model.ai.tonePreview(next.sentence, localDay: next.day)
             }
-            guard let asked else {
+            guard let reply else {
                 if source == next { lines = Self.rewrites[next.sentence] }
                 return
             }
-            let (tones, run) = asked
+            let (tones, run) = reply
             try? await model.ledger.insertRun(run, inputs: next.inputs)
             // A busy or failed model is tried again next time, not kept as the rules' lines for the session.
             if run.status == "ok" { Self.rewrites[next.sentence] = tones }
