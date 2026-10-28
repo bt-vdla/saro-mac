@@ -145,8 +145,8 @@ final class AppModel {
         // The day changed under a running Saro: Trash's 30 days and the daily snapshot follow it.
         if LocalDay.today() != today {
             Task {
-                try? await ledger.purgeTrash(now: .now)
-                try? await ledger.dailySnapshot(now: .now)
+                _ = try? await ledger.purgeTrash(now: .now)
+                _ = try? await ledger.dailySnapshot(now: .now)
             }
         }
         rollOver()
@@ -564,8 +564,8 @@ final class AppModel {
         }
         for id in await memory.unlearned() { process(id) }
         await regateWaiting()
-        try? await ledger.purgeTrash(now: .now)
-        try? await ledger.dailySnapshot(now: .now)
+        _ = try? await ledger.purgeTrash(now: .now)
+        _ = try? await ledger.dailySnapshot(now: .now)
         await reload()
     }
 
@@ -711,12 +711,9 @@ final class AppModel {
         Task {
             do {
                 // A retry saves where the cards are by then.
-                try await saves.track(key) { [weak self] in
-                    guard let self else { return }
-                    try await ledger.setLayouts(ids.compactMap { self.layouts[$0] })
-                }
+                try await saves.track(key) { [self] in try await ledger.setLayouts(ids.compactMap { self.layouts[$0] }) }
             } catch {
-                show(.failed("Couldn't save the layout", error, retry: { [weak self] in Task { await self?.saves.retry(key) } }))
+                show(.failed("Couldn't save the layout", error, retry: { [saves] in Task { await saves.retry(key) } }))
             }
         }
     }
