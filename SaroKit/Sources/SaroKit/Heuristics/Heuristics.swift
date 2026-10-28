@@ -12,11 +12,14 @@ public struct Token: Sendable, Hashable {
 public struct TextSignals: Sendable, Hashable {
     /// Ranked by hits, then first appearance.
     public var themes: [Theme]
+    public var themeCounts: [Theme: Int]
     /// Moods with at least one un-negated hit, ranked by hits, then catalogue order.
     public var moods: [Mood]
     public var names: [String]
     /// Lowercase words that hit a lexicon, used to pick quotable phrases.
     public var focus: [String]
+    /// Up to 8 words that stood out: repeated, lexicon and longer words first, then by first appearance.
+    public var keywords: [String]
 }
 
 /// The heuristic twin ("In your words"): ports of `saro/frontend/lib/demo/ai.ts`. Every string is computed from or
@@ -49,27 +52,42 @@ public enum Heuristics {
         var themeCounts: [Theme: Int] = [:], themeFirst: [Theme: Int] = [:], moodCounts: [Mood: Int] = [:]
         var focus: [String] = []
         var names: [String: (n: Int, first: Int)] = [:]
+        var words: [String: (score: Int, first: Int, display: String)] = [:]
         for (i, t) in tokens.enumerated() {
-            if let theme = Lexicon.themeIndex[t.lower] {
+            let theme = Lexicon.themeIndex[t.lower]
+            if let theme {
                 themeCounts[theme, default: 0] += 1
                 if themeFirst[theme] == nil { themeFirst[theme] = i }
                 focus.append(t.lower)
             }
             let bigram = i + 1 < tokens.count ? Lexicon.emotionIndex["\(t.lower) \(tokens[i + 1].lower)"] : nil
-            if let mood = bigram ?? Lexicon.emotionIndex[t.lower], !isNegated(tokens, i) {
+            let emotion = bigram ?? Lexicon.emotionIndex[t.lower]
+            if let mood = emotion, !isNegated(tokens, i) {
                 moodCounts[mood, default: 0] += 1
                 focus.append(t.lower)
             }
-            if isName(t, ns, tokens, i) { names[t.text, default: (0, i)].n += 1 }
+            let name = isName(t, ns, tokens, i)
+            if name { names[t.text, default: (0, i)].n += 1 }
+            guard t.lower.count >= 3, !Lexicon.stop.contains(t.lower), !t.lower.allSatisfy(\.isNumber) else { continue }
+            if var w = words[t.lower] {
+                w.score += 3
+                if name { w.display = t.text }
+                words[t.lower] = w
+            } else {
+                let bonus = (theme != nil || emotion != nil ? 2 : 0) + (name ? 2 : 0) + (t.lower.count >= 6 ? 1 : 0)
+                words[t.lower] = (3 + bonus, i, name ? t.text : t.lower)
+            }
         }
         let order = Mood.allCases
         return TextSignals(
             themes: themeCounts.keys.sorted { (themeCounts[$0]!, -themeFirst[$0]!) > (themeCounts[$1]!, -themeFirst[$1]!) },
+            themeCounts: themeCounts,
             moods: moodCounts.keys.sorted {
                 (moodCounts[$0]!, -order.firstIndex(of: $0)!) > (moodCounts[$1]!, -order.firstIndex(of: $1)!)
             },
             names: names.keys.sorted { (names[$0]!.n, -names[$0]!.first) > (names[$1]!.n, -names[$1]!.first) },
-            focus: focus)
+            focus: focus,
+            keywords: words.values.sorted { ($0.score, -$0.first) > ($1.score, -$1.first) }.prefix(8).map(\.display))
     }
 
     private static func isNegated(_ tokens: [Token], _ i: Int) -> Bool {
@@ -230,7 +248,8 @@ public enum Heuristics {
 
     /// The "In your words" twin of a day reading: the most common entry mood, up to two quotes (from different entries
     /// when it can), no narrative, and a curated question for the day's themes.
-    public static func heuristicDayReading(digests: [EntryDigest], candidates: [Candidate]) -> DayReading {
+    public static func heuristicDayReading(digests: [EntryDigest], candidates: [Candidate], exclude: [String] = [],
+                                           tone: Tone = .neutral) -> DayReading {
         let moods = digests.compactMap(\.mood)
         let counts = moods.reduce(into: [Mood: Int]()) { $0[$1, default: 0] += 1 }
         let mood = moods.first { counts[$0] == counts.values.max() } ?? .neutral
@@ -246,17 +265,28 @@ public enum Heuristics {
 
         let corpus = (candidates.map(\.text) + digests.flatMap { [$0.title, $0.summary] }).joined(separator: "\n")
         return DayReading(mood: mood, quoteIndexes: picked.map(\.index),
-                          question: pickQuestion(themes: analyzeText(corpus).themes, seed: seed(corpus)))
+                          question: pickQuestion(themes: analyzeText(corpus).themes, seed: seed(corpus), exclude: exclude, tone: tone))
     }
 
     private static func overlaps(_ a: Candidate, _ b: Candidate) -> Bool {
         a.entryId == b.entryId && a.field == b.field && a.utf16From < b.utf16To && b.utf16From < a.utf16To
     }
 
-    /// A curated question from the top theme's pool, else the general pool (ai.ts `pickQuestion`, nothing excluded).
-    public static func pickQuestion(themes: [Theme], seed: Int) -> String {
-        let pool = Lexicon.questions[themes.first] ?? Lexicon.questions[nil]!
-        return pool[seed % pool.count]
+    /// A curated question (ai.ts `pickQuestion`): from the first theme pool, in rank order, then the general pool, that
+    /// still has one not asked lately; when every one has been, repeating beats inventing one. The tone picks within the
+    /// pool: direct the shortest, contemplative the longest, otherwise the seed.
+    public static func pickQuestion(themes: [Theme], seed: Int, exclude: [String] = [], tone: Tone = .neutral) -> String {
+        let general = Lexicon.questions[nil]!
+        for pool in themes.compactMap({ Lexicon.questions[$0] }) + [general] {
+            let open = pool.filter { !exclude.contains($0) }
+            guard !open.isEmpty else { continue }
+            return switch tone {
+            case .direct: open.min { $0.count < $1.count }!
+            case .contemplative: open.max { $0.count < $1.count }!
+            case .gentle, .neutral: open[seed % open.count]
+            }
+        }
+        return general[seed % general.count]
     }
 
     /// FNV-1a, so the same words always pick the same question across launches.
