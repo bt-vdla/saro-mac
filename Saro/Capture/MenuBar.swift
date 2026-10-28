@@ -21,6 +21,7 @@ private struct SaroMenu: View {
         Button("Open Saro", action: openSaro)
         Button("Settings…") { showSettings(nil) }.keyboardShortcut(",", modifiers: .command)
         Button("Profile…") { showSettings(.you) }
+        if PrefsStore.shared.lockEnabled { Button("Lock Saro") { Locker.shared.lock() }.disabled(Locker.shared.locked) }
         Divider()
         Button("If you're struggling…") {
             openSaro()
