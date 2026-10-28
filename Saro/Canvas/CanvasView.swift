@@ -9,6 +9,8 @@ struct DayView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
     @FocusState private var focused: Bool
+    /// The chrome and the stage share it, so the letter's quotes can fly into their cards.
+    nonisolated static let space = "day"
 
     var body: some View {
         GeometryReader { geo in
@@ -35,6 +37,7 @@ struct DayView: View {
                 }
             }
             .animation(Motion.pick(Motion.easeOut(0.3), reduce: reduceMotion), value: model.recorderKind)
+            .coordinateSpace(.named(Self.space))
         }
         .clipped()
         .focusable()
@@ -49,7 +52,7 @@ struct DayView: View {
             else if model.openStackID != nil { model.openStackID = nil }
             else if model.replay.active { model.replay.exit(animated: false) }
             else if model.openVoiceID != nil { model.openVoiceID = nil }
-            else if model.insight != .spine { model.insight = model.insight == .letter ? .panel : .spine }
+            else if model.insight != .spine { model.insight = .spine }
             else { model.selection = [] }
         }
         .onKeyPress(.return) {
@@ -557,7 +560,8 @@ struct DayStage: View {
 
     private func morph(to id: String?) {
         if let id {
-            flightFrom = screenRect(entry: id)
+            flightFrom = model.reflection.flightSource.map { ($0, Radius.card) } ?? screenRect(entry: id)
+            model.reflection.flightSource = nil
             shownID = id
             guard !reduceMotion else {
                 withAnimation(Motion.fade) { flight = 1; scrim = true }
