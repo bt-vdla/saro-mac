@@ -163,9 +163,6 @@ final class AppModel {
             let root = URL.temporaryDirectory.appending(path: "SaroDemo-\(UUID().uuidString)")
             let model = AppModel(ledger: try Ledger(rootURL: root))
             Task { await model.seedDemo() }
-            #if DOGFOOD
-            Task { Snapshots.runIfRequested(model) }
-            #endif
             return .success(model)
         } catch {
             return .failure(error)
