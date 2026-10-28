@@ -23,7 +23,14 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
 }
 
 extension Ledger {
-    private static let cache = Mutex<(ledger: ObjectIdentifier, changes: Int, index: SearchIndex)?>(nil)
+    /// The last index built, for the ledger that built it: held weakly, so a new ledger at a freed one's address never
+    /// gets the old journal's index.
+    private struct CachedIndex: Sendable {
+        weak var ledger: Ledger?
+        let changes: Int
+        let index: SearchIndex
+    }
+    private static let cache = Mutex<CachedIndex?>(nil)
 
     /// Live entries matching `query` through the web's engine (stems, prefixes while typing, typos, field weights,
     /// phrase and recency boosts; every word when it can, else the most), best first. An empty query returns the newest
@@ -47,10 +54,9 @@ extension Ledger {
     /// so its change count is a cheap version (the web keeps its index live per session the same way).
     private func searchIndex() throws -> SearchIndex {
         let changes = try db.run("SELECT total_changes() AS n").first?.int("n") ?? 0
-        let me = ObjectIdentifier(self)
-        if let c = Self.cache.withLock({ $0 }), c.ledger == me, c.changes == changes { return c.index }
+        if let c = Self.cache.withLock({ $0 }), c.ledger === self, c.changes == changes { return c.index }
         let built = SearchIndex(try searchDocs())
-        Self.cache.withLock { $0 = (me, changes, built) }
+        Self.cache.withLock { $0 = CachedIndex(ledger: self, changes: changes, index: built) }
         return built
     }
 
