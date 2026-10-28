@@ -6,6 +6,8 @@ public struct DayPayload: Codable, Sendable, Hashable {
     public var reading: DayReading
     public var quotes: [Candidate]
     public var entryIds: [String]
+    /// The counted, quoted narrative and last-inferred line; nil in readings stored before it existed.
+    public var narrative: Narrative?
 }
 
 /// Where a day stands for its reading (§13.2 whole-day rules).
@@ -220,6 +222,8 @@ public actor Pipeline {
             default: return .working
             }
         }
+        // The person's answers and mood note are their words too: a hold on one holds the day (SR-13).
+        states += await reflectionVerdicts(day).map(EntryState.init(verdict:))
         switch SafetyGate.dayGate(states) {
         case .safetyHeld: return .held
         case .awaitingCheck: return .awaitingCheck
@@ -228,9 +232,10 @@ public actor Pipeline {
     }
 
     /// The day reading behind "What Saro noticed" and the letter. Map-reduce: the model sees only stored per-entry
-    /// annotations plus numbered verbatim candidates, never raw history. Skipped when the inputs haven't changed.
+    /// annotations plus numbered verbatim candidates, never raw history. Skipped when the inputs haven't changed, unless
+    /// `force`d (Refresh, which samples with `seed` and rotates past the `avoid` title). An answered question stays.
     @discardableResult
-    public func readDay(_ day: String) async -> DayPayload? {
+    public func readDay(_ day: String, force: Bool = false, avoid: String? = nil, seed: UInt64? = nil) async -> DayPayload? {
         guard await dayStatus(day) == .ready, let entries = try? await ledger.entries(day: day) else { return nil }
         let verdicts = (try? await ledger.verdicts(day: day)) ?? [:]
         let annotations = (try? await ledger.annotations(day: day)) ?? [:]
@@ -255,35 +260,45 @@ public actor Pipeline {
             sources.append(src.text)
         }
         guard !digests.isEmpty else { return nil }
+        let told = await narrativeEntries(day)
         // The model's mark is one-way: a reading made without the model gives way once it can run, but the model's own
         // reading still stands while it briefly can't.
         let key = digests.map { "\($0.entryId)|\($0.title)|\($0.summary)|\($0.mood?.rawValue ?? "")" }.joined(separator: "\n")
-            + candidates.map(\.text).joined(separator: "\n")
+            + candidates.map(\.text).joined(separator: "\n") + told.map { "\n\($0.kind.rawValue)|\($0.id)" }.joined()
         let (marked, unmarked) = (sha256(key + "\nmodel"), sha256(key))
-        if let last = try? await ledger.latestSnapshot(kind: "day_reading", day: day), last.inputHash == marked || !modelOK && last.inputHash == unmarked,
-           let payload = try? JSONDecoder().decode(DayPayload.self, from: Data(last.payload.utf8)) {
-            return payload
+        let last = try? await ledger.latestSnapshot(kind: "day_reading", day: day)
+        let previous = last.flatMap { try? JSONDecoder().decode(DayPayload.self, from: Data($0.payload.utf8)) }
+        if !force, let last, last.inputHash == marked || !modelOK && last.inputHash == unmarked, let previous, previous.narrative != nil {
+            return previous
         }
 
         let source = sources.joined(separator: "\n")
-        let fallback = Heuristics.heuristicDayReading(digests: digests, candidates: candidates)
-        let reading: DayReading
+        let exclude = (try? await ledger.recentQuestions(day: day, includingDay: false)) ?? []
+        let (tone, known, name) = await (ai.tone, ai.known, ai.name)
+        let fallback = Heuristics.heuristicDayReading(digests: digests, candidates: candidates, exclude: exclude, tone: tone)
+        var reading: DayReading
         let prov: Provenance
         if modelOK {
             // §11.3: an entry the model refused is never re-sent to the permissive rung, so its day starts on guided.
             let refused = (try? await ledger.refusedEntryIDs(day: day)) ?? []
-            // §11.6: the drift check covers all the prose the day shows, the question and mood basis included.
+            // §11.6: the drift check covers all the prose the day shows, the question and mood basis included. The person's
+            // name is known, not invented, but is never quoted as their words.
+            let grounds = ([source] + known).joined(separator: "\n")
             (reading, prov) = await ai.readDay(day: day, digests: digests, candidates: candidates, fallback: fallback,
-                                               permissiveOK: refused.isDisjoint(with: digests.map(\.entryId))) { r in
-                [r.narrative, r.question, r.moodBasis].allSatisfy { $0.map { Heuristics.driftOK(generated: $0, source: source) } ?? true }
+                                               permissiveOK: refused.isDisjoint(with: digests.map(\.entryId)), seed: seed,
+                                               avoid: force ? previous?.reading.narrative : nil, exclude: exclude) { r in
+                [r.narrative, r.question, r.moodBasis].allSatisfy { $0.map { Heuristics.driftOK(generated: $0, source: grounds) } ?? true }
+                    && !Self.quotesName(r.narrative ?? "", name)
             }
         } else {
             (reading, prov) = (fallback, Provenance(executor: "heuristic", rung: .heuristic, guardrails: nil, variant: nil, osBuild: SaroAI.osBuild,
                                                     contextSize: nil, promptVersion: SaroAI.dayPromptVersion, tokensIn: nil, modelCalls: 0, latencyMs: 0))
         }
         if prov.status == "rate_limited" { return nil } // deferred (§11.7): the next readDay asks again
+        if let locked = await answeredQuestion(day) { reading.question = locked }
+        let narrative = DayNarrative.draft(day: day, entries: told, recent: await recentNarrativeEntries(before: day), avoidTitle: avoid)
         // Layer 3 (SR-08): a hit holds every entry the reading drew on, so the whole day is held and nothing is stored.
-        if prov.status == "output_gate" || SafetyGate.phraseHit(reading.prose) {
+        if prov.status == "output_gate" || SafetyGate.phraseHit(reading.prose + "\n" + (narrative?.prose ?? "")) {
             for d in digests {
                 guard let row = verdicts[d.entryId] else { continue }
                 try? await ledger.insertVerdict(SafetyVerdictRow(entryId: d.entryId, textSha256: row.textSha256, safetyVersion: SafetyGate.version,
@@ -295,14 +310,14 @@ public actor Pipeline {
         // Stored unmarked when the model's assets went missing mid-ladder: the model never read this day.
         let inputHash = modelOK && prov.status != "assetsUnavailable" ? marked : unmarked
         let picked = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
-        let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId))
+        let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId), narrative: narrative)
         var run = AIRun(feature: "day_reading", executor: prov.executor, status: prov.status)
         run.guardrails = prov.guardrails
         run.ladderRung = prov.rung.rawValue
         run.osBuild = prov.osBuild
         run.variant = prov.variant
         run.contextSize = prov.contextSize
-        run.sampling = "greedy"
+        run.sampling = seed.map { "random:\($0)" } ?? "greedy"
         run.promptVersion = prov.promptVersion
         run.inputHash = inputHash
         run.tokensIn = prov.tokensIn
@@ -323,16 +338,20 @@ public actor Pipeline {
     public func latestDayReading(_ day: String) async -> (payload: DayPayload, generator: String, runId: String?)? {
         guard let s = try? await ledger.latestSnapshot(kind: "day_reading", day: day),
               var p = try? JSONDecoder().decode(DayPayload.self, from: Data(s.payload.utf8)) else { return nil }
-        // A reading older than an edit (its successor deferred) keeps only the quotes still verbatim in the text (§11.6).
+        // A reading older than an edit (its successor deferred) keeps only the quotes still verbatim in the text (§11.6);
+        // a narrative that quotes words no longer there waits for the next reading.
         var kept: [Candidate] = []
-        for q in p.quotes {
-            guard let e = try? await ledger.entry(q.entryId), e.trashedAt == nil, let src = try? await text(for: e), src.field == q.field
-            else { continue }
-            let ns = src.text as NSString
-            if q.utf16From >= 0, q.utf16From <= q.utf16To, q.utf16To <= ns.length,
-               ns.substring(with: NSRange(location: q.utf16From, length: q.utf16To - q.utf16From)) == q.text { kept.append(q) }
-        }
+        for q in p.quotes { if await verbatim(q) { kept.append(q) } }
         p.quotes = kept
+        for q in p.narrative?.quotes ?? [] { if await !verbatim(q) { p.narrative = nil } }
         return (p, s.generator, s.aiRunId)
+    }
+
+    func verbatim(_ q: Candidate) async -> Bool {
+        guard let e = try? await ledger.entry(q.entryId), e.trashedAt == nil, let src = try? await text(for: e), src.field == q.field
+        else { return false }
+        let ns = src.text as NSString
+        return q.utf16From >= 0 && q.utf16From <= q.utf16To && q.utf16To <= ns.length
+            && ns.substring(with: NSRange(location: q.utf16From, length: q.utf16To - q.utf16From)) == q.text
     }
 }
