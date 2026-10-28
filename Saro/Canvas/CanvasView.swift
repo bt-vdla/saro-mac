@@ -94,6 +94,8 @@ struct DayView: View {
         .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
         // A closed recorder or music field leaves no field holding the keys; the bar's button may take them next.
         .onChange(of: model.recorderKind == nil && !CaptureUI.shared.musicOpen) { _, idle in if idle { focused = true } }
+        // So does an edit on a card that Return or Esc ended; a click that ended it leaves the keys where it put them.
+        .onChange(of: CaptureUI.shared.editing == nil) { _, ended in if ended, NSApp.currentEvent?.type == .keyDown { focused = true } }
     }
 
     private var screenID: ScreenID {
