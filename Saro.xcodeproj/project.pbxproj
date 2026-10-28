@@ -1,0 +1,586 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		04415728228C0CBE0420538D /* ShellViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F898A20055CE54EDCCDEBA8 /* ShellViews.swift */; };
+		138DB5E2B24A1945B8AC37FD /* SafetyCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E1AD23BC016AD6E604A412F /* SafetyCardView.swift */; };
+		1A3F59BE94ABE56DD2D2D37B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 320C04C124D8B3573D4A40C7 /* Assets.xcassets */; };
+		23EBC0A75857925ECC525882 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5FFC278D920442B79B07E9 /* DetailView.swift */; };
+		309D29B93A2FBCC914D5668F /* LitGround.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81644A536600F8AFD6FFD647 /* LitGround.swift */; };
+		3DC351D29BD3C0C22C30D8FA /* MenuBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121AD3F54C416054DB3AFF15 /* MenuBar.swift */; };
+		51E775D16964D65E690C4B4E /* TourAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E73D2841136756AAF6CEE1 /* TourAnchor.swift */; };
+		5730C84EE26D6371F5F8BA8F /* NoticedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FF3342FAB403844F740ECAF /* NoticedView.swift */; };
+		598EFFDDC58E3AC706155A63 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 953A0F3CF7976BE189E9EEC0 /* RootView.swift */; };
+		64D8C0E8D73C1867E9785C56 /* LetterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C713FFD0F3DE0B0039CFEDD /* LetterView.swift */; };
+		673D8916B7B56891D6B66A96 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66B6A3717D162092779AC808 /* AppModel.swift */; };
+		679F7A2501430F338B835EAC /* Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DCF4C77F0FB18F2BD6A95CF /* Snapshots.swift */; };
+		6AAC53A45874582A0E952878 /* DecisionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F7593CA70015527F6B3D59 /* DecisionsView.swift */; };
+		7D727562FB35D57EBD055DA0 /* LitGround.metal in Sources */ = {isa = PBXBuildFile; fileRef = 3306973E95E1D9CE8074FF75 /* LitGround.metal */; };
+		7F1ADF51C0C662BE555DD77B /* SaroApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D39271F914E4803CF22B5C /* SaroApp.swift */; };
+		848E0232474677303258CA4D /* Daylight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E33F63CB76CBB2928A7CA251 /* Daylight.swift */; };
+		857A3E5239F6CCFB67E0E03C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA646C960CFACB390B21351C /* Theme.swift */; };
+		8E06AB4E67A051E145F81371 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21905B32B376B19FAC8A09BF /* CardView.swift */; };
+		9237C41C4BABB8103283DA39 /* CapturePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D36681741638F4D012EDD1D /* CapturePanel.swift */; };
+		998518E03C5B843EC37619A2 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = D00D018E3D4830CC2D505F23 /* Fonts */; };
+		A0DCBA6C28409E565B610BCC /* DevNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 865129438C25D44EE9A11CEF /* DevNotes.swift */; };
+		AA48556D55DC05CD0C350338 /* SearchPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DAB745ABA4CE416F4668E4 /* SearchPalette.swift */; };
+		B4BF028C44531D06A70B991D /* CanvasEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB9C112B5827AA481D05A87 /* CanvasEvents.swift */; };
+		BBAC725F47B28896CDA6FB40 /* DevCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6CDFA3BC6CD9749F17A451 /* DevCommands.swift */; };
+		BC1CE38651D9D16211AFFEAD /* VoicePill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C60C4B0FF55279B0830DBB /* VoicePill.swift */; };
+		C558D4221C7F7D2FAADB0884 /* Tour.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6662A64CD75AA6E77DB3717 /* Tour.swift */; };
+		C9D8F22016F2C3423FD28EE7 /* ToastHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */; };
+		D0184C2EAF95A67F6D3CED5F /* CaptureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED31938C0123C1789E50945 /* CaptureController.swift */; };
+		D0B01ACDA0BFB069FDB4AB83 /* Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D651C6DDCA649B5F35280A /* Chrome.swift */; };
+		DFD798A06DA62504A1E29F49 /* RecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09F8D26D339B641BEFEB048 /* RecorderView.swift */; };
+		E89FA24183EF7A173CE47CC6 /* SaroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B374F272D089E98B91D7E9A /* SaroKit */; };
+		ED15910DB783DAE798B5D808 /* DevNotesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0A15D65AF6CFF1DBE0B06F /* DevNotesPanel.swift */; };
+		F8457D0F981363EA179883ED /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A769C058197B201354AD6998 /* CanvasView.swift */; };
+		FEE6177C88287A5AC5AF2C46 /* HotKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0359A36E873ED1524535248 /* HotKey.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0FF3342FAB403844F740ECAF /* NoticedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoticedView.swift; sourceTree = "<group>"; };
+		121AD3F54C416054DB3AFF15 /* MenuBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBar.swift; sourceTree = "<group>"; };
+		14DAB745ABA4CE416F4668E4 /* SearchPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPalette.swift; sourceTree = "<group>"; };
+		21905B32B376B19FAC8A09BF /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
+		21E73D2841136756AAF6CEE1 /* TourAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TourAnchor.swift; sourceTree = "<group>"; };
+		320C04C124D8B3573D4A40C7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3306973E95E1D9CE8074FF75 /* LitGround.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LitGround.metal; sourceTree = "<group>"; };
+		3B48D9A473F828AD42AE415A /* SaroKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SaroKit; path = SaroKit; sourceTree = SOURCE_ROOT; };
+		3F898A20055CE54EDCCDEBA8 /* ShellViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellViews.swift; sourceTree = "<group>"; };
+		4D36681741638F4D012EDD1D /* CapturePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturePanel.swift; sourceTree = "<group>"; };
+		4E0A15D65AF6CFF1DBE0B06F /* DevNotesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevNotesPanel.swift; sourceTree = "<group>"; };
+		5F5FFC278D920442B79B07E9 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
+		60E437760433AA5440E1FAD3 /* Saro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Saro.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		66B6A3717D162092779AC808 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		69D39271F914E4803CF22B5C /* SaroApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaroApp.swift; sourceTree = "<group>"; };
+		6E1AD23BC016AD6E604A412F /* SafetyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyCardView.swift; sourceTree = "<group>"; };
+		7DCF4C77F0FB18F2BD6A95CF /* Snapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshots.swift; sourceTree = "<group>"; };
+		81644A536600F8AFD6FFD647 /* LitGround.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LitGround.swift; sourceTree = "<group>"; };
+		865129438C25D44EE9A11CEF /* DevNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevNotes.swift; sourceTree = "<group>"; };
+		89D651C6DDCA649B5F35280A /* Chrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome.swift; sourceTree = "<group>"; };
+		8B48C1E33BD8AEE5627768EA /* Saro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Saro.entitlements; sourceTree = "<group>"; };
+		90C60C4B0FF55279B0830DBB /* VoicePill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePill.swift; sourceTree = "<group>"; };
+		953A0F3CF7976BE189E9EEC0 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		9AB9C112B5827AA481D05A87 /* CanvasEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasEvents.swift; sourceTree = "<group>"; };
+		9C713FFD0F3DE0B0039CFEDD /* LetterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LetterView.swift; sourceTree = "<group>"; };
+		A0359A36E873ED1524535248 /* HotKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKey.swift; sourceTree = "<group>"; };
+		A09F8D26D339B641BEFEB048 /* RecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderView.swift; sourceTree = "<group>"; };
+		A769C058197B201354AD6998 /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
+		AA646C960CFACB390B21351C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		D00D018E3D4830CC2D505F23 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Saro/Resources/Fonts; sourceTree = SOURCE_ROOT; };
+		D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastHost.swift; sourceTree = "<group>"; };
+		E33F63CB76CBB2928A7CA251 /* Daylight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Daylight.swift; sourceTree = "<group>"; };
+		E6662A64CD75AA6E77DB3717 /* Tour.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tour.swift; sourceTree = "<group>"; };
+		EED31938C0123C1789E50945 /* CaptureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureController.swift; sourceTree = "<group>"; };
+		EF6CDFA3BC6CD9749F17A451 /* DevCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevCommands.swift; sourceTree = "<group>"; };
+		F1F7593CA70015527F6B3D59 /* DecisionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionsView.swift; sourceTree = "<group>"; };
+		F972C69F1190B651CB3B7BAC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		467BF2547931D04EB8DA33C6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E89FA24183EF7A173CE47CC6 /* SaroKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0C8F55089911A70F856541AF /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				E33F63CB76CBB2928A7CA251 /* Daylight.swift */,
+				3306973E95E1D9CE8074FF75 /* LitGround.metal */,
+				81644A536600F8AFD6FFD647 /* LitGround.swift */,
+				AA646C960CFACB390B21351C /* Theme.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		1081040ACC4FE5B8EAB45DA4 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D00D018E3D4830CC2D505F23 /* Fonts */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		1E14E0615213C561F15564BD /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				60E437760433AA5440E1FAD3 /* Saro.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2D9CB58B612652E61F6A7AA0 /* Dev */ = {
+			isa = PBXGroup;
+			children = (
+				F1F7593CA70015527F6B3D59 /* DecisionsView.swift */,
+				EF6CDFA3BC6CD9749F17A451 /* DevCommands.swift */,
+				865129438C25D44EE9A11CEF /* DevNotes.swift */,
+				4E0A15D65AF6CFF1DBE0B06F /* DevNotesPanel.swift */,
+				7DCF4C77F0FB18F2BD6A95CF /* Snapshots.swift */,
+				E6662A64CD75AA6E77DB3717 /* Tour.swift */,
+			);
+			path = Dev;
+			sourceTree = "<group>";
+		};
+		4D114107EABA30D3C2AADDF9 /* Search */ = {
+			isa = PBXGroup;
+			children = (
+				14DAB745ABA4CE416F4668E4 /* SearchPalette.swift */,
+			);
+			path = Search;
+			sourceTree = "<group>";
+		};
+		58B552C6B1B6A7C72227784C /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				3B48D9A473F828AD42AE415A /* SaroKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		761EF23FC0193603DE759B0F /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				6E1AD23BC016AD6E604A412F /* SafetyCardView.swift */,
+				D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */,
+				21E73D2841136756AAF6CEE1 /* TourAnchor.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		875A52BA21C3D8693505B0B5 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				66B6A3717D162092779AC808 /* AppModel.swift */,
+				953A0F3CF7976BE189E9EEC0 /* RootView.swift */,
+				69D39271F914E4803CF22B5C /* SaroApp.swift */,
+				3F898A20055CE54EDCCDEBA8 /* ShellViews.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		D352638FDD7335B4BA6413BB = {
+			isa = PBXGroup;
+			children = (
+				58B552C6B1B6A7C72227784C /* Packages */,
+				F0B508D3F8284B57A0EFC7E2 /* Saro */,
+				1E14E0615213C561F15564BD /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D48D492B6391BC75A56DC966 /* Canvas */ = {
+			isa = PBXGroup;
+			children = (
+				9AB9C112B5827AA481D05A87 /* CanvasEvents.swift */,
+				A769C058197B201354AD6998 /* CanvasView.swift */,
+				21905B32B376B19FAC8A09BF /* CardView.swift */,
+				89D651C6DDCA649B5F35280A /* Chrome.swift */,
+			);
+			path = Canvas;
+			sourceTree = "<group>";
+		};
+		DF5301F431D99332ACA7DEA0 /* Capture */ = {
+			isa = PBXGroup;
+			children = (
+				EED31938C0123C1789E50945 /* CaptureController.swift */,
+				4D36681741638F4D012EDD1D /* CapturePanel.swift */,
+				A0359A36E873ED1524535248 /* HotKey.swift */,
+				121AD3F54C416054DB3AFF15 /* MenuBar.swift */,
+				A09F8D26D339B641BEFEB048 /* RecorderView.swift */,
+				90C60C4B0FF55279B0830DBB /* VoicePill.swift */,
+			);
+			path = Capture;
+			sourceTree = "<group>";
+		};
+		F0B508D3F8284B57A0EFC7E2 /* Saro */ = {
+			isa = PBXGroup;
+			children = (
+				320C04C124D8B3573D4A40C7 /* Assets.xcassets */,
+				F972C69F1190B651CB3B7BAC /* Info.plist */,
+				8B48C1E33BD8AEE5627768EA /* Saro.entitlements */,
+				875A52BA21C3D8693505B0B5 /* App */,
+				D48D492B6391BC75A56DC966 /* Canvas */,
+				DF5301F431D99332ACA7DEA0 /* Capture */,
+				0C8F55089911A70F856541AF /* Design */,
+				F8C772DEE399E206D8616130 /* Detail */,
+				2D9CB58B612652E61F6A7AA0 /* Dev */,
+				1081040ACC4FE5B8EAB45DA4 /* Resources */,
+				4D114107EABA30D3C2AADDF9 /* Search */,
+				761EF23FC0193603DE759B0F /* Shared */,
+			);
+			path = Saro;
+			sourceTree = "<group>";
+		};
+		F8C772DEE399E206D8616130 /* Detail */ = {
+			isa = PBXGroup;
+			children = (
+				5F5FFC278D920442B79B07E9 /* DetailView.swift */,
+				9C713FFD0F3DE0B0039CFEDD /* LetterView.swift */,
+				0FF3342FAB403844F740ECAF /* NoticedView.swift */,
+			);
+			path = Detail;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		FD497615D84326E8ED599578 /* Saro */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1ECDAC38F3AE9114E2AC9F78 /* Build configuration list for PBXNativeTarget "Saro" */;
+			buildPhases = (
+				B5C1990A7170C396623AB44A /* Sources */,
+				9300AD7814704CD61486CDEA /* Resources */,
+				467BF2547931D04EB8DA33C6 /* Frameworks */,
+				88DF6C8B96821CC3EB7D3F9F /* Stamp git commit */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Saro;
+			packageProductDependencies = (
+				8B374F272D089E98B91D7E9A /* SaroKit */,
+			);
+			productName = Saro;
+			productReference = 60E437760433AA5440E1FAD3 /* Saro.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E034332B5B37E027CB48949C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					FD497615D84326E8ED599578 = {
+						DevelopmentTeam = P6SP5RHNLV;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 28D7BA0C4304A3526E31F579 /* Build configuration list for PBXProject "Saro" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D352638FDD7335B4BA6413BB;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0477B1A2BF8D284378DED788 /* XCLocalSwiftPackageReference "SaroKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				FD497615D84326E8ED599578 /* Saro */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9300AD7814704CD61486CDEA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A3F59BE94ABE56DD2D2D37B /* Assets.xcassets in Resources */,
+				998518E03C5B843EC37619A2 /* Fonts in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		88DF6C8B96821CC3EB7D3F9F /* Stamp git commit */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stamp git commit";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "PLIST=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\nHASH=$(git -C \"$SRCROOT\" rev-parse --short HEAD 2>/dev/null || echo unknown)\nif [ -n \"$(git -C \"$SRCROOT\" status --porcelain 2>/dev/null)\" ]; then HASH=\"$HASH-dirty\"; fi\n/usr/libexec/PlistBuddy -c \"Set :SaroGitCommit $HASH\" \"$PLIST\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B5C1990A7170C396623AB44A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				673D8916B7B56891D6B66A96 /* AppModel.swift in Sources */,
+				B4BF028C44531D06A70B991D /* CanvasEvents.swift in Sources */,
+				F8457D0F981363EA179883ED /* CanvasView.swift in Sources */,
+				D0184C2EAF95A67F6D3CED5F /* CaptureController.swift in Sources */,
+				9237C41C4BABB8103283DA39 /* CapturePanel.swift in Sources */,
+				8E06AB4E67A051E145F81371 /* CardView.swift in Sources */,
+				D0B01ACDA0BFB069FDB4AB83 /* Chrome.swift in Sources */,
+				848E0232474677303258CA4D /* Daylight.swift in Sources */,
+				6AAC53A45874582A0E952878 /* DecisionsView.swift in Sources */,
+				23EBC0A75857925ECC525882 /* DetailView.swift in Sources */,
+				BBAC725F47B28896CDA6FB40 /* DevCommands.swift in Sources */,
+				A0DCBA6C28409E565B610BCC /* DevNotes.swift in Sources */,
+				ED15910DB783DAE798B5D808 /* DevNotesPanel.swift in Sources */,
+				FEE6177C88287A5AC5AF2C46 /* HotKey.swift in Sources */,
+				64D8C0E8D73C1867E9785C56 /* LetterView.swift in Sources */,
+				7D727562FB35D57EBD055DA0 /* LitGround.metal in Sources */,
+				309D29B93A2FBCC914D5668F /* LitGround.swift in Sources */,
+				3DC351D29BD3C0C22C30D8FA /* MenuBar.swift in Sources */,
+				5730C84EE26D6371F5F8BA8F /* NoticedView.swift in Sources */,
+				DFD798A06DA62504A1E29F49 /* RecorderView.swift in Sources */,
+				598EFFDDC58E3AC706155A63 /* RootView.swift in Sources */,
+				138DB5E2B24A1945B8AC37FD /* SafetyCardView.swift in Sources */,
+				7F1ADF51C0C662BE555DD77B /* SaroApp.swift in Sources */,
+				AA48556D55DC05CD0C350338 /* SearchPalette.swift in Sources */,
+				04415728228C0CBE0420538D /* ShellViews.swift in Sources */,
+				679F7A2501430F338B835EAC /* Snapshots.swift in Sources */,
+				857A3E5239F6CCFB67E0E03C /* Theme.swift in Sources */,
+				C9D8F22016F2C3423FD28EE7 /* ToastHost.swift in Sources */,
+				C558D4221C7F7D2FAADB0884 /* Tour.swift in Sources */,
+				51E775D16964D65E690C4B4E /* TourAnchor.swift in Sources */,
+				BC1CE38651D9D16211AFFEAD /* VoicePill.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		28137B2844150BE3573D416D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		60E508B32F3D6502688AEE8F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A68B88C5473F1E0D0CA65AED /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Saro/Saro.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = P6SP5RHNLV;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Saro/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saro.dogfood;
+				PRODUCT_NAME = Saro;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DOGFOOD";
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Release;
+		};
+		E1453F8945ACF0115D066317 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Saro/Saro.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = P6SP5RHNLV;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Saro/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saro.dogfood;
+				PRODUCT_NAME = Saro;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DOGFOOD";
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1ECDAC38F3AE9114E2AC9F78 /* Build configuration list for PBXNativeTarget "Saro" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E1453F8945ACF0115D066317 /* Debug */,
+				A68B88C5473F1E0D0CA65AED /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		28D7BA0C4304A3526E31F579 /* Build configuration list for PBXProject "Saro" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				28137B2844150BE3573D416D /* Debug */,
+				60E508B32F3D6502688AEE8F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0477B1A2BF8D284378DED788 /* XCLocalSwiftPackageReference "SaroKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = SaroKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8B374F272D089E98B91D7E9A /* SaroKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SaroKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E034332B5B37E027CB48949C /* Project object */;
+}
