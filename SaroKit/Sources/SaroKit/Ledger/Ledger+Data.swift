@@ -214,6 +214,13 @@ extension Ledger {
         let tables = try tableNames()
         try db.transaction {
             try db.exec("PRAGMA defer_foreign_keys=ON")
+            // A first pass (no entries yet) part way through About you gives way to an export that finished onboarding:
+            // its half-made profile and its starter, whose version would collide with the export's.
+            let firstPass = try !db.run("SELECT 1 FROM profile WHERE id=1 AND onboarding_done_at IS NULL AND NOT EXISTS (SELECT 1 FROM entry)").isEmpty
+            if firstPass, (top["profile"] as? [[String: Any]])?.first?["onboarding_done_at"] is String {
+                try db.run("DELETE FROM profile")
+                try db.run("DELETE FROM starter_context")
+            }
             try db.run("DELETE FROM profile WHERE id=1 AND name IS NULL AND called IS NULL AND onboarding_done_at IS NULL")
             for t in tables {
                 guard let rows = top[t] as? [[String: Any]], !rows.isEmpty else { continue }

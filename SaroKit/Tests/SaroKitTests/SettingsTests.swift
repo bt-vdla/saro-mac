@@ -632,6 +632,40 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
     }
 
+    /// File → Import part way through a first onboarding pass: the export's finished profile and About you replace the
+    /// half-made ones. A journal with entries (a replay) keeps its own.
+    @Test func importMidOnboardingTakesTheExportsFinishedProfile() async throws {
+        let a = try freshLedger()
+        _ = try await seed(a)
+        let theirs = StarterContext(version: 1)
+        try await a.saveStarter(theirs)
+        var done = try await a.profile()
+        done.onboardingDoneAt = .now
+        done.tone = .direct
+        try await a.saveProfile(done)
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        try await a.exportEverything(to: dir, prefs: nil)
+
+        let b = try freshLedger()
+        var half = try await b.profile()
+        half.name = "Sam"
+        half.called = "Sam"
+        try await b.saveProfile(half)
+        try await b.saveStarter(StarterContext(version: 1))
+        _ = try await b.importExport(from: dir)
+        let imported = try await b.profile()
+        #expect(imported.name == "Alex Rivers" && imported.onboardingDoneAt != nil && imported.tone == .direct)
+        #expect(try await b.run("SELECT id FROM starter_context").compactMap { $0.str("id") } == [theirs.id])
+
+        let c = try freshLedger()
+        try await c.insertEntry(Entry(kind: .reflection, body: "A quiet morning.", localDay: "2026-10-20"))
+        var replay = try await c.profile()
+        replay.name = "Sam"
+        try await c.saveProfile(replay)
+        _ = try await c.importExport(from: dir)
+        #expect(try await c.profile().name == "Sam")
+    }
+
     /// SR-15, FR-MEM-03: importing an export made before a hold, or before a forget, brings back none of what they deleted.
     @Test func importingAnOlderExportBringsBackNothingAHoldOrForgetDeleted() async throws {
         let l = try freshLedger()
