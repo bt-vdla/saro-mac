@@ -59,6 +59,24 @@ enum Snapshots {
                     model.insight = .panel
                     model.reflection.answerRequested = true
                 }),
+                // Kept, the letter stays open as 'Kept letter' with the check in its footer.
+                ("reflection-kept", {
+                    model.reflection.answerRequested = false
+                    model.insight = .letter
+                    guard let p = model.dayReading?.payload,
+                          let letter = Letter(reading: p.reading, candidates: p.quotes, narrative: p.narrative, mood: nil) else { return }
+                    Task { await model.reflection.keep(letter) }
+                }),
+                // A day that can be read but whose reading didn't come: the panel says so and offers Try again.
+                ("reflection-unavailable", {
+                    model.insight = .panel
+                    Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        model.dayReading = nil
+                    }
+                }),
+                // A held day: the SafetyCard alone, no commitments under it.
+                ("reflection-held", { model.go(to: LocalDay.adding(-2, to: LocalDay.today())) }),
                 // Stills (demo journal only): the user's caption over Saro's description, then that still held.
                 ("still-yours", {
                     guard model.isDemo else { return }
@@ -98,10 +116,16 @@ enum Snapshots {
     }
 }
 
-/// The letter is due at once and the first week started two days ago; yesterday left two commitments open.
+/// The letter is due at once and the first week started two days ago; yesterday left two commitments open, and the day
+/// before is held (synthetic text, SR-28) with a commitment of its own.
 @MainActor private func seedReflection(_ model: AppModel) async {
     PrefsStore.shared.letterMinutes = 0
-    PrefsStore.shared.weekStartedOn = LocalDay.adding(-2, to: LocalDay.today())
+    let twoAgo = LocalDay.adding(-2, to: LocalDay.today())
+    PrefsStore.shared.weekStartedOn = twoAgo
+    let held = Entry(kind: .reflection, body: "Some nights I just want to die.", capturedAt: .now.addingTimeInterval(-2 * 86_400), localDay: twoAgo)
+    try? await model.ledger.insertEntry(held)
+    model.process(held.id)
+    _ = try? await model.ledger.addCommitment("Run the 5k", day: twoAgo)
     let yesterday = LocalDay.adding(-1, to: LocalDay.today())
     for text in ["Call Ravi about Pune.", "Book the dentist", "Walk home the long way"] {
         _ = try? await model.ledger.addCommitment(text, day: yesterday)
