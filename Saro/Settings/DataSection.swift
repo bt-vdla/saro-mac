@@ -68,7 +68,8 @@ struct DataSection: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Storage").font(Typo.ui(14.5, .medium)).foregroundStyle(Tok.ink)
                 Spacer()
-                if let storage { Text(bytes(storage.totalBytes)).font(Typo.mono(12)).monospacedDigit().foregroundStyle(Tok.ink2) }
+                // The whole journal, as 01 You says it; the bar below is the recordings, photos and words alone.
+                if let storage { Text(bytes(storage.totalBytes + storage.databaseBytes + storage.backupsBytes)).font(Typo.mono(12)).monospacedDigit().foregroundStyle(Tok.ink2) }
             }
             Text("On this Mac, inside Saro’s private container.").font(Typo.ui(12)).foregroundStyle(Tok.ink3)
             if storageFailed {
