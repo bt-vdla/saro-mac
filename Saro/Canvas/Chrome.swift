@@ -63,6 +63,7 @@ struct BottomBar: View {
         }
         .padding(6)
         .glassPanel(radius: Radius.sheet)
+        .overlay(alignment: .bottomLeading) { ShellPanelLayer() }
         .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: replaying)
         .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.day)
         .onChange(of: model.day) { old, new in dateDirection = new > old ? 1 : -1 }

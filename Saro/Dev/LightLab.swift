@@ -34,7 +34,7 @@ struct LightLab: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .glassPanel(radius: 999)
-        .padding(.top, 12)
+        .padding(.top, 44)
     }
 
     private func label(_ hour: Double?) -> String {

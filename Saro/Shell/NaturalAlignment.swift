@@ -1,3 +1,4 @@
+import AppKit
 import SaroKit
 import SwiftUI
 
@@ -19,7 +20,9 @@ private struct FocusRing: ViewModifier {
 
     func body(content: Content) -> some View {
         content.overlay {
-            if focused {
+            // Without Full Keyboard Access a button can't take focus, and the nearest focusable ancestor (the canvas)
+            // would light every ring at once.
+            if focused && NSApplication.shared.isFullKeyboardAccessEnabled {
                 RoundedRectangle(cornerRadius: radius + 4).strokeBorder(Tok.sage, lineWidth: 2).padding(-4).allowsHitTesting(false)
             }
         }

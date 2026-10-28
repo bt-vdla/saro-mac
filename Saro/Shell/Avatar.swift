@@ -63,25 +63,34 @@ struct AvatarButton: View {
         .help(saves.notSaved ? "Something didn't save. Open this menu to try again." : "Your journal")
         .accessibilityLabel("Account menu")
         .accessibilityValue(saves.tally.label)
-        .overlay(alignment: .topLeading) {
-            if let p = panels.panel {
-                // Above the whole bar (6 pt of its padding, then 8), from the avatar's left.
-                Group {
-                    switch p {
-                    case .account: AccountMenu()
-                    case .trash: TrashPanel(style: .popover)
-                    }
-                }
-                .alignmentGuide(.top) { $0[.bottom] + 14 }
-                .alignmentGuide(.leading) { $0[.leading] + 6 }
-                .transition(panels.byKey ? .identity : reduceMotion ? .opacity
-                            : .scale(scale: 0.6, anchor: .bottomLeading).combined(with: .opacity))
+        .onAppear { CardMenuKeys.install(model) }
+        // Another day closes what was open over the bar.
+        .onChange(of: model.day) { panels.panel = nil }
+    }
+}
+
+/// The account menu or Trash, 8 pt above the whole bar from its left edge, over everything on it. It grows out of the
+/// avatar on Motion.small, and comes and goes at once when a key opened it.
+struct ShellPanelLayer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var panels: ShellPanels { .shared }
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            switch panels.panel {
+            case .account: AccountMenu().transition(transition)
+            case .trash: TrashPanel(style: .popover).transition(transition)
+            case nil: EmptyView()
             }
         }
+        .fixedSize()
+        // ponytail: the bar's height (64, its 52 pt captures in 6 pt of padding) as a constant, as ToastHost does.
+        .padding(.bottom, 72)
         .animation(panels.byKey ? nil : Motion.pick(Motion.small, reduce: reduceMotion), value: panels.panel)
-        .onAppear { CardMenuKeys.install(model) }
-        // Another day or pane closes what was open over the bar.
-        .onChange(of: model.day) { panels.panel = nil }
+    }
+
+    private var transition: AnyTransition {
+        panels.byKey ? .identity : reduceMotion ? .opacity : .scale(scale: 0.6, anchor: .bottomLeading).combined(with: .opacity)
     }
 }
 

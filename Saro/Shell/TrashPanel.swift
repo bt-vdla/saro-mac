@@ -31,8 +31,8 @@ struct TrashPanel: View {
                 ScrollView {
                     VStack(spacing: 4) { ForEach(items) { row($0) } }.padding(8)
                 }
-                .frame(maxHeight: style == .popover ? 400 : .infinity)
-                .fixedSize(horizontal: false, vertical: style == .popover)
+                .frame(maxHeight: style == .popover ? 400 : 640)
+                .fixedSize(horizontal: false, vertical: true)
                 Rectangle().fill(Tok.line.opacity(0.7)).frame(height: 1)
                 footer
             }
@@ -203,7 +203,7 @@ struct TrashPanel: View {
     /// Six at a time, so the footer counts up and what failed stays.
     private func restore(_ entries: [Entry], all: Bool = false) async {
         if all { busy = (true, entries.count) }
-        let flies = !all && !Motion.byKey && !reduceMotion
+        let flies = style == .popover && !all && !Motion.byKey && !reduceMotion
         var done = 0
         for chunk in stride(from: 0, to: entries.count, by: 6).map({ Array(entries[$0..<min($0 + 6, entries.count)]) }) {
             guard await model.restore(ids: chunk.map(\.id)) else { break }
