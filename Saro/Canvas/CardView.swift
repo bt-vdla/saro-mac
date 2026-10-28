@@ -76,8 +76,9 @@ extension AppModel {
         return (title(for: e), text)
     }
 
+    /// None for any entry on a day with a safety hold (SR-13's whole-day rule).
     func mood(for e: Entry) -> String? {
-        guard verdicts[e.id]?.verdict == "clear" else { return nil }
+        guard verdicts[e.id]?.verdict == "clear", dayStatus != .held else { return nil }
         return annotations[e.id]?.moodLabel
     }
 }

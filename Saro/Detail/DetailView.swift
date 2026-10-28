@@ -440,7 +440,15 @@ struct ReadingSection: View {
             Button("Talk to someone") { NotificationCenter.default.post(name: .showSafetyCard, object: nil) }
                 .buttonStyle(.link).font(Typo.ui(12))
         case "clear", "unavailable_clear":
-            if let a = model.annotations[entry.id] { annotation(a) } else { Text("Reading…").font(Typo.ui(13)).foregroundStyle(Tok.ink3) }
+            // A safety hold anywhere that day hides every entry's reading, mood, quote and 'In your words' (SR-13).
+            if model.dayStatus == .held {
+                Text("Saro isn't writing about this day. This entry is kept, and you can play or read it any time.")
+                    .font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
+            } else if let a = model.annotations[entry.id] {
+                annotation(a)
+            } else {
+                Text("Reading…").font(Typo.ui(13)).foregroundStyle(Tok.ink3)
+            }
         default:
             Text(entry.kind == .still && entry.captionUser == nil ? "Add a note and Saro will read it." : "Saro reads each entry on this Mac once it's saved.")
                 .font(Typo.ui(13)).foregroundStyle(Tok.ink3)
