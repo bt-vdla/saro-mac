@@ -45,6 +45,7 @@ final class ReflectionModel {
     @ObservationIgnored private var scheduled: String?
     @ObservationIgnored private var regated: Set<String> = []
     @ObservationIgnored private var fullAt = Date.distantPast
+    @ObservationIgnored private var delivered: Set<String> = []
 
     init() {
         Task { [weak self] in
@@ -205,7 +206,8 @@ final class ReflectionModel {
         let entries = await model.pipeline.weekEntries(from: start)
         if let due = WeekMilestones.dueNote(startedOn: start, entries: entries, now: .now, name: model.profile?.address) {
             let kind = due.kind == .letter ? "week_letter" : "pattern"
-            if (try? await ledger.latestSnapshot(kind: kind)) == nil, let json = try? JSONEncoder().encode(due) {
+            // Overlapping loads (a reload storm while entries process) deliver it once.
+            if (try? await ledger.latestSnapshot(kind: kind)) == nil, delivered.insert(kind).inserted, let json = try? JSONEncoder().encode(due) {
                 try? await ledger.insertSnapshot(InsightSnapshot(kind: kind, day: day, aiRunId: nil, generator: "heuristic", inputHash: nil,
                                                                  payload: String(decoding: json, as: UTF8.self)))
                 await notify(due.kind == .letter ? "Your first weekly letter is here." : "Saro noticed a first pattern.", day: day)
