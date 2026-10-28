@@ -375,6 +375,10 @@ private struct FirstQuestionView: View {
                         Button("Ask me something else") { withAnimation(reduceMotion ? nil : Motion.easeOut(0.16)) { index = i + 1 } }
                             .buttonStyle(LinkStyle())
                     }
+                    // A caution hit with Apple Intelligence off: the question doesn't read it, and someone can listen.
+                    if flow.caution {
+                        Button("Talk to someone") { model.safetyCardRequested = true }.buttonStyle(LinkStyle())
+                    }
                 }
                 Text("Return to answer it").monoCaps(10.5).foregroundStyle(Tok.ink2).accessibilityHidden(true)
             }

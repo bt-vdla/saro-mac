@@ -58,6 +58,8 @@ final class OnboardingFlow {
     private(set) var verdicts: [Int: AnswerVerdict] = [:]
     /// The name Saro has for them: Q1's, else the profile's, else this Mac's.
     private(set) var knownName = ""
+    /// The profile's or this Mac's, for when Q1's answer can't be used yet.
+    private var baseName = ""
     private(set) var loaded = false
     private(set) var leaving = false
     var speech: Readiness.SpeechState?
@@ -86,8 +88,9 @@ final class OnboardingFlow {
             starter = fresh
             d.set(fresh.id, forKey: "onboarding.starterID")
         }
-        knownName = model.profile?.address
+        baseName = model.profile?.address
             ?? NSFullUserName().split(whereSeparator: \.isWhitespace).first.map { String($0.prefix(Self.maxName)) } ?? ""
+        knownName = baseName
         step = Step(rawValue: d.string(forKey: "onboarding.step") ?? "") ?? .welcome
         furthest = max(step, Step(rawValue: d.string(forKey: "onboarding.furthest") ?? "") ?? step)
         let saved = starter.answers.isEmpty ? nil : AboutStep(key: d.string(forKey: "onboarding.aboutStep"))
@@ -109,6 +112,9 @@ final class OnboardingFlow {
 
     var name: String { (Onboarding.name(starter.picks) ?? knownName).trimmingCharacters(in: .whitespaces) }
 
+    /// The name past About you: Q1's once the gate has cleared it, else the one Saro had before.
+    var keptName: String { Onboarding.name(keptPicks) ?? baseName }
+
     private func recompute() {
         starter.picks = Onboarding.picks(answers: starter.answers, dropped: starter.dropped, knownName: name)
         starter.reflectTime = Onboarding.reflectTime(starter.picks)
@@ -127,6 +133,7 @@ final class OnboardingFlow {
             step = to
             furthest = max(furthest, to)
             model.screen = to.screen
+            regate(model)
             // The intro shows once: a quit during it comes back to About you.
             d.set((to == .intro ? .about : to).rawValue, forKey: "onboarding.step")
             d.set(furthest.rawValue, forKey: "onboarding.furthest")
@@ -196,12 +203,22 @@ final class OnboardingFlow {
         }
     }
 
+    /// Answers awaiting a check go back through the gate on each step and when Saro comes forward: one with no verdict
+    /// yet, and one gated without the model once it can run.
+    // ponytail: only while onboarding is open; after it, an unchecked answer simply stays unused until a replay.
+    func regate(_ model: AppModel) {
+        let available = model.ai.status == .available
+        for (q, a) in starter.answers where verdicts[q].map({ $0.text == a && $0.needsRegate(modelAvailable: available) }) == true {
+            gate(q, a, model)
+        }
+    }
+
     private var gated: StarterContext { starter.gated(verdicts, knownName: name) }
 
     private func save(_ model: AppModel, profileFrom q: Int? = nil) async {
         let s = gated
         await model.saveStarter(s)
-        guard let q, !s.held.contains(q) else { return }
+        guard let q, verdicts[q]?.checked == true else { return }
         let picks = s.storable.picks
         switch q {
         case 1:
@@ -222,7 +239,10 @@ final class OnboardingFlow {
     /// The picks that may be used past About you: gated, not held, not left out.
     var keptPicks: [Pick] { gated.storable.picks }
 
-    var prompt: FirstPrompt.State { FirstPrompt.state(starter, verdicts: verdicts, name: name, tone: tone) }
+    var prompt: FirstPrompt.State { FirstPrompt.state(starter, verdicts: verdicts, name: keptName, tone: tone) }
+
+    /// An answer hit the caution words while Apple Intelligence is off: no reading of it, and a quiet way to talk to someone.
+    var caution: Bool { starter.answers.contains { q, a in verdicts[q].map { $0.text == a && $0.caution } == true } }
 
     /// 'Answer it' (or Continue past the SafetyCard): the prompt is kept unless an answer was held, then First week.
     func accept(_ text: String?, model: AppModel) {
@@ -262,15 +282,18 @@ final class OnboardingFlow {
     #if DOGFOOD
     /// Snapshots: a flow at a given place, without the ledger.
     static func preview(step: Step, about: AboutStep = .question(1), answers: [Int: String] = [:], text: String? = nil,
-                        held: Set<Int> = [], name: String = "Bharat") -> OnboardingFlow {
+                        held: Set<Int> = [], caution: Set<Int> = [], name: String = "Bharat") -> OnboardingFlow {
         let f = OnboardingFlow()
         f.step = step
         f.furthest = step
         f.knownName = name
+        f.baseName = name
         f.starter.answers = answers
         f.aboutStep = about
         f.recompute()
-        for (q, a) in answers { f.verdicts[q] = AnswerVerdict(text: a, verdict: held.contains(q) ? "safety_hold" : "clear") }
+        for (q, a) in answers {
+            f.verdicts[q] = AnswerVerdict(text: a, verdict: held.contains(q) ? "safety_hold" : caution.contains(q) ? "unavailable_caution" : "clear")
+        }
         f.text = text ?? f.answer(for: about)
         f.loaded = true
         return f
@@ -306,6 +329,7 @@ struct OnboardingView: View {
         .background(Tok.bg)
         .environment(flow)
         .task { await flow.load(model) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in flow.regate(model) }
     }
 
     @ViewBuilder private var content: some View {

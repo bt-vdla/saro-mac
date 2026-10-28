@@ -43,7 +43,7 @@ struct FirstWeekView: View {
     private var dates: [Date] { (0..<7).map { Calendar.current.date(byAdding: .day, value: $0, to: start)! } }
     private var on: [Bool] { FirstWeek.weekOn(weekdays, startDay: startDay) }
     private var goal: String? { flow.keptPicks.first { $0.kind == .goal }?.text }
-    private var plan: [FirstWeek.DayPlan] { FirstWeek.plan(on: on, name: flow.name, goal: goal) }
+    private var plan: [FirstWeek.DayPlan] { FirstWeek.plan(on: on, name: flow.keptName, goal: goal) }
     private var dayNames: [String] { dates.map { $0.formatted(.dateTime.weekday(.wide)) } }
     private var day0: String { FirstWeek.hourCopy(Sky.localHour(start)).day0 }
 
