@@ -162,7 +162,8 @@ public actor Ledger {
     public func discardIfEmpty(_ id: String) throws {
         try db.transaction {
             let empty = try db.run("""
-                SELECT 1 FROM entry WHERE id=? AND trim(COALESCE(body,''), ' '||char(9)||char(10)||char(13))='' AND media_id IS NULL
+                SELECT 1 FROM entry WHERE id=? AND media_id IS NULL
+                  AND trim(COALESCE(body,'')||COALESCE(title_user,'')||COALESCE(caption_user,''), ' '||char(9)||char(10)||char(13))=''
                   AND NOT EXISTS (SELECT 1 FROM safety_verdict WHERE entry_id=entry.id)
                   AND NOT EXISTS (SELECT 1 FROM entry_annotation WHERE entry_id=entry.id)
                 """, [.text(id)])
