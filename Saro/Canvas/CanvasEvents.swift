@@ -9,8 +9,10 @@ struct CanvasEvents: NSViewRepresentable {
     var onPan: (CGSize, CGPoint, NSEvent) -> Void = { _, _, _ in }
     var onZoom: (_ factor: CGFloat, _ at: CGPoint, NSEvent) -> Void = { _, _, _ in }
     var onEvent: ((NSEvent, CGPoint) -> Void)?
-    /// Space-drag and middle-drag pan (a mouse down, its drags and its up); Space is taken only while this is set.
+    /// Space-drag and middle-drag pan (a mouse down, its drags and its up); Space is taken only while this is set and
+    /// `takesSpace` says the canvas has keyboard focus, so a focused button still presses on Space.
     var onDragPan: ((NSEvent.EventType, CGPoint) -> Void)?
+    var takesSpace = true
 
     func makeNSView(context: Context) -> EventView { EventView() }
 
@@ -20,6 +22,7 @@ struct CanvasEvents: NSViewRepresentable {
         view.onZoom = onZoom
         view.onEvent = onEvent
         view.onDragPan = onDragPan
+        view.takesSpace = takesSpace
     }
 
     final class EventView: NSView {
@@ -28,6 +31,7 @@ struct CanvasEvents: NSViewRepresentable {
         var onZoom: ((CGFloat, CGPoint, NSEvent) -> Void)?
         var onEvent: ((NSEvent, CGPoint) -> Void)?
         var onDragPan: ((NSEvent.EventType, CGPoint) -> Void)?
+        var takesSpace = true
         private var monitor: Any?
         private var spaceHeld = false
         private var dragging = false
@@ -50,13 +54,20 @@ struct CanvasEvents: NSViewRepresentable {
         /// Space held (outside text) turns a left drag into a pan, as a middle drag always is.
         private func dragPan(_ e: NSEvent, _ p: CGPoint) -> Bool? {
             switch e.type {
-            case .keyDown, .keyUp:
-                guard e.keyCode == 49, enabled, onDragPan != nil, e.window === window, !(window?.firstResponder is NSTextView),
+            case .keyUp:
+                // Let go wherever focus went, so a later click is never taken for a pan.
+                guard e.keyCode == 49 else { return false }
+                defer { spaceHeld = false }
+                return spaceHeld && e.window === window
+            case .keyDown:
+                guard e.keyCode == 49, enabled, takesSpace, onDragPan != nil, e.window === window, !(window?.firstResponder is NSTextView),
                       e.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
-                spaceHeld = e.type == .keyDown
+                spaceHeld = true
                 return true
             case .leftMouseDown, .otherMouseDown:
-                guard enabled, let onDragPan, e.type == .otherMouseDown ? e.buttonNumber == 2 : spaceHeld, bounds.contains(p) else { return false }
+                // Space may have come up in another app; the key's live state settles it.
+                let space = spaceHeld && CGEventSource.keyState(.combinedSessionState, key: 49)
+                guard enabled, let onDragPan, e.window === window, e.type == .otherMouseDown ? e.buttonNumber == 2 : space, bounds.contains(p) else { return false }
                 dragging = true
                 onDragPan(e.type, p)
                 return true

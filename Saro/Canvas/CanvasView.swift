@@ -352,6 +352,8 @@ extension Comparable {
 /// arrives with its own fitted camera.
 struct DayStage: View {
     @Environment(AppModel.self) private var model
+    /// The canvas (the day view around the stage) has keyboard focus.
+    @Environment(\.isFocused) private var canvasFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
@@ -674,7 +676,8 @@ struct DayStage: View {
                              pulseGrid(at: p)
                              endPull(after: e)
                          },
-                         onDragPan: model.replay.active ? nil : { phase, p in dragPan(phase, at: p) })
+                         onDragPan: model.replay.active ? nil : { phase, p in dragPan(phase, at: p) },
+                         takesSpace: canvasFocused)
             if dropTargeted {
                 RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .padding(12)
