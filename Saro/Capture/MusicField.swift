@@ -13,6 +13,7 @@ struct MusicField: View {
     @State private var text = ""
     @State private var wrong = false
     @State private var grown = 0.0
+    @State private var leaving = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -22,7 +23,7 @@ struct MusicField: View {
             let from = reduceMotion ? nil : origin.map { geo[$0] }
             field
                 .frame(width: width, height: 48)
-                .modifier(GrowFlight(v: from == nil ? 1 : grown, from: from ?? rest, to: rest, outbound: true,
+                .modifier(GrowFlight(v: from == nil ? 1 : grown, from: from ?? rest, to: rest, outbound: !leaving,
                                      face: CaptureFace(title: "Music", symbol: "opticaldisc", tint: Tok.music)))
                 .offset(x: rest.minX, y: rest.minY)
         }
@@ -66,11 +67,17 @@ struct MusicField: View {
     private func add() {
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         guard let url = Music.link(text) else { wrong = true; return }
-        CaptureUI.shared.musicOpen = false
+        close()
         Task { await model.newMusic(url: url, at: nil) }
     }
 
-    private func close() { CaptureUI.shared.musicOpen = false }
+    /// Back into the button it grew from; from a key, or with nothing to fold into, it just goes.
+    private func close() {
+        guard !leaving else { return }
+        guard origin != nil, !reduceMotion, !Motion.byKey else { CaptureUI.shared.musicOpen = false; return }
+        leaving = true
+        withAnimation(Motion.small) { grown = 0 } completion: { CaptureUI.shared.musicOpen = false }
+    }
 }
 
 extension MusicInfo.Source {
