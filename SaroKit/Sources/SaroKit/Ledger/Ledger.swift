@@ -345,8 +345,8 @@ public actor Ledger {
         return Dictionary(rows.map(EntryAnnotation.init).map { ($0.entryId, $0) }, uniquingKeysWith: { $1 })
     }
 
-    /// A safety hold also drops what was generated from the entry: its readings, and its day's readings, kept letters
-    /// and the first week's notes drawn on it, which Export would otherwise still write out (SR-15, which outranks
+    /// A safety hold also drops what was generated from the entry: its readings and follow-up questions, and its day's
+    /// readings, kept letters and the first week's notes drawn on it, which Export would otherwise still write out (SR-15, which outranks
     /// DR-05's append-only rule here). Any verdict that doesn't clear the entry drops what memory learned from it.
     public func insertVerdict(_ v: SafetyVerdictRow) throws {
         try db.transaction {
@@ -358,6 +358,7 @@ public actor Ledger {
             if v.verdict != "clear" && v.verdict != "unavailable_clear" { try dropMemory(entryId: v.entryId) }
             guard v.verdict == "safety_hold" else { return }
             try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(v.entryId)])
+            try dropFollowUps(heldFrom: v.entryId)
             if let day = try entry(v.entryId)?.localDay { try dropDayReadings(day) }
         }
     }

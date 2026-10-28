@@ -547,7 +547,6 @@ final class AppModel {
                     current = id
                     if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
                     await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
-                    try? await ledger.dropFollowUps(heldFrom: id)
                     await memory.learn(entryId: id)
                 }
                 current = nil

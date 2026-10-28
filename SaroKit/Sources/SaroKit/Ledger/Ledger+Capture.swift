@@ -44,18 +44,12 @@ extension Ledger {
     }
 
     /// A follow-up asked from an entry's words, once that entry is held, is generated text from a held entry (SR-15): the
-    /// question goes. A row the person answered keeps their answer, with the question emptied; one never answered goes.
-    public func dropFollowUps(heldFrom entryId: String) throws {
-        let held = try db.run("""
-            SELECT 1 FROM safety_verdict WHERE entry_id=? AND verdict='safety_hold'
-              AND rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id=?)
-            """, [.text(entryId), .text(entryId)])
-        guard !held.isEmpty else { return }
+    /// question goes, in the hold's own transaction (insertVerdict), whichever path held it. A row the person answered
+    /// keeps their answer, with the question emptied; one never answered goes.
+    func dropFollowUps(heldFrom entryId: String) throws {
         // Only capture's own questions: the day's question is the reflection pipeline's to keep or drop.
         let derived = "kind IN ('prompt','reflect_deeper','reflect_further') AND ai_run_id IN (SELECT ai_run_id FROM ai_run_input WHERE entry_id=?)"
-        try db.transaction {
-            try db.run("DELETE FROM reflection_turn WHERE answer IS NULL AND \(derived)", [.text(entryId)])
-            try db.run("UPDATE reflection_turn SET question='', updated_at=? WHERE \(derived)", [.text(Date.now.iso), .text(entryId)])
-        }
+        try db.run("DELETE FROM reflection_turn WHERE answer IS NULL AND \(derived)", [.text(entryId)])
+        try db.run("UPDATE reflection_turn SET question='', updated_at=? WHERE \(derived)", [.text(Date.now.iso), .text(entryId)])
     }
 }

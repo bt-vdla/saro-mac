@@ -384,15 +384,32 @@ private func sampleBuffer(_ pcm: AVAudioPCMBuffer, at frame: Int64) throws -> CM
     try await l.insertTurn(answered)
     try await l.setTurnAnswer(id: answered.id, answer: "The quiet.", verdict: "clear")
 
-    try await l.dropFollowUps(heldFrom: source.id)
+    try await l.insertVerdict(SafetyVerdictRow(entryId: source.id, textSha256: "h", safetyVersion: SafetyGate.version, layer: 2,
+                                               verdict: "clear", reasonCode: "clear"))
     #expect(try await l.turns(entryId: next.id).count == 1, "nothing held yet")
 
+    // The hold itself takes them, whichever path inserted it.
     try await l.insertVerdict(SafetyVerdictRow(entryId: source.id, textSha256: "h", safetyVersion: SafetyGate.version, layer: 1,
                                                verdict: "safety_hold", reasonCode: "phrase_hit"))
-    try await l.dropFollowUps(heldFrom: source.id)
     #expect(try await l.turns(entryId: next.id).isEmpty)
     let kept = try await l.turns(entryId: source.id)
     #expect(kept.map(\.question) == [""] && kept.map(\.answer) == ["The quiet."])
+}
+
+@Test func aDayReadingsHoldTakesTheFollowUpsToo() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers(day: cleanDay.replacingOccurrences(of: "What did Ravi say?", with: "Do you want to end it all?")))
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    // Reflect further, stored as the reading page stores it.
+    let run = AIRun(feature: "reflect_further", executor: "heuristic", status: "ok")
+    try await l.insertRun(run, inputs: [AIRunInput(entryId: e.id, field: "body", text: chai)])
+    try await l.insertTurn(ReflectionTurn(kind: .reflectFurther, question: "What did the chai with Ravi give you?", generator: "heuristic",
+                                          localDay: e.localDay, entryId: e.id, aiRunId: run.id))
+    #expect(await p.readDay(e.localDay) == nil)
+    #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "safety_hold")
+    #expect(try await l.turns(entryId: e.id).isEmpty)
 }
 
 // MARK: Edited is an edit, not a re-check
