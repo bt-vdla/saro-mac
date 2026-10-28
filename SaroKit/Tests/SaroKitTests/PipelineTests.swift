@@ -149,6 +149,20 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(await p.dayStatus(e.localDay) == .held)
 }
 
+@Test func anEditWrittenAtQuitIsKeptAndGatedAtTheNextLaunch() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    // ⌘Q before the editor's autosave: the words are written before the call returns, and left for the sweep.
+    #expect(await MainActor.run { l.updateEntryTextBeforeQuit(id: e.id, body: chai + " I want to die.", titleUser: nil) })
+    #expect(try await l.entry(e.id)?.body == chai + " I want to die.")
+    #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
+    await p.process(entryId: e.id) {}
+    #expect(await p.dayStatus(e.localDay) == .held)
+}
+
 @Test func dayQuestionAndMoodBasisAreDriftChecked() async throws {
     let drifted = [cleanDay.replacingOccurrences(of: "What did Ravi say?", with: "How is your sister settling in?"),
                    cleanDay.replacingOccurrences(of: #""moodBasis": "chai""#, with: #""moodBasis": "the move to Pune""#)]

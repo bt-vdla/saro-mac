@@ -85,6 +85,19 @@ public actor Ledger {
                    [body.sql, titleUser.sql, captionUser.sql, .text(status), .text(Date.now.iso), .text(id)])
     }
 
+    /// ⌘Q, where an editor's save Task never runs: the edit is written while the calling thread waits, and the launch
+    /// sweep gates it like any saved edit. False when the wait ran out first.
+    // ponytail: a semaphore wait capped at 2 s, like MemoryModel's quit commit; an applicationShouldTerminate reply if a write ever needs longer.
+    @discardableResult
+    nonisolated public func updateEntryTextBeforeQuit(id: String, body: String?, titleUser: String?, captionUser: String? = nil) -> Bool {
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            try? await self.updateEntryText(id: id, body: body, titleUser: titleUser, captionUser: captionUser)
+            done.signal()
+        }
+        return done.wait(timeout: .now() + 2) == .success
+    }
+
     /// Nil when the gated text is unchanged; a recording's text is its transcript, not these fields.
     static func statusAfterEdit(_ old: Entry, body: String?, captionUser: String?) -> String? {
         guard old.kind != .moment, old.kind != .voice, old.body != body || old.captionUser != captionUser else { return nil }

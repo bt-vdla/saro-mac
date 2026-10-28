@@ -296,13 +296,16 @@ private struct TitleField: View {
             .onAppear { text = entry.titleUser ?? "" }
             .onSubmit { save() }
             .onDisappear { save() }
+            .onQuit { save(quitting: true) }
     }
 
-    private func save() {
+    private func save(quitting: Bool = false) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard t != (entry.titleUser ?? "") else { return }
+        let title = t.isEmpty ? nil : t
+        if quitting { model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: entry.body, titleUser: title, captionUser: entry.captionUser); return }
         Task {
-            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: t.isEmpty ? nil : t, captionUser: entry.captionUser)
+            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: title, captionUser: entry.captionUser)
             await model.reload()
         }
     }
@@ -353,6 +356,10 @@ private struct WritingEditor: View {
             await save(process: false)
         }
         .onDisappear { Task { await save(process: true) } }
+        .onQuit {
+            guard loaded, text != (model.entry(entry.id)?.body ?? "") else { return }
+            model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: text, titleUser: entry.titleUser)
+        }
     }
 
     private func save(process: Bool) async {
@@ -451,7 +458,7 @@ struct StillBelow: View {
                 .lineLimit(1...4)
                 .saroWritingTools()
                 .focused($editing)
-                .onSubmit(save)
+                .onSubmit { save() }
                 .onChange(of: editing) { _, now in if !now { save() } }
                 .accessibilityLabel(showingSaros ? "Saro's description" : "Your caption")
             below
@@ -466,6 +473,7 @@ struct StillBelow: View {
         .animation(Motion.fade, value: described?.runId)
         .animation(Motion.fade, value: working)
         .onDisappear { save() }
+        .onQuit { save(quitting: true) }
         .task(id: entry.id) {
             guard let url = model.mediaURL(for: entry) else { return }
             pixels = await Task.detached { StillVision.pixelSize(at: url) }.value
@@ -560,11 +568,12 @@ struct StillBelow: View {
         }
     }
 
-    private func save() {
+    private func save(quitting: Bool = false) {
         let c = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         // Saro's words left as they were stay Saro's (DR-04): only an edit becomes the user's caption.
         let mine = c.isEmpty || yours == nil && c == saros ? nil : c
         guard mine != yours else { return }
+        if quitting { model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: mine); return }
         Task {
             try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: mine)
             await model.reload()
@@ -652,6 +661,13 @@ struct ReadingSection: View {
 
 extension Notification.Name {
     static let showSafetyCard = Notification.Name("saro.showSafetyCard")
+}
+
+private extension View {
+    /// ⌘Q never runs onDisappear: an edit not yet saved is written here, before the app exits.
+    func onQuit(_ action: @escaping () -> Void) -> some View {
+        onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in action() }
+    }
 }
 
 /// A safety hold never shows nothing (§13.2): the entry stays saved and playable, and the resources take the reading's place.
