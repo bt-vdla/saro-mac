@@ -139,6 +139,8 @@ enum Snapshots {
                 ("capture-song", {
                     guard model.isDemo else { return }
                     model.openEntryID = nil
+                    // The panel left open above would cover the song and the page edited on its card.
+                    model.insight = .spine
                     model.goToday()
                     Task {
                         try? await Task.sleep(for: .seconds(0.8))
