@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import AVFoundation
 import ImageIO
 import Observation
@@ -37,7 +38,25 @@ final class AppModel {
     /// The stack fanned out in place, if any.
     var openStackID: String?
     var toast: Toast?
-    var showNoticed = false
+    enum Insight { case spine, panel, letter }
+    var insight: Insight = .spine
+    var showNoticed: Bool {
+        get { insight != .spine }
+        set { insight = newValue ? .panel : .spine }
+    }
+    var showLetter: Bool {
+        get { insight == .letter }
+        set { insight = newValue ? .letter : .panel }
+    }
+    var searchOpen = false
+    var sidebarVisible = false
+    /// −1 when the last day change went back in time, 1 when forward; the canvas slides that way.
+    var slideDirection: CGFloat = 1
+    /// The canvas's lean at tomorrow's edge.
+    var lean: CGFloat = 0
+    var week: [(day: String, mood: Mood?)] = []
+    enum CameraCommand: Equatable { case fit(UUID), zoom(CGFloat, UUID) }
+    var camera: CameraCommand?
     var devNotesVisible = false
     var screen: ScreenID = .canvas
     /// Non-nil while the in-window recorder is up.
@@ -45,7 +64,6 @@ final class AppModel {
 
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
-    var showLetter = false
     private var queue: [String] = []
     private var working = false
     private var current: String?
@@ -104,33 +122,109 @@ final class AppModel {
 
     // MARK: Loading
 
+    /// Everything one day's canvas shows, loaded together so a day change swaps it in one step.
+    struct DayData {
+        var entries: [Entry] = []
+        var layouts: [String: CardLayout] = [:]
+        var annotations: [String: EntryAnnotation] = [:]
+        var verdicts: [String: SafetyVerdictRow] = [:]
+        var media: [String: MediaAsset] = [:]
+        var status: DayStatus = .empty
+        var reading: (payload: DayPayload, generator: String, runId: String?)?
+    }
+
+    private func load(_ day: String) async throws -> DayData {
+        var d = DayData()
+        d.entries = try await ledger.entries(day: day)
+        d.layouts = try await ledger.layouts(day: day)
+        d.annotations = try await ledger.annotations(day: day)
+        d.verdicts = try await ledger.verdicts(day: day)
+        for e in d.entries { if let id = e.mediaId, let a = try await ledger.media(id) { d.media[id] = a } }
+        d.status = await pipeline.dayStatus(day)
+        d.reading = d.status == .ready ? await pipeline.latestDayReading(day) : nil
+        return d
+    }
+
+    private func apply(_ d: DayData) {
+        entries = d.entries
+        layouts = d.layouts
+        annotations = d.annotations
+        verdicts = d.verdicts
+        media = d.media
+        dayStatus = d.status
+        dayReading = d.reading
+        selection = selection.filter { id in entries.contains { $0.id == id } }
+    }
+
     func reload() async {
         do {
             days = try await ledger.days()
-            entries = try await ledger.entries(day: day)
-            layouts = try await ledger.layouts(day: day)
+            apply(try await load(day))
             try await placeNewCards()
-            annotations = try await ledger.annotations(day: day)
-            verdicts = try await ledger.verdicts(day: day)
-            var m: [String: MediaAsset] = [:]
-            for e in entries { if let id = e.mediaId, let a = try await ledger.media(id) { m[id] = a } }
-            media = m
-            selection = selection.filter { id in entries.contains { $0.id == id } }
-            dayStatus = await pipeline.dayStatus(day)
-            dayReading = dayStatus == .ready ? await pipeline.latestDayReading(day) : nil
+            week = await loadWeek()
         } catch {
             show(Toast("Couldn't read the journal: \(error.localizedDescription)", style: .error))
         }
     }
 
-    func go(to day: String) {
+    /// The 7 days ending on the day on screen, each with its reading's mood unless the day is held (§13.2).
+    private func loadWeek() async -> [(day: String, mood: Mood?)] {
+        var out: [(day: String, mood: Mood?)] = []
+        for i in (0..<7).reversed() {
+            let d = LocalDay.adding(-i, to: day)
+            let mood = await pipeline.dayStatus(d) == .ready ? await pipeline.latestDayReading(d)?.payload.reading.mood : nil
+            out.append((d, mood))
+        }
+        return out
+    }
+
+    /// Switches day. Pointer-driven changes slide (the caller animates); keys switch instantly (the frequency rule).
+    func go(to day: String, animation: Animation? = nil) {
         guard day != self.day || pane != .day else { return }
-        self.day = day
-        pane = .day
-        openEntryID = nil
-        openStackID = nil
-        selection = []
-        Task { await reload() }
+        let target = day
+        Task {
+            let data = try? await load(target)
+            withAnimation(animation) {
+                slideDirection = target > self.day ? 1 : -1
+                self.day = target
+                pane = .day
+                openEntryID = nil
+                openStackID = nil
+                selection = []
+                if let data { apply(data) }
+            }
+            await reload()
+        }
+    }
+
+    func slide(_ by: Int) { slide(to: LocalDay.adding(by, to: day)) }
+
+    func slide(to day: String) {
+        guard day <= LocalDay.today() else {
+            // At tomorrow the canvas leans 24 pt and comes back (daySlide.ts).
+            withAnimation(Motion.small) { lean = 24 }
+            Task {
+                try? await Task.sleep(for: .milliseconds(140))
+                withAnimation(Motion.small) { lean = 0 }
+            }
+            return
+        }
+        go(to: day, animation: UserDefaults.standard.bool(forKey: "reduceMotionOverride") ? Motion.fade : Motion.surface)
+    }
+
+    /// Adds photos chosen in an open panel as stills on the day on screen.
+    func pickStill() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose photos to keep as stills. Location data is removed."
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        Task {
+            for url in urls {
+                if let data = try? Data(contentsOf: url) { await importStill(data, origin: "picked", at: nil) }
+            }
+        }
     }
 
     func goToday() { go(to: LocalDay.today()) }

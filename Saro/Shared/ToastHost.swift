@@ -7,6 +7,7 @@ struct ToastHost: View {
 
     var body: some View {
         VStack {
+            Spacer()
             if let toast = model.toast {
                 HStack(spacing: 12) {
                     Image(systemName: toast.style == .error ? "exclamationmark.circle" : "checkmark.circle")
@@ -20,14 +21,18 @@ struct ToastHost: View {
                         .buttonStyle(.plain).font(Typo.ui(13, .semibold)).foregroundStyle(Tok.sageTeal)
                     }
                 }
-                .padding(.horizontal, 16).padding(.vertical, 9)
-                .saroSurface(radius: 20, lifted: true)
-                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                .padding(.horizontal, 16).padding(.vertical, 11)
+                .frame(maxWidth: 360, alignment: .leading)
+                .background(Tok.paper.opacity(0.95), in: .rect(cornerRadius: Radius.panel))
+                .overlay(RoundedRectangle(cornerRadius: Radius.panel).strokeBorder(Tok.rim.opacity(0.6)))
+                .elevation(.float)
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .offset(y: 8).combined(with: .opacity),
+                                                                   removal: .offset(x: -24).combined(with: .opacity)))
                 .accessibilityAddTraits(.updatesFrequently)
             }
-            Spacer()
         }
-        .padding(.top, 14)
-        .animation(Motion.pick(Motion.open, reduce: reduceMotion), value: model.toast)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 24).padding(.bottom, 100)
+        .animation(Motion.pick(Motion.easeOut(0.24), reduce: reduceMotion), value: model.toast)
     }
 }

@@ -7,7 +7,8 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: Binding(get: { model.sidebarVisible ? .all : .detailOnly },
+                                                      set: { model.sidebarVisible = $0 != .detailOnly })) {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
                 .tourAnchor(.sidebar)

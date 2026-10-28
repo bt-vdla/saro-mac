@@ -66,90 +66,236 @@ extension AppModel {
         }
     }
 
+    /// A writing card's title and the body under it: a multi-line page titles itself with its first line.
+    func titleAndBody(_ e: Entry) -> (String, String) {
+        let text = (e.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        if e.titleUser == nil, lines.count == 2, !lines[0].isEmpty {
+            return (String(lines[0]), String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return (title(for: e), text)
+    }
+
     func mood(for e: Entry) -> String? {
         guard verdicts[e.id]?.verdict == "clear" else { return nil }
         return annotations[e.id]?.moodLabel
     }
 }
 
+/// A card on the canvas, drawn to the web build's specs (VideoMomentCard, VoiceEchoCard, ImageStillCard,
+/// TextReflectionCard): each type has its own shape, and every card shares the "title · time" footer.
 struct CardFace: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     var selected = false
+    @State private var hover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content
-            footer
-        }
-        .frame(width: CanvasMath.cardWidth, height: CanvasMath.cardHeight(entry.kind), alignment: .top)
-        .saroSurface(radius: 14)
-        .overlay {
-            if selected { RoundedRectangle(cornerRadius: 14).strokeBorder(Tok.sage, lineWidth: 2) }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(entry.kind.noun), \(model.title(for: entry)), \(entry.capturedAt.formatted(date: .omitted, time: .shortened))")
+        content
+            .frame(width: size.width, height: size.height)
+            .overlay {
+                if selected {
+                    RoundedRectangle(cornerRadius: radius + 4).strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4)
+                }
+            }
+            .onHover { hover = $0 }
+            .animation(Motion.small, value: hover)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(entry.kind.noun), \(model.title(for: entry)), \(entry.capturedAt.formatted(date: .omitted, time: .shortened))")
+            .accessibilityAddTraits(.isButton)
     }
+
+    private var size: CGSize { CanvasMath.size(entry.kind) }
+    private var radius: CGFloat { CanvasMath.radius(entry.kind) }
+    private var ready: Bool { model.media[entry.mediaId ?? ""]?.state == "ready" }
 
     @ViewBuilder private var content: some View {
         switch entry.kind {
-        case .moment, .still:
-            MediaThumb(url: model.mediaURL(for: entry), kind: entry.kind, ready: model.media[entry.mediaId ?? ""]?.state == "ready")
-                .frame(height: 132)
-                .frame(maxWidth: .infinity)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 13, topTrailingRadius: 13))
-                .overlay(alignment: .bottomTrailing) {
-                    if let ms = model.media[entry.mediaId ?? ""]?.durationMs, entry.kind == .moment {
-                        Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond)))
-                            .font(Typo.mono(10)).foregroundStyle(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(.black.opacity(0.45), in: .capsule)
-                            .padding(8)
-                    }
-                }
-        case .voice:
-            HStack(spacing: 10) {
-                Image(systemName: "waveform").font(.system(size: 22, weight: .medium)).foregroundStyle(Tok.echo)
-                    .frame(width: 44, height: 44).background(Tok.echo.opacity(0.12), in: .circle)
-                if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
-                    Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond))).font(Typo.mono(11)).foregroundStyle(Tok.ink3)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14).padding(.top, 14)
-        case .reflection, .music:
-            Text(entry.body?.isEmpty == false ? entry.body! : "Empty page")
-                .font(Typo.serif(14))
-                .foregroundStyle(entry.body?.isEmpty == false ? Tok.ink2 : Tok.ink4)
-                .lineSpacing(2)
-                .lineLimit(4)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 14).padding(.top, 14)
-                .frame(height: 104, alignment: .topLeading)
+        case .moment: moment
+        case .voice: voice
+        case .still: still
+        case .reflection, .music: reflection
         }
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(model.title(for: entry))
-                .font(Typo.ui(13.5, .medium)).foregroundStyle(Tok.ink).lineLimit(1)
-            HStack(spacing: 6) {
-                Circle().fill(entry.kind.tint).frame(width: 6, height: 6)
-                Text(entry.capturedAt.formatted(date: .omitted, time: .shortened).uppercased())
-                if let s = model.status(for: entry) {
-                    Text("·")
-                    Text(s.uppercased())
-                } else if let m = model.mood(for: entry) {
-                    Text("·")
-                    Text(m.uppercased())
+    private var moment: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                MediaThumb(url: model.mediaURL(for: entry), kind: .moment, ready: ready)
+                Color.black.opacity(hover ? 0.10 : 0)
+                Circle().fill(.white.opacity(0.9)).frame(width: 56, height: 56).elevation(.float)
+                    .overlay(Image(systemName: "play.fill").font(.system(size: 18)).foregroundStyle(Tok.ink).offset(x: 2))
+                    .scaleEffect(hover ? 1.05 : 1)
+                if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
+                    Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond)))
+                        .font(Typo.ui(12, .medium).monospacedDigit()).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.black.opacity(0.6), in: .rect(cornerRadius: Radius.control))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(.trailing, 12).padding(.bottom, 10)
                 }
-                if entry.backdated { Text("· ADDED LATER") }
             }
-            .font(Typo.mono(9.5)).foregroundStyle(Tok.ink3).lineLimit(1)
+            .frame(width: size.width, height: CanvasMath.momentMediaHeight)
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: radius - 1, topTrailingRadius: radius - 1))
+            CardMeta(entry: entry).padding(.horizontal, 16).frame(maxHeight: .infinity)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .frame(width: size.width, height: size.height)
+        .cardSurface(radius: radius, tint: Tok.moment, hover: hover)
+    }
+
+    private var still: some View {
+        VStack(spacing: 0) {
+            MediaThumb(url: model.mediaURL(for: entry), kind: .still, ready: ready)
+                .frame(width: size.width, height: CanvasMath.stillMediaHeight)
+                .clipShape(UnevenRoundedRectangle(topLeadingRadius: radius - 1, topTrailingRadius: radius - 1))
+            CardMeta(entry: entry).padding(.horizontal, 14).frame(maxHeight: .infinity)
+        }
+        .frame(width: size.width, height: size.height)
+        .cardSurface(radius: radius, tint: nil, hover: hover)
+    }
+
+    private var reflection: some View {
+        let (title, body) = model.titleAndBody(entry)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(Typo.ui(15, .semibold)).foregroundStyle(Tok.reflectionInk).lineLimit(2)
+            Text(body.isEmpty ? "Empty page" : body)
+                .font(Typo.ui(13)).lineSpacing(2.5).foregroundStyle(body.isEmpty ? Tok.ink4 : Tok.ink2)
+                .frame(maxWidth: .infinity, maxHeight: 128, alignment: .topLeading)
+                .clipped()
+            Spacer(minLength: 0)
+            CardMeta(entry: entry, showTitle: false)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 16)
+        .frame(width: size.width, height: size.height)
+        .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3, hover: hover)
+    }
+
+    private var voice: some View {
+        HStack(spacing: 12) {
+            EchoOrb(size: 80, hover: hover)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.title(for: entry)).font(Typo.ui(13, .medium)).foregroundStyle(Tok.ink).lineLimit(1)
+                HStack(spacing: 6) {
+                    if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
+                        Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond)))
+                    }
+                    Text(entry.capturedAt.formatted(date: .omitted, time: .shortened))
+                    if let s = model.status(for: entry) { Text("· \(s)") }
+                }
+                .monoCaps(10)
+                .foregroundStyle(Tok.ink3)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .frame(maxWidth: 200, alignment: .leading)
+            .background(Tok.paper.opacity(0.8), in: .capsule)
+            .overlay(Capsule().strokeBorder(Tok.rim.opacity(0.5)))
+            .elevation(.lift)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The "title · time" footer every card shares (CardMeta.tsx), with an honest status chip when there is one.
+struct CardMeta: View {
+    @Environment(AppModel.self) private var model
+    let entry: Entry
+    var showTitle = true
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if showTitle {
+                Text(model.title(for: entry)).font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink).lineLimit(1)
+                Text(" · ").font(Typo.ui(12)).foregroundStyle(Tok.ink3)
+            }
+            Text(entry.capturedAt.formatted(date: .omitted, time: .shortened)).font(Typo.ui(12)).foregroundStyle(Tok.ink2)
+                .fixedSize()
+            Spacer(minLength: 8)
+            if let s = model.status(for: entry) {
+                Text(s).monoCaps(9.5, tracking: 0.06).foregroundStyle(Tok.ink3).lineLimit(1).fixedSize()
+            } else if let m = model.mood(for: entry) {
+                Text(m).monoCaps(9.5, tracking: 0.06).foregroundStyle(entry.kind.tint).lineLimit(1).fixedSize()
+            }
+        }
+    }
+}
+
+/// A recording session: its turns as one card with ghost layers behind (VideoStackCard.tsx).
+struct StackFace: View {
+    @Environment(AppModel.self) private var model
+    let entries: [Entry]
+    var selected = false
+    @State private var hover = false
+
+    var body: some View {
+        let first = entries[0]
+        let r: CGFloat = 18
+        ZStack {
+            RoundedRectangle(cornerRadius: r).fill(Tok.rim.opacity(0.4)).rotationEffect(.degrees(3.5)).offset(x: 10, y: 10)
+            RoundedRectangle(cornerRadius: r).fill(Tok.rim.opacity(0.6)).rotationEffect(.degrees(2)).offset(x: 6, y: 6)
+            ZStack(alignment: .bottomLeading) {
+                Tok.ink
+                if first.kind == .moment {
+                    MediaThumb(url: model.mediaURL(for: first), kind: .moment, ready: model.media[first.mediaId ?? ""]?.state == "ready")
+                } else {
+                    EchoOrb(size: 92, hover: hover).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                LinearGradient(stops: [.init(color: .black.opacity(0.3), location: 0), .init(color: .black.opacity(0.2), location: 0.45),
+                                       .init(color: .black.opacity(0.75), location: 1)], startPoint: .top, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.title(for: entries.last!)).font(Typo.ui(14, .semibold)).foregroundStyle(.white).lineLimit(2)
+                    Text(first.capturedAt.formatted(date: .omitted, time: .shortened)).font(Typo.ui(12)).foregroundStyle(.white.opacity(0.75))
+                }
+                .padding(14)
+                Text("\(entries.count) turns").font(Typo.ui(11, .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3).background(.black.opacity(0.6), in: .capsule)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(10)
+            }
+            .clipShape(.rect(cornerRadius: r))
+            .overlay {
+                if selected { RoundedRectangle(cornerRadius: r + 4).strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4) }
+            }
+            .offset(y: hover ? -2 : 0)
+            .elevation(hover ? .overlay : .panel)
+        }
+        .frame(width: CanvasMath.stackSize.width, height: CanvasMath.stackSize.height)
+        .onHover { hover = $0 }
+        .animation(Motion.small, value: hover)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("A recording with \(entries.count) turns")
+    }
+}
+
+/// The voice note's orb (EchoOrb.tsx): a lit lavender sphere in a glass ring, with a small play chip.
+struct EchoOrb: View {
+    let size: CGFloat
+    var hover = false
+
+    var body: some View {
+        ZStack {
+            Circle().fill(.white.opacity(0.1))
+            Circle()
+                .fill(RadialGradient(stops: [.init(color: Color(0xD9D5F6, 0xD9D5F6), location: 0), .init(color: Color(0xB4ADEA, 0xB4ADEA), location: 0.45),
+                                             .init(color: Color(0x8E87CF, 0x8E87CF), location: 1)],
+                                     center: UnitPoint(x: 0.4, y: 0.35), startRadius: 0, endRadius: size * 0.45))
+                .padding(size * 0.09)
+            Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1)
+            Circle().stroke(Color(0xB4AEEA, 0xB4AEEA).opacity(0.38), lineWidth: 1.5).padding(-2)
+            Circle().fill(.white.opacity(0.9)).frame(width: 28, height: 28)
+                .overlay(Image(systemName: "play.fill").font(.system(size: 10)).foregroundStyle(Tok.echoInk).offset(x: 1))
+                .scaleEffect(hover ? 1.08 : 1)
+        }
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
+    }
+}
+
+extension View {
+    /// A card's material: surface at 85%, a lit rim, an optional type-coloured ring, and the panel shadow (overlay on hover).
+    func cardSurface(radius: CGFloat, tint: Color?, tintOpacity: Double = 0.2, hover: Bool) -> some View {
+        background(Tok.surface.opacity(0.92), in: .rect(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Tok.rim.opacity(0.6), lineWidth: 1))
+            .overlay { if let tint { RoundedRectangle(cornerRadius: radius).strokeBorder(tint.opacity(tintOpacity), lineWidth: 1) } }
+            .elevation(hover ? .overlay : .panel)
     }
 }
 
@@ -164,7 +310,7 @@ struct MediaThumb: View {
         ZStack {
             Rectangle().fill(kind.tint.opacity(0.14))
             if let image {
-                Image(nsImage: image).resizable().scaledToFill()
+                Image(nsImage: image).resizable().scaledToFill().frame(minWidth: 0, minHeight: 0)
             } else {
                 Image(systemName: kind.symbol).font(.system(size: 22)).foregroundStyle(kind.tint)
             }

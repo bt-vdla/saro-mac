@@ -3,33 +3,56 @@ import Foundation
 
 /// Placement and arrangement on the day canvas. World units are points at zoom 1; a position is a card's centre.
 public enum CanvasMath {
-    public static let cardWidth: CGFloat = 248
-    static let gap: CGFloat = 28
-    static let origin = CGPoint(x: 190, y: 230)
-    static let columns = 3
+    static let gap: CGFloat = 40
+    static let origin = CGPoint(x: 120, y: 130)
+    /// ponytail: a fixed row width for first placement; the camera fits the day, so wide days just zoom out.
+    static let rowWidth: CGFloat = 1400
+    public static let momentMediaHeight: CGFloat = 236
+    public static let stillMediaHeight: CGFloat = 252
+    public static let stackSize = CGSize(width: 220, height: 200)
 
-    public static func cardHeight(_ kind: EntryKind) -> CGFloat {
+    /// Card sizes from the web build (lib/canvas/camera.ts).
+    public static func size(_ kind: EntryKind) -> CGSize {
         switch kind {
-        case .moment, .still: 196
-        case .voice: 132
-        case .reflection, .music: 168
+        case .moment: CGSize(width: 420, height: momentMediaHeight + 48)
+        case .voice: CGSize(width: 300, height: 92)
+        case .still: CGSize(width: 260, height: stillMediaHeight + 48)
+        case .reflection: CGSize(width: 360, height: 212)
+        case .music: CGSize(width: 280, height: 88)
         }
     }
 
-    public static func size(_ kind: EntryKind) -> CGSize { CGSize(width: cardWidth, height: cardHeight(kind)) }
+    public static func radius(_ kind: EntryKind) -> CGFloat {
+        switch kind {
+        case .moment, .reflection: 28
+        case .still: 24
+        case .voice, .music: 18
+        }
+    }
 
-    /// The first free slot in reading order (rows of `columns`) that doesn't overlap an existing card,
-    /// with a small seeded jitter so the day doesn't look like a spreadsheet.
+    /// The first free spot in reading order on a 24 pt lattice, with the web's small jitter and alternate-card wave.
     public static func place(_ kind: EntryKind, id: String, avoiding occupied: [CGRect]) -> CGPoint {
-        let cell = CGSize(width: cardWidth + gap * 2, height: 196 + gap * 2)
-        for slot in 0..<400 {
-            let col = slot % columns, row = slot / columns
-            let j = jitter(id)
-            let c = CGPoint(x: origin.x + CGFloat(col) * cell.width + j.x, y: origin.y + CGFloat(row) * cell.height + j.y)
-            let rect = CGRect(center: c, size: size(kind)).insetBy(dx: -gap / 2, dy: -gap / 2)
-            if !occupied.contains(where: { $0.intersects(rect) }) { return c }
+        let s = size(kind), j = jitter(id)
+        let wave: CGFloat = occupied.count % 2 == 1 ? 18 : 0
+        var y = origin.y + s.height / 2
+        while y < 20_000 {
+            var x = origin.x + s.width / 2
+            while x + s.width / 2 <= origin.x + rowWidth {
+                let c = CGPoint(x: x + j.x * 0.4, y: y + j.y * 0.6 + wave)
+                let r = CGRect(center: c, size: s).insetBy(dx: -gap / 2, dy: -gap / 2)
+                if !occupied.contains(where: { $0.intersects(r) }) { return c }
+                x += 24
+            }
+            y += 24
         }
         return origin
+    }
+
+    /// The smallest rectangle around a set of cards (for fitting the camera to a day).
+    public static func bounds(_ rects: [CGRect]) -> CGRect? {
+        guard var u = rects.first else { return nil }
+        for r in rects.dropFirst() { u = u.union(r) }
+        return u
     }
 
     /// Selected cards glide into a packed, bottom-aligned row with even gaps, in their current left-to-right order.
@@ -53,8 +76,9 @@ public enum CanvasMath {
         return (j.x * 0.6, -CGFloat(depth) * 5 + j.y * 0.3, Double(j.x) / 3)
     }
 
-    /// Fanned-out stack: a centred row around `center`, wrapping after `perRow`.
-    public static func fan(count: Int, size: CGSize, around center: CGPoint, perRow: Int = 5) -> [CGPoint] {
+    /// Fanned-out stack: a centred row around `center`, wrapping after `perRow` (1-3 in a row, 4 as 2×2, then rows of 3).
+    public static func fan(count: Int, size: CGSize, around center: CGPoint, perRow: Int = 3) -> [CGPoint] {
+        let perRow = count == 4 ? 2 : perRow
         let cols = min(count, perRow), rows = (count + perRow - 1) / perRow
         let w = CGFloat(cols) * size.width + CGFloat(cols - 1) * gap
         let h = CGFloat(rows) * size.height + CGFloat(rows - 1) * gap

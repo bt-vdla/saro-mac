@@ -28,14 +28,21 @@ enum Tok {
     static let dangerBorder = Color(0xE8CECE, 0x4A2B2B)
     static let warning = Color(0xC0824A, 0xD8A06A)
     static let glass = Color(0xFFFFFF, 0x2A3831)
+    /// Floating glass fill.
+    static let paper = Color(0xF1F1EC, 0x16201B)
     static let rim = Color(0xFFFFFF, 0x3F4F47)
     static let shadow = Color(0x13201A, 0x000000)
+    static let line = Color(0xDDE1DA, 0x25312B)
 
     static let moment = Color(0x2F7A5A, 0x79C3A0)
     static let echo = Color(0x6560B8, 0xA7A2EC)
     static let still = Color(0xB85C45, 0xEC9A86)
     static let reflection = Color(0x8E6B1F, 0xD8B062)
     static let music = Color(0x356FA8, 0x86B7EA)
+    static let momentInk = Color(0x276A4E, 0x79C3A0)
+    static let echoInk = Color(0x5A55A8, 0xA7A2EC)
+    static let stillInk = Color(0xA24E3A, 0xEC9A86)
+    static let reflectionInk = Color(0x7D5E1A, 0xD8B062)
 }
 
 extension Color {
@@ -99,15 +106,69 @@ enum Typo {
     }
 }
 
-/// Springs from `brd/final_s14_canvas.md` (Native build notes). Reduce Motion swaps each for a 150 ms crossfade.
+/// Motion tokens from the web build (`lib/motion.ts`), converted to SwiftUI springs (bounce 0 → dampingFraction 1;
+/// response = 2π·duration/9.23). Reduce Motion swaps movement for short crossfades.
 enum Motion {
-    static let open = Animation.spring(response: 0.35, dampingFraction: 0.85)
-    static let close = Animation.spring(response: 0.22, dampingFraction: 0.75)
-    static let arrange = Animation.spring(response: 0.18, dampingFraction: 0.9)
-    static let fan = Animation.spring(response: 0.3, dampingFraction: 0.86)
-    static let fade = Animation.easeInOut(duration: 0.15)
+    /// Overlays, sheets, big morphs, the day slide.
+    static let surface = Animation.spring(response: 0.272, dampingFraction: 1)
+    /// Menus, pills, chips, small morphs.
+    static let small = Animation.spring(response: 0.170, dampingFraction: 1)
+    /// A picked-up card.
+    static let lift = Animation.spring(response: 0.204, dampingFraction: 1)
+    static let press = Animation.spring(response: 0.102, dampingFraction: 1)
+    /// A thrown card settling; the only bounce, because the gesture carried momentum.
+    static let release = Animation.spring(response: 0.3, dampingFraction: 0.85)
+    /// ease.out (0.23, 1, 0.32, 1) for entrances and exits.
+    static func easeOut(_ seconds: Double) -> Animation { .timingCurve(0.23, 1, 0.32, 1, duration: seconds) }
+    static let fade = Animation.easeOut(duration: 0.16)
+
+    // Names the canvas used before the web tokens; kept as aliases.
+    static let open = surface
+    static let close = surface
+    static let arrange = small
+    static let fan = surface
 
     static func pick(_ animation: Animation, reduce: Bool) -> Animation { reduce ? fade : animation }
+}
+
+/// Radii (`tailwind.config.js`): control 8, field 10, card 14, panel 20, sheet 28.
+enum Radius {
+    static let control: CGFloat = 8, field: CGFloat = 10, card: CGFloat = 14, panel: CGFloat = 20, sheet: CGFloat = 28
+}
+
+/// The web shadow scale (CSS blur ÷ 2 = SwiftUI radius), tinted with the ink shadow colour (black at night).
+enum Elevation {
+    case lift, card, raise, float, panel, overlay
+
+    var spec: (opacity: Double, radius: CGFloat, y: CGFloat) {
+        switch self {
+        case .lift: (0.07, 5, 2)
+        case .card: (0.06, 12, 4)
+        case .raise: (0.10, 8, 4)
+        case .float: (0.14, 16, 12)
+        case .panel: (0.16, 28, 20)
+        case .overlay: (0.24, 40, 32)
+        }
+    }
+}
+
+extension View {
+    func elevation(_ e: Elevation) -> some View {
+        let s = e.spec
+        return shadow(color: Tok.shadow.opacity(s.opacity), radius: s.radius, y: s.y)
+    }
+
+    /// Mono caps label (eyebrow 11 pt at 0.12em, label 10.5 at 0.11em): times, dates, counts, key hints.
+    func monoCaps(_ size: CGFloat = 10.5, tracking: CGFloat = 0.11) -> some View {
+        font(Typo.mono(size)).tracking(size * tracking).textCase(.uppercase)
+    }
+
+    /// glass-panel: paper 95%, a lit rim, float shadow, no blur.
+    func glassPanel(radius: CGFloat = Radius.panel) -> some View {
+        background(Tok.paper.opacity(0.95), in: .rect(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Tok.rim.opacity(0.6), lineWidth: 1))
+            .elevation(.float)
+    }
 }
 
 extension View {

@@ -5,6 +5,10 @@ import SwiftUI
 struct SaroApp: App {
     @State private var boot = AppModel.boot()
 
+    init() {
+        Daylight.shared.start()
+    }
+
     var body: some Scene {
         Window("Saro", id: "main") {
             switch boot {
@@ -22,7 +26,7 @@ struct SaroApp: App {
             }
         }
         .defaultSize(width: 1320, height: 860)
-        .windowToolbarStyle(.unifiedCompact)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             if case .success(let model) = boot {
                 SaroCommands(model: model)
@@ -48,6 +52,11 @@ struct SaroCommands: Commands {
             Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
             Button("Previous Day") { model.goPrevious() }.keyboardShortcut("[", modifiers: .command)
             Button("Next Day") { model.goNext() }.keyboardShortcut("]", modifiers: .command)
+        }
+        CommandGroup(after: .toolbar) {
+            Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
+            Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
+            Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") { NotificationCenter.default.post(name: .showSafetyCard, object: nil) }

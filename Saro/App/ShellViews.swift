@@ -64,6 +64,9 @@ struct SettingsView: View {
             }
             .tabItem { Label("General", systemImage: "gearshape") }
 
+            Form { DaylightPicker() }
+                .tabItem { Label("Appearance", systemImage: "circle.lefthalf.filled") }
+
             Form {
                 LabeledContent("Model", value: model.ai.variant)
                 LabeledContent("Status", value: model.ai.status == .available ? "Available on this Mac" : "Unavailable")

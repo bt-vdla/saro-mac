@@ -5,7 +5,6 @@ import SwiftUI
 /// reading's or a template around the user's own quoted words, and each quote links back to its entry.
 struct LetterView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @State private var kept = false
 
     var body: some View {
@@ -17,15 +16,13 @@ struct LetterView: View {
                                        description: Text("Saro writes the letter once the day has been read."))
             }
         }
-        .frame(width: 640, height: 720)
-        .background(Tok.surface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.openURL, OpenURLAction { url in
             guard url.scheme == "saro", url.host == "entry" else { return .systemAction }
-            dismiss()
+            model.insight = .spine
             model.openEntryID = url.lastPathComponent
             return .handled
         })
-        .onAppear { model.screen = .letter }
         .task(id: model.day) { kept = (try? await model.ledger.latestSnapshot(kind: "letter", day: model.day)) != nil }
     }
 
@@ -50,11 +47,11 @@ struct LetterView: View {
                 Button(kept ? "Kept" : "Keep this letter") { Task { await keep(payload) } }
                     .disabled(kept)
                 Spacer()
-                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Back") { model.insight = .panel }
             }
             .padding(.top, 8)
         }
-        .padding(.horizontal, 64).padding(.vertical, 52)
+        .padding(.horizontal, 48).padding(.vertical, 44)
     }
 
     /// The user's quoted words become links to the entry they came from.

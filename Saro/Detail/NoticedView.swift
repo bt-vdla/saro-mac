@@ -8,22 +8,26 @@ struct NoticedView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("WHAT SARO NOTICED").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
-                    Text(DayFormat.title(model.day)).font(Typo.serif(20, .medium)).foregroundStyle(Tok.ink)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("What Saro noticed").monoCaps(11, tracking: 0.12).foregroundStyle(Tok.ink3)
+                        Text(DayFormat.title(model.day)).font(Typo.serif(22, .medium)).foregroundStyle(Tok.ink)
+                    }
+                    Spacer()
+                    Button { model.insight = .spine } label: {
+                        Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Tok.ink2)
+                            .frame(width: 28, height: 28).background(Tok.ink.opacity(0.06), in: .circle)
+                    }
+                    .buttonStyle(PressStyle())
+                    .help("Fold  esc")
                 }
                 content
             }
-            .padding(20)
+            .padding(22)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Tok.surface)
         .tourAnchor(.inspector)
-        .onAppear {
-            model.screen = .noticed
-            Task { await model.ai.prewarm() }
-        }
-        .onDisappear { model.screen = .canvas }
+        .onAppear { Task { await model.ai.prewarm() } }
         .task(id: "\(model.day)\(model.dayStatus)") { model.refreshDayReading() }
     }
 
@@ -86,7 +90,7 @@ struct NoticedView: View {
             }
         }
         Button {
-            model.showLetter = true
+            model.insight = .letter
         } label: {
             Label("Open the evening letter", systemImage: "envelope.open").font(Typo.ui(13, .medium))
                 .padding(.horizontal, 14).padding(.vertical, 8)
