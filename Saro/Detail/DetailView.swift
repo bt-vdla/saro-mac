@@ -60,6 +60,7 @@ final class PlayerModel {
     var durationMs: Int?
     @ObservationIgnored private var token: Any?
     @ObservationIgnored private var ended: (any NSObjectProtocol)?
+    @ObservationIgnored private var locked: (any NSObjectProtocol)?
 
     init(url: URL) {
         player = AVPlayer(url: url)
@@ -84,6 +85,9 @@ final class PlayerModel {
                 self?.timeMs = 0
             }
         }
+        locked = NotificationCenter.default.addObserver(forName: Locker.didLock, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.player.pause() }
+        }
     }
 
     func seek(ms: Int, play: Bool = true) {
@@ -105,8 +109,9 @@ final class PlayerModel {
         player.pause()
         if let token { player.removeTimeObserver(token) }
         token = nil
-        if let ended { NotificationCenter.default.removeObserver(ended) }
+        for o in [ended, locked].compactMap(\.self) { NotificationCenter.default.removeObserver(o) }
         ended = nil
+        locked = nil
     }
 }
 

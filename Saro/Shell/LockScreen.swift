@@ -23,6 +23,8 @@ final class Locker {
     @ObservationIgnored private var installed = false
 
     var enabled: Bool { PrefsStore.shared.lockEnabled }
+    /// Posted as Saro locks, so a moment or voice note playing stops rather than going on behind the lock.
+    static let didLock = Notification.Name("SaroDidLock")
 
     func lock() {
         guard enabled, !locked else { return }
@@ -35,6 +37,7 @@ final class Locker {
         for w in NSApp.windows where !(w is NSPanel) { w.makeFirstResponder(nil) }
         ShellPanels.shared.sheet = nil
         ShellPanels.shared.panel = nil
+        NotificationCenter.default.post(name: Self.didLock, object: nil)
         AccessibilityNotification.Announcement("Saro is locked").post()
     }
 
