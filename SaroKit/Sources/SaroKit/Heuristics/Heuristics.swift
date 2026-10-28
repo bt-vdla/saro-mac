@@ -205,6 +205,8 @@ public enum Heuristics {
     public static func candidates(entryId: String, field: String, text: String, firstIndex: Int = 0) -> [Candidate] {
         let ns = text as NSString
         var ranges = windows(text, focus: Set(analyzeText(text).focus)).enumerated()
+            // A window can cut off the guard word that let its text pass the phrase gate ("want to die | of boredom").
+            .filter { !SafetyGate.phraseHit(ns.substring(with: $0.element.range)) }
             .sorted { ($0.element.score, -$0.offset) > ($1.element.score, -$1.offset) }
             .prefix(maxCandidates - 1).map(\.element.range)
         // The first sentence, unless it is a single clause a window already holds.
