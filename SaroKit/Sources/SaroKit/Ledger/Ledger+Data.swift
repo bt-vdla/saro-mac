@@ -242,23 +242,28 @@ extension Ledger {
 
     /// An export can be older than this journal's holds and forgetting, and its rows come back under their own ids, so
     /// what those deleted is deleted again (SR-15, FR-MEM-03), as `insertVerdict`, `setTurnAnswer`, `setUserMood` and
-    /// `forget` did.
+    /// `forget` did. Every such verdict counts, not just an entry's newest: one the entry has cleared since (an edit)
+    /// took what was made by then, and only that.
     func purgeAgain() throws {
         let unclear = try db.run("""
-            SELECT v.entry_id, v.verdict, v.created_at, e.local_day, e.trashed_at FROM safety_verdict v JOIN entry e ON e.id = v.entry_id
-            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict NOT IN ('clear','unavailable_clear')
+            SELECT v.entry_id, v.verdict, v.created_at, e.local_day, e.trashed_at,
+                   v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AS newest
+            FROM safety_verdict v JOIN entry e ON e.id = v.entry_id WHERE v.verdict NOT IN ('clear','unavailable_clear')
             """)
         for r in unclear {
             guard let id = r.str("entry_id"), let day = r.str("local_day") else { continue }
-            try dropMemory(entryId: id)
+            let at = r.str("created_at") ?? ""
+            let newest = r.int("newest") == 1
+            let by = newest ? nil : at
+            try dropMemory(entryId: id, through: by)
             guard r.str("verdict") == "safety_hold" else { continue }
-            try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(id)])
-            if r.str("trashed_at") == nil { try dropDayReadings(day); continue }
-            // Its day may have been read again since it went to Trash: only what drew on it goes.
-            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=? AND created_at <= ?",
-                       [.text(day), .text(r.str("created_at") ?? "")])
-            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter') AND EXISTS (SELECT 1 FROM json_each(payload, '$.sources') WHERE value=?)",
-                       [.text(id)])
+            try db.run("DELETE FROM entry_annotation WHERE entry_id=? AND created_at <= COALESCE(?, created_at)", [.text(id), by.sql])
+            // A held entry since trashed: its day may have been read again without it, and that reading stays.
+            try dropDayReadings(day, through: newest && r.str("trashed_at") == nil ? nil : at)
+            if newest {
+                try db.run("DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter') AND EXISTS (SELECT 1 FROM json_each(payload, '$.sources') WHERE value=?)",
+                           [.text(id)])
+            }
         }
         for r in try db.run("""
             SELECT local_day FROM reflection_turn WHERE answer_verdict = 'safety_hold'

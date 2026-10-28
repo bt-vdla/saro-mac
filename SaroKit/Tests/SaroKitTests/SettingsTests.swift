@@ -593,6 +593,45 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(try await prompts().isEmpty)
     }
 
+    /// SR-15: a hold the entry has cleared since (rewritten) still took what was made before it, and an export from
+    /// before the hold doesn't bring that back; what the cleared text made since stays.
+    @Test func importAfterAHoldSinceClearedBringsBackNothingItDeleted() async throws {
+        let l = try freshLedger()
+        let page = try await seed(l)
+        let runId = try #require(try await l.runs().first?.str("id"))
+        try await l.insertAnnotation(EntryAnnotation(entryId: page.id, aiRunId: runId, generator: "heuristic"))
+        _ = try await keep(l, "You had chai with Ravi.")
+        try await l.insertObservations([MemoryObservation(entryId: page.id, kind: .person, key: "person:ravi", label: "Ravi", quote: "Ravi",
+                                                          field: "body", spanStart: 10, spanEnd: 14, localDay: "2026-10-26")],
+                                       run: AIRun(feature: Ledger.memoryFeature, executor: "heuristic", status: "ok"),
+                                       inputs: [AIRunInput(entryId: page.id, field: "body", text: page.body!)])
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        try await l.exportEverything(to: dir, prefs: nil)
+
+        // A new gate holds that text; the page is rewritten, clears, and is read and learned from again.
+        try await Task.sleep(for: .milliseconds(5))
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(page.body!), safetyVersion: "t2", layer: 1, verdict: "safety_hold", reasonCode: "x"))
+        try await Task.sleep(for: .milliseconds(5))
+        let rewritten = "Rain, then a call with Sam."
+        try await l.updateEntryText(id: page.id, body: rewritten, titleUser: nil, captionUser: nil)
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(rewritten), safetyVersion: "t2", layer: 1, verdict: "clear", reasonCode: "none"))
+        let annotation = EntryAnnotation(entryId: page.id, aiRunId: runId, generator: "heuristic")
+        try await l.insertAnnotation(annotation)
+        let reading = InsightSnapshot(kind: "day_reading", day: "2026-10-26", aiRunId: nil, generator: "heuristic", inputHash: nil, payload: "{}")
+        try await l.insertSnapshot(reading)
+        try await l.insertObservations([MemoryObservation(entryId: page.id, kind: .person, key: "person:sam", label: "Sam", quote: "Sam",
+                                                          field: "body", spanStart: 23, spanEnd: 26, localDay: "2026-10-26")],
+                                       run: AIRun(feature: Ledger.memoryFeature, executor: "heuristic", status: "ok"),
+                                       inputs: [AIRunInput(entryId: page.id, field: "body", text: rewritten)])
+
+        try await l.importExport(from: dir)
+        #expect(try await l.run("SELECT id FROM insight_snapshot").compactMap { $0.str("id") } == [reading.id])
+        #expect(try await l.run("SELECT id FROM entry_annotation").compactMap { $0.str("id") } == [annotation.id])
+        #expect(try await l.activeObservations().map(\.key) == ["person:sam"])
+        #expect(try await l.run("SELECT COUNT(*) AS n FROM ai_run WHERE feature='memory'").first?.int("n") == 1)
+        #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
+    }
+
     /// SR-15, FR-MEM-03: importing an export made before a hold, or before a forget, brings back none of what they deleted.
     @Test func importingAnOlderExportBringsBackNothingAHoldOrForgetDeleted() async throws {
         let l = try freshLedger()

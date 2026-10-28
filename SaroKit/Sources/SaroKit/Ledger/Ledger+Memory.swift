@@ -163,13 +163,17 @@ extension Ledger {
 
     /// A gate that no longer clears an entry takes back everything memory learned from it, retracted rows included
     /// (SR-15: nothing generated is kept for a held entry), and its memory runs, so text cleared again is learned afresh.
-    /// Called inside `insertVerdict`'s transaction.
-    func dropMemory(entryId: String) throws {
+    /// Called inside `insertVerdict`'s transaction. With `through`, only what was learned by then goes: an import
+    /// re-applying a verdict the entry has cleared since keeps what its newer text taught.
+    func dropMemory(entryId: String, through: String? = nil) throws {
+        let by = through.sql
         let runs = try db.run("""
-            SELECT DISTINCT r.id FROM ai_run r JOIN ai_run_input i ON i.ai_run_id = r.id WHERE r.feature=? AND i.entry_id=?
-            """, [.text(Self.memoryFeature), .text(entryId)]).compactMap { $0.str("id") }
-        try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE entry_id=?)", [.text(entryId)])
-        try db.run("DELETE FROM observation WHERE entry_id=?", [.text(entryId)])
+            SELECT DISTINCT r.id FROM ai_run r JOIN ai_run_input i ON i.ai_run_id = r.id
+            WHERE r.feature=? AND i.entry_id=? AND r.created_at <= COALESCE(?, r.created_at)
+            """, [.text(Self.memoryFeature), .text(entryId), by]).compactMap { $0.str("id") }
+        let learned = "SELECT id FROM observation WHERE entry_id=? AND created_at <= COALESCE(?, created_at)"
+        try db.run("DELETE FROM observation_retraction WHERE observation_id IN (\(learned))", [.text(entryId), by])
+        try db.run("DELETE FROM observation WHERE id IN (\(learned))", [.text(entryId), by])
         for id in runs {
             try db.run("DELETE FROM ai_run_input WHERE ai_run_id=?", [.text(id)])
             try db.run("DELETE FROM ai_run WHERE id=? AND NOT EXISTS (SELECT 1 FROM observation WHERE ai_run_id=?)", [.text(id), .text(id)])
