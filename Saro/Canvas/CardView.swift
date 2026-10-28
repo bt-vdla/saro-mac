@@ -42,7 +42,7 @@ extension AppModel {
         if e.kind == .reflection, let first = e.body?.split(separator: "\n").first, !first.isEmpty, (e.body?.contains("\n") ?? false) {
             return String(first.prefix(80))
         }
-        if verdicts[e.id]?.verdict == "clear", let t = annotations[e.id]?.title, !t.isEmpty { return t }
+        if verdicts[e.id]?.verdict == "clear", let t = annotations[e.id]?.title, let first = t.first { return first.uppercased() + t.dropFirst() }
         if e.kind == .still, let c = e.captionUser, !c.isEmpty { return c }
         return e.kind.noun
     }

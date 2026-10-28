@@ -108,6 +108,16 @@ final class AppModel {
         if let img = ctx.makeImage(), let data = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
             await importStill(data, origin: "demo", at: nil)
         }
+        // A synthetic voice note, spoken by the system voice, so the demo exercises transcription → gate → reading.
+        let voice = Entry(kind: .voice, capturedAt: .now.addingTimeInterval(-1800), processingStatus: ProcessingStatus.pending)
+        let asset = MediaAsset(fileName: "\(voice.localDay)/voice/\(voice.id).caf", kind: .audio, origin: "demo", state: "ready")
+        if await DemoSpeech.write("I walked home through the park after work. The sky was pink, and I felt lighter than I have in weeks.",
+                                  to: ledger.url(for: asset)) {
+            var v = voice
+            v.mediaId = asset.id
+            try? await ledger.insertMedia(asset)
+            try? await ledger.insertEntry(v)
+        }
         await reload()
         for e in entries { process(e.id) }
     }
@@ -559,4 +569,35 @@ struct Toast: Identifiable, Equatable {
     }
 
     static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
+}
+
+/// Writes synthetic speech to a file for the demo journal.
+enum DemoSpeech {
+    private final class Sink: @unchecked Sendable {
+        var file: AVAudioFile?
+        let url: URL
+        init(url: URL) { self.url = url }
+    }
+
+    @MainActor
+    static func write(_ text: String, to url: URL) async -> Bool {
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let synth = AVSpeechSynthesizer()
+        let sink = Sink(url: url)
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            var done = false
+            synth.write(utterance) { buffer in
+                guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
+                    if !done { done = true; c.resume() }
+                    return
+                }
+                if sink.file == nil { sink.file = try? AVAudioFile(forWriting: sink.url, settings: pcm.format.settings) }
+                try? sink.file?.write(from: pcm)
+            }
+        }
+        sink.file = nil
+        return FileManager.default.fileExists(atPath: url.path)
+    }
 }
