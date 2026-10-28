@@ -240,6 +240,8 @@ struct LetterView: View {
                         .font(Typo.ui(14)).foregroundStyle(Tok.ink)
                         .scrollContentBackground(.hidden)
                         .focused($focus, equals: .draft)
+                        // Esc cancels the write-back here, before the day's own Esc closes the panel.
+                        .onExitCommand { if !saving { writing = false } }
                         .writingToolsFollowPref()
                         .disabled(saving)
                         .accessibilityLabel("Write back")
