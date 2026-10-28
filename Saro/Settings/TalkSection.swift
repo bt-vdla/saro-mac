@@ -32,7 +32,8 @@ struct TalkSection: View {
         }
         .task { await load() }
         // A day held by an answer or a mood note changes no count, only its status: either picks the sentence again (SR-13).
-        .task(id: "\(model.days.first.map { "\($0.day)-\($0.count)" } ?? "")-\(model.day)-\(model.dayStatus)") {
+        // The source can be any recent day, not the one on screen, so every pass of the queue (a re-gate) picks it again too.
+        .task(id: "\(model.days.first.map { "\($0.day)-\($0.count)" } ?? "")-\(model.day)-\(model.dayStatus)-\(model.working)") {
             let next = await ToneSource.latest(model)
             source = next
             lines = Self.rewrites[next.sentence]
