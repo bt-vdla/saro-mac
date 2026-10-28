@@ -25,7 +25,8 @@ struct DayView: View {
                     // The world steps back while the moment frame is up (ease.drawer, 400 ms).
                     .scaleEffect(model.recorderKind == .moment && !reduceMotion ? 0.98 : 1)
                     .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.4), value: model.recorderKind)
-                if model.openEntryID.flatMap(model.entry) == nil { chrome(geo.size) }
+                // An open entry or set takes the window, as the web's dialogs do: its controls sit clear of the bar and the panel.
+                if model.openEntryID.flatMap(model.entry) == nil && model.openStackID == nil { chrome(geo.size) }
             }
             .overlayPreferenceValue(CaptureOriginKey.self) { [kind = model.recorderKind, grows = model.recorderGrows] origins in
                 if let kind {
@@ -675,7 +676,7 @@ struct DayStage: View {
                 VStack(spacing: 6) {
                     CardFace(entry: e, selected: model.selection.contains(e.id))
                     Text(["Turn \(e.turnNumber ?? i + 1)", model.media[e.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) }]
-                        .compactMap { $0 }.joined(separator: " · ")).monoCaps(10).foregroundStyle(Tok.ink3)
+                        .compactMap { $0 }.joined(separator: " · ")).monoCaps(10).foregroundStyle(Tok.ink2)
                     if let q = model.prompt(for: e) {
                         Text(q).font(Typo.serif(15, italic: true)).foregroundStyle(Tok.voice).lineLimit(2)
                             .multilineTextAlignment(.center).frame(width: tile.width)
@@ -692,24 +693,31 @@ struct DayStage: View {
                 .animation(fanned ? Motion.easeOut(0.42).delay(Double(i) * 0.04) : Motion.easeOut(0.22).delay(Double(members.count - 1 - i) * 0.03), value: fanned)
                 .onTapGesture { model.openEntryID = e.id }
             }
-            HStack(spacing: 12) {
-                Text("\(members.count) turns").monoCaps(10).foregroundStyle(Tok.ink3)
+            // The set's header (VideoStackOverlay.tsx), at the top as the web keeps it.
+            HStack(spacing: 14) {
+                Text("\(members.count) turns").monoCaps(10).foregroundStyle(Tok.ink2)
+                Button("Unstack") { withAnimation(Motion.pick(Motion.small, reduce: reduceMotion)) { model.unstack(sid) } }
+                    .help("Lay the turns out on the canvas")
                 if let first = members.first, first.kind == .moment {
-                    Button("Play all") {
+                    Button {
                         CaptureUI.shared.playAll = true
                         model.openEntryID = first.id
+                    } label: {
+                        Label("Play all", systemImage: "play.fill").labelStyle(.titleAndIcon).font(Typo.ui(12.5, .semibold))
                     }
                     .foregroundStyle(Tok.sage)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Play every turn in order  ⌘↩")
                 }
-                Button("Unstack") { withAnimation(Motion.pick(Motion.small, reduce: reduceMotion)) { model.unstack(sid) } }
-                Button("Done") { close(sid) }
+                Button("Done") { close(sid) }.help("Fold back into the stack  Esc")
             }
             .font(Typo.ui(12.5, .medium))
             .buttonStyle(.plain)
+            .fixedSize()
             .padding(.horizontal, 16).padding(.vertical, 9)
             .glassPanel(radius: 20)
-            .frame(maxHeight: .infinity, alignment: .bottom)
-            .padding(.bottom, 28)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, 28)
         }
         .onAppear { fanned = true }
         .task(id: members.map(\.id)) {
