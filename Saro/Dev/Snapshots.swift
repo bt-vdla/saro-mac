@@ -12,6 +12,8 @@ enum Snapshots {
     static let hold = Notification.Name("SaroSnapshotHold")
     /// Holds a trash flight this far along, so both its ends can be seen.
     static var trashFreeze: Double?
+    /// Opens ⌘K with its actions menu up on the first row.
+    static var paletteActions = false
 
     static func runIfRequested(_ model: AppModel) {
         guard let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
@@ -71,6 +73,10 @@ enum Snapshots {
                         try? await Task.sleep(for: .seconds(1))
                         model.open(DeepLink.entry("gone").url)
                     }
+                }),
+                ("actions", {
+                    paletteActions = true
+                    model.searchOpen = true
                 }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),

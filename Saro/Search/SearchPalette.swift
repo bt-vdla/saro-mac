@@ -51,6 +51,30 @@ private enum Row: Identifiable {
     }
 }
 
+/// ⌘K on an entry row (SearchPalette.tsx's actions menu), plus Move to Trash.
+private enum EntryAction: CaseIterable {
+    case open, replay, day, copy, trash
+
+    var title: String {
+        switch self {
+        case .open: "Open on canvas"
+        case .replay: "Replay that day"
+        case .day: "Go to that day"
+        case .copy: "Copy text"
+        case .trash: "Move to Trash"
+        }
+    }
+
+    var key: String? {
+        switch self {
+        case .open: "↵"
+        case .replay: "⌘↵"
+        case .copy: "⇧⌘C"
+        case .day, .trash: nil
+        }
+    }
+}
+
 private struct PaletteSection: Identifiable {
     let id: String
     var title: String?
@@ -84,11 +108,14 @@ private extension EntryKind {
 }
 
 /// ⌘K: search every entry and run commands. Keyboard all the way: ↑↓ move, ↵ runs, ⌘↵ replays the row's day,
-/// ⌘P (or "moments ", or a type and Tab) scopes, Esc steps back through the query and scope, then closes.
+/// ⌘P (or "moments ", or a type and Tab) scopes, ⌘K opens an entry's actions, Esc steps back through the actions,
+/// the query and scope, then closes.
 struct SearchPalette: View {
     @Binding var isPresented: Bool
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
     @State private var query = ""
     @State private var scope: EntryKind?
@@ -99,6 +126,12 @@ struct SearchPalette: View {
     @State private var window: NSWindow?
     @State private var monitor: Any?
     @State private var mouse: CGPoint?
+    @State private var actionsOpen = false
+    /// The highlighted action; nil until a key or the pointer picks one (a click opens the menu with none).
+    @State private var action: Int?
+    @State private var flash = ""
+    @State private var flashOn = false
+    @State private var flashTask: Task<Void, Never>?
 
     private static let limit = 50
     private static let scopes: [EntryKind] = [.moment, .voice, .reflection, .still]
@@ -161,7 +194,7 @@ struct SearchPalette: View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
                 Tok.shadow.opacity(scheme == .dark ? 0.4 : 0.16)
-                    .onTapGesture { isPresented = false }
+                    .onTapGesture { if menuHit != nil { actionsOpen = false } else { isPresented = false } }
                 panel
                     .frame(width: min(720, geo.size.width - 16), height: max(0, min(472, geo.size.height * 0.84 - 24)))
                     .padding(.top, geo.size.height * 0.16)
@@ -170,6 +203,9 @@ struct SearchPalette: View {
         .ignoresSafeArea()
         .onAppear {
             focused = true
+            #if DOGFOOD
+            if Snapshots.paletteActions { (actionsOpen, action) = (true, 0) }
+            #endif
             window = NSApp?.keyWindow
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 MainActor.assumeIsolated { handle(event) } ? nil : event
@@ -178,12 +214,16 @@ struct SearchPalette: View {
         .onDisappear { if let monitor { NSEvent.removeMonitor(monitor) } }
         .onChange(of: query) { _, q in
             selected = nil
+            actionsOpen = false
             if scope == nil, q.hasSuffix(" "), let k = Self.scopes.first(where: { $0.aliases.plural.contains(q.trimmingCharacters(in: .whitespaces).lowercased()) }) {
                 scope = k
                 query = ""
             }
         }
-        .onChange(of: scope) { selected = nil }
+        .onChange(of: scope) {
+            selected = nil
+            actionsOpen = false
+        }
         .task(id: key) {
             let (q, k, kind) = (trimmed, key, scope)
             do {
@@ -213,6 +253,16 @@ struct SearchPalette: View {
         .contentShape(.rect(cornerRadius: 20))
         .compositingGroup()
         .shadow(color: Tok.shadow.opacity(0.24), radius: 40, y: 32)
+        .overlay {
+            if let menuHit {
+                ZStack(alignment: .bottomTrailing) {
+                    // Modal like Radix's menu: a click anywhere else only closes it.
+                    Color.clear.contentShape(.rect).onTapGesture { actionsOpen = false }
+                    // 8 pt above the footer's Actions, right-aligned with it.
+                    actionsMenu(menuHit).padding(.trailing, 8).padding(.bottom, 42)
+                }
+            }
+        }
     }
 
     private var input: some View {
@@ -237,7 +287,6 @@ struct SearchPalette: View {
             .onTapGesture { cycleScope() }
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Search in: \(scope?.plural ?? "All types")")
-            Kbd("⌘K")
         }
         .padding(.leading, 16).padding(.trailing, 12)
         .frame(height: 52)
@@ -344,13 +393,25 @@ struct SearchPalette: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Text(context).font(Typo.ui(12.5)).foregroundStyle(Tok.ink3).lineLimit(1)
+            ZStack(alignment: .leading) {
+                Text(context).foregroundStyle(Tok.ink3).opacity(flashOn ? 0 : 1)
+                Text(flash).foregroundStyle(Tok.ink2).opacity(flashOn ? 1 : 0)
+            }
+            .font(Typo.ui(12.5)).lineLimit(1)
+            .animation(Motion.easeOut(0.16), value: flashOn)
             Spacer()
             if let current {
                 hint(primary(current), "↵")
                 if replays(current) {
                     Tok.border.frame(width: 1, height: 16)
                     hint("Replay", "⌘↵")
+                }
+                if case .entry = current {
+                    Tok.border.frame(width: 1, height: 16)
+                    hint("Actions", "⌘K")
+                        .contentShape(.rect)
+                        .onTapGesture { openActions(byKey: false) }
+                        .accessibilityAddTraits(.isButton)
                 }
             }
         }
@@ -363,6 +424,35 @@ struct SearchPalette: View {
             Text(label).font(Typo.ui(12.5)).foregroundStyle(Tok.ink2)
             Kbd(key)
         }
+    }
+
+    private func actionsMenu(_ h: SearchHit) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(EntryAction.allCases.enumerated()), id: \.offset) { i, a in
+                if a == .trash { Tok.line.frame(height: 1).padding(.vertical, 4) }
+                HStack(spacing: 8) {
+                    Text(a.title).font(Typo.ui(13)).tracking(0.13).foregroundStyle(a == .trash ? Tok.danger : Tok.ink)
+                    Spacer(minLength: 16)
+                    if let key = a.key { Text(key).font(Typo.mono(11)).foregroundStyle(Tok.ink3) }
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 36)
+                .background(i == action ? Tok.ink.opacity(0.06) : .clear, in: .rect(cornerRadius: Radius.control))
+                .contentShape(.rect)
+                .onTapGesture { perform(a, on: h) }
+                .onContinuousHover { phase in
+                    if case .active = phase { action = i } else if action == i { action = nil }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(i == action ? [.isButton, .isSelected] : .isButton)
+                .accessibilityAction { perform(a, on: h) }
+            }
+        }
+        .padding(6)
+        .frame(width: 260)
+        .background(Tok.surfaceAlt, in: .rect(cornerRadius: Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Tok.line))
+        .elevation(.panel)
     }
 
     // MARK: Rows
@@ -408,6 +498,7 @@ struct SearchPalette: View {
 
     private var rows: [Row] { sections.flatMap(\.rows) }
     private var current: Row? { rows.first { $0.id == selected } ?? rows.first }
+    private var menuHit: SearchHit? { if actionsOpen, case .entry(let h) = current { h } else { nil } }
 
     /// The one type whose aliases start with `word` (two letters at least).
     private static func scope(prefix word: String) -> EntryKind? {
@@ -505,6 +596,43 @@ struct SearchPalette: View {
         }
     }
 
+    /// Opened by ⌘K its first action is highlighted, by a click none (as Radix does).
+    private func openActions(byKey: Bool) {
+        guard case .entry = current else { return }
+        action = byKey ? 0 : nil
+        actionsOpen = true
+    }
+
+    private func perform(_ a: EntryAction, on h: SearchHit) {
+        actionsOpen = false
+        switch a {
+        case .open: run(.entry(h))
+        case .replay: replay(.entry(h))
+        case .day:
+            isPresented = false
+            model.go(to: h.localDay)
+        case .copy: copy(h)
+        case .trash:
+            isPresented = false
+            let flies = !Motion.byKey && !reduceMotion
+            Task { await model.trash([h.entryId], undoManager: undoManager, flies: flies) }
+        }
+    }
+
+    private func copy(_ h: SearchHit) {
+        NSPasteboard.general.clearContents()
+        let text = NSPasteboard.general.setString(h.copyText, forType: .string) ? "Copied" : "Couldn't copy"
+        // In the footer, where the row's context was, for 1.6 s.
+        flash = text
+        flashOn = true
+        AccessibilityNotification.Announcement(text).post()
+        flashTask?.cancel()
+        flashTask = Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            if !Task.isCancelled { flashOn = false }
+        }
+    }
+
     /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to load.
     private static func open(_ h: SearchHit, in model: AppModel) {
         model.go(to: h.localDay)
@@ -535,6 +663,7 @@ struct SearchPalette: View {
     private func handle(_ e: NSEvent) -> Bool {
         guard e.window === window, (e.window?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return false }
         let mods = e.modifierFlags.intersection([.command, .control, .option, .shift])
+        if let menuHit { return handleActions(e, mods, menuHit) }
         switch e.keyCode {
         case 125: move(1)
         case 126: move(-1)
@@ -551,10 +680,38 @@ struct SearchPalette: View {
             scope = nil
         default:
             switch (mods, e.charactersIgnoringModifiers?.lowercased()) {
+            // On any row, so it never reaches the menu bar's ⌘K and closes the palette.
+            case (.command, "k"): openActions(byKey: true)
+            case ([.command, .shift], "c"):
+                guard case .entry(let h) = current else { return false }
+                copy(h)
             case (.command, "p"): cycleScope()
             case (.control, "n"): move(1)
             case (.control, "p"): move(-1)
             default: return false
+            }
+        }
+        return true
+    }
+
+    /// The actions menu has every key but the menu bar's: ↑↓, Home/End, ↵ or Space, a first letter, Esc or ⌘K/⌘P to close.
+    private func handleActions(_ e: NSEvent, _ mods: NSEvent.ModifierFlags, _ h: SearchHit) -> Bool {
+        let all = EntryAction.allCases
+        let char = e.charactersIgnoringModifiers?.lowercased()
+        switch e.keyCode {
+        case 125: action = min((action ?? -1) + 1, all.count - 1)
+        case 126: action = max((action ?? all.count) - 1, 0)
+        case 115: action = 0
+        case 119: action = all.count - 1
+        case 36, 76, 49: if !e.isARepeat, let action { perform(all[action], on: h) }
+        case 53: actionsOpen = false
+        default:
+            if mods == .command, char == "k" || char == "p" {
+                actionsOpen = false
+            } else if mods.contains(.command) {
+                return false
+            } else if mods.subtracting(.shift).isEmpty, let char, let i = all.firstIndex(where: { $0.title.lowercased().hasPrefix(char) }) {
+                action = i
             }
         }
         return true
