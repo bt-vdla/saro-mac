@@ -105,6 +105,26 @@ func tempLedger() throws -> Ledger {
     #expect((obj?["entry"] as? [Any])?.count == 1)
 }
 
+@Test func editedTextGoesBackToPending() async throws {
+    let l = try tempLedger()
+    let page = Entry(kind: .reflection, body: "Tea with Ravi.", processingStatus: ProcessingStatus.done)
+    let still = Entry(kind: .still, processingStatus: ProcessingStatus.done)
+    let moment = Entry(kind: .moment, processingStatus: ProcessingStatus.transcriptUnavailable)
+    for e in [page, still, moment] { try await l.insertEntry(e) }
+    func status(_ e: Entry) async throws -> String? { try await l.entry(e.id)?.processingStatus }
+    // A title alone isn't gated text.
+    try await l.updateEntryText(id: page.id, body: "Tea with Ravi.", titleUser: "Tea")
+    #expect(try await status(page) == ProcessingStatus.done)
+    try await l.updateEntryText(id: page.id, body: "Tea with Ravi, then rain.", titleUser: "Tea")
+    #expect(try await status(page) == ProcessingStatus.pending)
+    try await l.updateEntryText(id: page.id, body: " \n", titleUser: "Tea")
+    #expect(try await status(page) == ProcessingStatus.done)
+    try await l.updateEntryText(id: still.id, body: nil, titleUser: nil, captionUser: "The river")
+    #expect(try await status(still) == ProcessingStatus.pending)
+    try await l.updateEntryText(id: moment.id, body: nil, titleUser: "Walk", captionUser: "x")
+    #expect(try await status(moment) == ProcessingStatus.transcriptUnavailable)
+}
+
 @Test func onlyEmptyPagesAreDiscarded() async throws {
     let l = try tempLedger()
     let empty = Entry(kind: .reflection, body: " \n"), full = Entry(kind: .reflection, body: "words")

@@ -76,10 +76,18 @@ public actor Ledger {
                   e.mediaId.sql, .text(e.processingStatus), .text(Date.now.iso)])
     }
 
-    /// User edits only (DR-04): no AI path calls this.
+    /// User edits only (DR-04): no AI path calls this. A changed page or caption goes back to pending, so the launch
+    /// sweep gates an edit that was saved but never processed; one emptied of text has nothing left to read.
     public func updateEntryText(id: String, body: String?, titleUser: String?, captionUser: String? = nil) throws {
-        try db.run("UPDATE entry SET body=?, title_user=?, caption_user=?, updated_at=? WHERE id=?",
-                   [body.sql, titleUser.sql, captionUser.sql, .text(Date.now.iso), .text(id)])
+        guard let old = try entry(id) else { return }
+        var status = old.processingStatus
+        // A recording's text is its transcript, not these fields.
+        if old.kind != .moment, old.kind != .voice, old.body != body || old.captionUser != captionUser {
+            let empty = ((body ?? "") + (captionUser ?? "")).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            status = empty ? ProcessingStatus.done : ProcessingStatus.pending
+        }
+        try db.run("UPDATE entry SET body=?, title_user=?, caption_user=?, processing_status=?, updated_at=? WHERE id=?",
+                   [body.sql, titleUser.sql, captionUser.sql, .text(status), .text(Date.now.iso), .text(id)])
     }
 
     public func setProcessingStatus(id: String, _ status: String) throws {
