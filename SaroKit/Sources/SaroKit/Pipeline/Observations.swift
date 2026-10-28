@@ -3,9 +3,9 @@ import Foundation
 extension Pipeline {
     /// Learns what one entry's current text says about the person (FR-MEM-01/02, DR-14, DR-17), after the pipeline has
     /// gated and read it. Only cleared text is read. Nothing is learned while memory is paused, from text written or
-    /// edited inside a pause, or from before forget-everything; such text gets a content-free run, so the backfill
-    /// doesn't ask again. An edit retracts the rows of the old text (`source_edited`) and learns again. Forgotten keys
-    /// are never written. Returns whether anything changed.
+    /// edited inside a pause, from before forget-everything, or from a still's own description; such text gets a
+    /// content-free run, so the backfill doesn't ask again. An edit retracts the rows of the old text (`source_edited`)
+    /// and learns again. Forgotten keys are never written. Returns whether anything changed.
     @discardableResult
     public func learn(entryId: String) async -> Bool {
         guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil else { return false }
@@ -13,7 +13,10 @@ extension Pipeline {
         let text = src?.text ?? ""
         let hash = sha256(text)
         let standing = (try? await ledger.standingObservations(entryId: entryId)) ?? []
-        let stale = standing.filter { $0.textSha256 != hash }
+        // A still's own description is Saro's words, never the person's (P-STILLS): it teaches memory nothing, and
+        // whatever it taught goes.
+        let saros = src?.field == Self.aiCaptionField
+        let stale = standing.filter { saros || $0.textSha256 != hash }
         func retractStale() async -> Bool {
             guard !stale.isEmpty else { return false }
             try? await ledger.retract(stale.map(\.id), reason: "source_edited")
@@ -28,7 +31,7 @@ extension Pipeline {
         // Learned, unless its rows were retracted since (an edit and back again): then it is read afresh.
         if learned {
             let ever = (try? await ledger.observedEver(entryId: entryId, textSha256: hash)) == true
-            if standing.contains(where: { $0.textSha256 == hash }) || !ever { return await retractStale() }
+            if saros || standing.contains(where: { $0.textSha256 == hash }) || !ever { return await retractStale() }
         }
         guard let profile = try? await ledger.profile(), !profile.memoryPaused else { return await retractStale() }
 
@@ -47,8 +50,8 @@ extension Pipeline {
         let edited = (try? await ledger.firstVerdictAt(entryId: entryId, textSha256: hash)) ?? entry.capturedAt
         let cutoff = try? await ledger.forgotAllAt()
         let paused = pauses.contains { $0.contains(entry.capturedAt) || $0.contains(edited) }
-        if paused || cutoff.map({ entry.capturedAt <= $0 }) == true {
-            run.status = paused ? "paused" : "forgotten"
+        if saros || paused || cutoff.map({ entry.capturedAt <= $0 }) == true {
+            run.status = saros ? "not_their_words" : paused ? "paused" : "forgotten"
             try? await ledger.insertObservations([], run: run, inputs: inputs, retracting: stale)
             return !stale.isEmpty
         }

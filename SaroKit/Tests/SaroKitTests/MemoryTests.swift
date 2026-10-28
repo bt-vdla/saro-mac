@@ -533,6 +533,33 @@ private func memoryAI(_ reply: String) -> SaroAI {
     #expect(try await h.activeObservations().first { $0.kind == .emotion }.map { $0.lineage == "heuristic" && $0.key == "mood:anxious" } == true)
 }
 
+/// P-STILLS: a still's own description is Saro's words, never quoted as the person's, so memory learns from a still only
+/// through the caption they write.
+@Test func aStillTeachesMemoryOnlyThroughThePersonsCaption() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: stillAI("Two people laughing together at work in a busy office."))
+    let s = try await stillEntry(l)
+    await p.process(entryId: s.id) {}
+    let verdict = try #require(try await l.verdicts(day: s.localDay)[s.id])
+    #expect(verdict.verdict == "clear")
+    await p.learn(entryId: s.id)
+    #expect(try await l.standingObservations(entryId: s.id).isEmpty)
+    #expect(try await l.unlearnedEntryIDs(extractor: MemoryRules.extractorVersion).isEmpty, "a passed-over description isn't asked about again")
+
+    // What an earlier pass learned from the description goes.
+    let old = MemoryObservation(entryId: s.id, kind: .theme, key: "theme:work", label: "work", quote: "path, park, trees",
+                                field: Pipeline.aiCaptionField, spanStart: 0, spanEnd: 17, textSha256: verdict.textSha256, localDay: s.localDay)
+    try await l.insertObservations([old], run: AIRun(feature: Ledger.memoryFeature, executor: "heuristic", status: "ok"), inputs: [])
+    #expect(await p.learn(entryId: s.id))
+    #expect(try await l.standingObservations(entryId: s.id).isEmpty)
+
+    try await l.updateEntryText(id: s.id, body: nil, titleUser: nil, captionUser: "Lunch with Ravi at the office. Work was long.")
+    await p.process(entryId: s.id) {}
+    await p.learn(entryId: s.id)
+    let rows = try await l.standingObservations(entryId: s.id)
+    #expect(!rows.isEmpty && rows.allSatisfy { $0.field == "caption_user" })
+}
+
 // MARK: The graph
 
 @Test func graphNodesEdgesAndALayoutThatSettlesTheSameWayEveryTime() throws {
