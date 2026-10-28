@@ -7,9 +7,9 @@ enum Ladder {
     /// any rung goes straight to the fallback and is never re-asked (SR-09). `attempt` is 0 or 1; 1 means "add the
     /// correction line". At most 4 calls (SR-10). Every reply passes the layer-3 phrase gate before anything else, and
     /// a hit ends the ladder (SR-08), so a clean retry can't hide it. `stop` says why it ended early: `output_gate`, or
-    /// a stop error's `reason`.
+    /// a stop error's `reason`. A nil `permissive` starts on guided (§11.3: a refused entry never goes back to it).
     static func walk<T: Sendable>(
-        permissive: @Sendable (Int) async throws -> String,
+        permissive: (@Sendable (Int) async throws -> String)?,
         decode: @Sendable (String) throws -> T,
         guided: @Sendable (Int) async throws -> T,
         prose: @Sendable (T) -> String,
@@ -18,6 +18,7 @@ enum Ladder {
     ) async -> (value: T, rung: Rung, calls: Int, stop: String?) {
         var calls = 0
         for attempt in 0..<2 {
+            guard let permissive else { break }
             calls += 1
             do {
                 let raw = try await permissive(attempt)

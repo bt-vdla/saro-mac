@@ -271,6 +271,15 @@ public actor Ledger {
             """, [.text(entryId), .text(inputHash), .text(entryId), .int(needsModel ? 1 : 0)]).isEmpty
     }
 
+    /// Entries of a day whose newest reading ended on a guardrail or a refusal (§11.3).
+    public func refusedEntryIDs(day: String) throws -> Set<String> {
+        Set(try db.run("""
+            SELECT a.entry_id FROM entry_annotation a JOIN ai_run r ON r.id = a.ai_run_id JOIN entry e ON e.id = a.entry_id
+            WHERE e.local_day=? AND r.status IN ('guardrail','refusal')
+              AND a.rowid = (SELECT MAX(rowid) FROM entry_annotation WHERE entry_id = a.entry_id)
+            """, [.text(day)]).compactMap { $0.str("entry_id") })
+    }
+
     /// The newest annotation per entry for a day (DR-05: newest is current).
     public func annotations(day: String) throws -> [String: EntryAnnotation] {
         let rows = try db.run("""

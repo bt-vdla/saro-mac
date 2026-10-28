@@ -135,6 +135,14 @@ func walk(permissive: @escaping @Sendable (Int) async throws -> String,
     #expect(await log.guided == 0)
 }
 
+@Test func withoutPermissiveTheLadderStartsOnGuided() async {
+    let log = CallLog()
+    let result = await Ladder.walk(permissive: nil, decode: { try SaroAI.reading(Ladder.decode(EntryOut.self, from: $0)) },
+                                   guided: { _ in await log.hitGuided(); return guidedReading }, prose: { $0.prose },
+                                   validate: { _ in true }, fallback: fallbackReading)
+    #expect(result.rung == .guided && result.calls == 1 && result.value == guidedReading)
+}
+
 @Test func quoteIndexOutOfRangeIsRejected() {
     let shown: Set<Int> = [0, 1, 2]
     #expect(SaroAI.grounded(EntryReading(title: "", summary: "", mood: .calm, quoteIndex: 2), in: shown))

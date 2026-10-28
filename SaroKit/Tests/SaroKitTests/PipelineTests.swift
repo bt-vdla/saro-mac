@@ -213,6 +213,25 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(await p.latestDayReading(e.localDay)?.generator == "on_device")
 }
 
+@Test func refusedEntryNeverReachesThePermissiveDayRung() async throws {
+    let l = try tempLedger()
+    let permissiveDay = CallLog()
+    let p = Pipeline(ledger: l, ai: SaroAI(stub: { prompt in
+        if prompt.hasSuffix("Label:") { return "NONE" }
+        guard prompt.hasPrefix("Notes on today's entries") else { throw guardrail }
+        if prompt.contains("Reply with only a JSON object") { await permissiveDay.hitPermissive() }
+        return cleanDay
+    }))
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    #expect(try await l.run("SELECT status FROM ai_run WHERE feature='entry_reading'").first?.str("status") == "guardrail")
+    #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "heuristic")
+    #expect(await p.readDay(e.localDay) != nil)
+    #expect(await permissiveDay.permissive == 0)
+    #expect(try await l.run("SELECT ladder_rung FROM ai_run WHERE feature='day_reading'").first?.str("ladder_rung") == "guided")
+}
+
 @Test func outputGateHitOnAnEntryReadingHoldsIt() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: answers(entry: cleanEntry.replacingOccurrences(of: "You had chai with Ravi.", with: "You said you want to end it all.")))

@@ -143,8 +143,9 @@ public actor SaroAI {
     // MARK: Day reading
 
     /// Map-reduce (revised.json `insights`): the day call sees only per-entry digests and numbered candidates, never
-    /// raw day text. Digests are oldest first; over budget, the oldest are dropped with their candidates.
-    public func readDay(day: String, digests: [EntryDigest], candidates: [Candidate], fallback: DayReading,
+    /// raw day text. Digests are oldest first; over budget, the oldest are dropped with their candidates. Without
+    /// `permissiveOK` (a digest the model refused), the ladder starts on guided.
+    public func readDay(day: String, digests: [EntryDigest], candidates: [Candidate], fallback: DayReading, permissiveOK: Bool = true,
                         validate: @escaping @Sendable (DayReading) -> Bool) async -> (DayReading, Provenance) {
         let start = ContinuousClock.now
         var digests = digests
@@ -164,11 +165,12 @@ public actor SaroAI {
 
         let indexes = Set(shown.map(\.index))
         let (base, permissive, stub, kept) = (self.base, self.permissive, self.stub, digests)
+        let ask: (@Sendable (Int) async throws -> String)? = permissiveOK ? { @Sendable [shown] attempt in
+            try await Self.ask(permissive, Self.dayInstructions, Self.dayTask(kept, shown, json: true, retry: attempt > 0),
+                               Self.options, stub)
+        } : nil
         let result = await Ladder.walk(
-            permissive: { [shown] attempt in
-                try await Self.ask(permissive, Self.dayInstructions, Self.dayTask(kept, shown, json: true, retry: attempt > 0),
-                                   Self.options, stub)
-            },
+            permissive: ask,
             decode: { try Self.reading(Ladder.decode(DayOut.self, from: $0)) },
             guided: { [shown] attempt in
                 try await Self.reading(Self.ask(DayOut.self, base, Self.dayInstructions,

@@ -150,7 +150,8 @@ public actor Pipeline {
             return
         }
 
-        var run = AIRun(feature: "entry_reading", executor: prov.executor, status: "ok")
+        // A guardrail or refusal is recorded, so the day reading never re-sends this entry to the permissive rung.
+        var run = AIRun(feature: "entry_reading", executor: prov.executor, status: prov.status)
         run.guardrails = prov.guardrails
         run.ladderRung = prov.rung.rawValue
         run.osBuild = prov.osBuild
@@ -250,8 +251,11 @@ public actor Pipeline {
         let reading: DayReading
         let prov: Provenance
         if modelOK {
+            // §11.3: an entry the model refused is never re-sent to the permissive rung, so its day starts on guided.
+            let refused = (try? await ledger.refusedEntryIDs(day: day)) ?? []
             // §11.6: the drift check covers all the prose the day shows, the question and mood basis included.
-            (reading, prov) = await ai.readDay(day: day, digests: digests, candidates: candidates, fallback: fallback) { r in
+            (reading, prov) = await ai.readDay(day: day, digests: digests, candidates: candidates, fallback: fallback,
+                                               permissiveOK: refused.isDisjoint(with: digests.map(\.entryId))) { r in
                 [r.narrative, r.question, r.moodBasis].allSatisfy { $0.map { Heuristics.driftOK(generated: $0, source: source) } ?? true }
             }
         } else {
@@ -271,7 +275,7 @@ public actor Pipeline {
 
         let picked = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
         let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId))
-        var run = AIRun(feature: "day_reading", executor: prov.executor, status: "ok")
+        var run = AIRun(feature: "day_reading", executor: prov.executor, status: prov.status)
         run.guardrails = prov.guardrails
         run.ladderRung = prov.rung.rawValue
         run.osBuild = prov.osBuild
