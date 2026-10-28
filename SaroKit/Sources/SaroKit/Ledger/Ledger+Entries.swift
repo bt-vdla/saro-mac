@@ -54,7 +54,7 @@ extension Ledger {
                 ORDER BY rowid DESC LIMIT 1
                 """, [.text(UUID().uuidString), .text(copy), .text(now.iso), .text(id)])
             if try !db.run("SELECT 1 FROM safety_verdict WHERE entry_id=? AND verdict='safety_hold'", [.text(copy)]).isEmpty {
-                try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=?", [.text(day)])
+                try dropDayReadings(day)
             }
         }
         guard let made = try entry(copy) else { throw DuplicateError.missing }

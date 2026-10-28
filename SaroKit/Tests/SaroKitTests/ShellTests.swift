@@ -182,12 +182,16 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         try await l.insertVerdict(SafetyVerdictRow(entryId: held.id, textSha256: sha256(held.body!), safetyVersion: SafetyGate.version, layer: 2,
                                                    verdict: "safety_hold", reasonCode: "test"))
         let today = LocalDay.today()
-        try await l.insertEntry(Entry(kind: .reflection, body: "Tea with Ravi."))
+        let tea = Entry(kind: .reflection, body: "Tea with Ravi.")
+        try await l.insertEntry(tea)
         try await l.insertSnapshot(InsightSnapshot(kind: "day_reading", day: today, aiRunId: nil, generator: "heuristic", inputHash: nil, payload: "{}"))
+        // A first-week note drawn on today's page, stored on the day it came.
+        try await l.insertSnapshot(InsightSnapshot(kind: "pattern", day: LocalDay.adding(-3, to: today), aiRunId: nil, generator: "heuristic",
+                                                   inputHash: nil, payload: #"{"sources": ["\#(tea.id)"]}"#))
 
         let copy = try await l.duplicate(id: held.id, toDay: today)
         #expect(try await l.verdicts(day: today)[copy.id]?.verdict == "safety_hold")
-        #expect(try await count(l, "insight_snapshot", "from_day=?", [.text(today)]) == 0)
+        #expect(try await count(l, "insight_snapshot") == 0)
     }
 
     @Test func tomorrowIsRefused() async throws {
