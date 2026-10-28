@@ -582,7 +582,15 @@ final class AppModel {
                     await memory.learn(entryId: id)
                 }
                 current = nil
-                for d in days { await pipeline.readDay(d) }
+                // The same before each day's reading; a capture made meanwhile goes before the days left.
+                var left = Array(days)
+                while let d = left.popLast() {
+                    let waiting = jobs
+                    jobs = []
+                    for job in waiting { await job() }
+                    await pipeline.readDay(d)
+                    if !queue.isEmpty { unreadDays.formUnion(left); break }
+                }
                 while !jobs.isEmpty { await jobs.removeFirst()() }
                 // Read back while still working, so a reading never shows as missing between landing and the reload.
                 if queue.isEmpty, unreadDays.isEmpty, jobs.isEmpty { await reload() }
