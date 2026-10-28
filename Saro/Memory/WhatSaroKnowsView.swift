@@ -26,14 +26,26 @@ struct WhatSaroKnowsView: View {
                     KnowledgeGraphView(focus: $focus)
                         .padding(.top, 12)
                 } else {
-                    ScrollView {
-                        MemoryListView(focus: $focus)
-                            .frame(maxWidth: 680, alignment: .leading)
-                            .padding(.horizontal, embedded ? 0 : 22)
-                            .padding(.top, 12).padding(.bottom, 40)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            MemoryListView(focus: $focus)
+                                .frame(maxWidth: 680, alignment: .leading)
+                                .padding(.horizontal, embedded ? 0 : 22)
+                                .padding(.top, 12).padding(.bottom, 40)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .scrollIndicators(.automatic)
+                        // A line picked in ⌘K: shown and focused, with the search cleared so it can't be filtered out.
+                        .task(id: memory.reveal) {
+                            guard let key = memory.reveal else { return }
+                            if memory.status != .ready { await memory.load() }
+                            memory.query = ""
+                            try? await Task.sleep(for: .milliseconds(80))
+                            proxy.scrollTo(key, anchor: .center)
+                            focus = .row(key)
+                            memory.reveal = nil
+                        }
                     }
-                    .scrollIndicators(.automatic)
                 }
             }
         }
@@ -56,6 +68,7 @@ struct WhatSaroKnowsView: View {
             memory.query = q
             model.knowsQuery = nil
         }
+        .onChange(of: memory.reveal, initial: true) { _, key in if key != nil, !embedded { mode = .list } }
         // Closing the pane writes any delete still waiting on its Undo.
         .onDisappear { Task { await memory.commitPending() } }
     }
@@ -220,6 +233,7 @@ struct MemoryListView: View {
                             ForEach(Array(g.items.enumerated()), id: \.element.key) { i, m in
                                 if i > 0 { Rectangle().fill(Tok.line).frame(height: 1).padding(.horizontal, 10) }
                                 row(m)
+                                    .id(m.key)
                                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 6)),
                                                                                        removal: .opacity.animation(Motion.easeOut(0.12))))
                             }

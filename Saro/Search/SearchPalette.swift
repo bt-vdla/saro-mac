@@ -41,6 +41,7 @@ private enum Row: Identifiable {
     case day(String)
     case scope(EntryKind)
     case write(String)
+    case memory(Memory)
 
     var id: String {
         switch self {
@@ -49,6 +50,7 @@ private enum Row: Identifiable {
         case .day(let d): "d:\(d)"
         case .scope(let k): "s:\(k.rawValue)"
         case .write: "w"
+        case .memory(let m): "m:\(m.key)"
         }
     }
 }
@@ -235,6 +237,7 @@ struct SearchPalette: View {
         .ignoresSafeArea()
         .onAppear {
             focused = true
+            if model.memory.status != .ready { Task { await model.memory.load() } }
             #if DOGFOOD
             if Snapshots.paletteActions { (actionsOpen, action) = (true, 0) }
             #endif
@@ -372,6 +375,7 @@ struct SearchPalette: View {
         case .day: ("calendar", nil)
         case .scope(let k): (k.symbol, k.tint)
         case .write: (EntryKind.reflection.symbol, EntryKind.reflection.tint)
+        case .memory: ("point.3.connected.trianglepath.dotted", Tok.sage)
         }
         return HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 12, weight: .medium))
@@ -397,6 +401,9 @@ struct SearchPalette: View {
                 Kbd("Tab").frame(width: 72, alignment: .trailing)
             case .write(let text):
                 title("Write “\(text)”")
+            case .memory(let m):
+                Text(marked(m.text, Typo.ui(14, .semibold))).font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
+                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 8)
@@ -521,6 +528,9 @@ struct SearchPalette: View {
             }
             if let top { out.append(PaletteSection(id: "top", title: "Top hit", rows: [top])) }
             if !matched.isEmpty { out.append(PaletteSection(id: "commands", title: "Commands", rows: matched.prefix(3).map(Row.command))) }
+            // FR-SRC-01: lines of What Saro knows, by their words and the person's own words behind them.
+            let memories = model.memory.live.filter { MemoryList.matches($0, q) }
+            if !memories.isEmpty { out.append(PaletteSection(id: "memories", title: "Memories", rows: memories.prefix(3).map(Row.memory))) }
         }
         if !entries.isEmpty {
             out.append(PaletteSection(id: "entries", title: scope?.plural ?? "Entries",
@@ -548,6 +558,7 @@ struct SearchPalette: View {
         case .day: "Go to day"
         case .scope: "Narrow the search"
         case .write: "New writing"
+        case .memory(let m): "What Saro knows · \(m.group.label)"
         case nil: ""
         }
     }
@@ -558,6 +569,7 @@ struct SearchPalette: View {
         case .day: "Go"
         case .scope: "Search"
         case .command, .write: "Run"
+        case .memory: "Show"
         }
     }
 
@@ -610,6 +622,10 @@ struct SearchPalette: View {
         case .write(let text):
             isPresented = false
             Self.write(text, in: model)
+        case .memory(let m):
+            isPresented = false
+            model.pane = .knows
+            model.memory.reveal = m.key
         }
     }
 
