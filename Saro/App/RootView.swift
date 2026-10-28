@@ -10,7 +10,7 @@ struct RootView: View {
             if model.profile == nil {
                 LitGround().ignoresSafeArea().overlay { ToastHost() }
             } else if model.showsOnboarding {
-                OnboardingView().ignoresSafeArea(.container, edges: .top)
+                OnboardingView().ignoresSafeArea(.container, edges: .top).overlay { ToastHost() }
             } else {
                 NavigationSplitView(columnVisibility: Binding(get: { model.sidebarVisible ? .all : .detailOnly },
                                                               set: { model.sidebarVisible = $0 != .detailOnly })) {

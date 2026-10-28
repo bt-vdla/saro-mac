@@ -255,16 +255,21 @@ final class OnboardingFlow {
 
     /// Completes onboarding and hands the first reflection to the day canvas: nil is 'Later'. The camera check is off
     /// before the recorder asks for the camera.
+    /// A failed write says so (the toast) and leaves them where they were, the camera still on and this pass's place kept.
     func finish(_ mode: AppModel.FirstMode?, model: AppModel) async {
         guard !leaving else { return }
         leaving = true
+        await model.completeOnboarding()
+        guard model.profile?.onboardingDoneAt != nil else {
+            leaving = false
+            return
+        }
         await check?.release()
         let d = Self.defaults
         d.set(Step.about.rawValue, forKey: "onboarding.step")
         d.set(Step.about.rawValue, forKey: "onboarding.furthest")
         d.set("1", forKey: "onboarding.aboutStep")
         d.removeObject(forKey: "onboarding.starterID")
-        await model.completeOnboarding()
         if let mode { await model.startFirstReflection(mode) }
     }
 
