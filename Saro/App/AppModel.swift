@@ -66,6 +66,8 @@ final class AppModel {
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
     private var queue: [String] = []
+    /// Days to read once the queued entries are done (a trash, a restore, the inspector opening).
+    private var unreadDays: Set<String> = []
     private var working = false
     private var current: String?
     private var navigation = 0
@@ -335,7 +337,8 @@ final class AppModel {
         working = true
         Task {
             repeat {
-                var days = Set<String>()
+                var days = unreadDays
+                unreadDays = []
                 while !queue.isEmpty {
                     let id = queue.removeFirst()
                     current = id
@@ -344,7 +347,7 @@ final class AppModel {
                 }
                 current = nil
                 for d in days { await pipeline.readDay(d) }
-            } while !queue.isEmpty
+            } while !queue.isEmpty || !unreadDays.isEmpty
             working = false
             await reload()
         }
@@ -370,25 +373,17 @@ final class AppModel {
         }
     }
 
-    /// After a trash or restore the day's reading may quote what's gone (or miss what's back): read it again.
+    /// After a trash or restore the day's reading may quote what's gone (or miss what's back): read it again, after
+    /// whatever is under way (§11.7: one model call at a time).
     func rereadDay() {
-        let d = day
-        Task {
-            if !working { await pipeline.readDay(d) }
-            await reload()
-        }
+        unreadDays.insert(day)
+        drain()
     }
 
     /// Reads the day when the inspector opens and nothing is stored yet (or the inputs changed).
     func refreshDayReading() {
-        guard !working, dayStatus == .ready else { return }
-        working = true
-        Task {
-            await pipeline.readDay(day)
-            working = false
-            if !queue.isEmpty { drain() }
-            await reload()
-        }
+        guard dayStatus == .ready else { return }
+        rereadDay()
     }
 
     /// Launch sweep (DR-12): a turn that was recording when Saro quit is a finished file if it exists on disk
