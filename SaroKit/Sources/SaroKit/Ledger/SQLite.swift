@@ -78,7 +78,10 @@ final class SQLite {
             switch arg {
             case .null: sqlite3_bind_null(stmt, idx)
             case .int(let v): sqlite3_bind_int64(stmt, idx, v)
-            case .real(let v): sqlite3_bind_double(stmt, idx, v)
+            case .real(let v):
+                // SQLite keeps an infinity, and Export's JSONSerialization then traps on it.
+                guard v.isFinite else { throw SQLiteError(description: "Non-finite number \(v) in: \(sql.prefix(120))") }
+                sqlite3_bind_double(stmt, idx, v)
             // An explicit length, so text holding a NUL isn't cut there.
             case .text(let v): sqlite3_bind_text(stmt, idx, v, Int32(v.utf8.count), Self.transient)
             }
