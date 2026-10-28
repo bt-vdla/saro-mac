@@ -1,6 +1,7 @@
 import Foundation
 
-/// Schema migrations, indexed by `PRAGMA user_version`. Append a new string for every change; never edit a shipped one.
+/// Schema migrations, indexed by `PRAGMA user_version`: position decides the version, the names are only labels.
+/// Append a new migration at the END for every change; never insert, reorder or edit a shipped one.
 enum Schema {
     static let migrations: [String] = [v1, v3]
 
