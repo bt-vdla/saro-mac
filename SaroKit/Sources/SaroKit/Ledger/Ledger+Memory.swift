@@ -105,9 +105,21 @@ extension Ledger {
 
     /// One learning pass in one transaction (FR-MEM-01): its run and inputs, its rows, and the retraction of what the
     /// entry's earlier text gave (FR-MEM-02, `source_edited`, pointing at the new row with the same key when there is one).
-    /// A row without an `aiRunId` belongs to `run`.
+    /// A row without an `aiRunId` belongs to `run`. A pause or forget-everything that landed while the pass read the entry
+    /// wins, checked here so nothing slips in between: an entry from before the cutoff gets a content-free `forgotten` run,
+    /// forget-everything having taken its old rows (FR-MEM-04); inside a pause only the retraction is written, so the
+    /// backfill learns the entry once memory resumes (FR-MEM-03).
     public func insertObservations(_ observations: [MemoryObservation], run: AIRun, inputs: [AIRunInput], retracting stale: [MemoryObservation] = []) throws {
         try db.transaction {
+            var (observations, run, stale) = (observations, run, stale)
+            if !observations.isEmpty, let id = inputs.first?.entryId, let captured = try entry(id)?.capturedAt {
+                if let cutoff = try forgotAllAt(), captured <= cutoff {
+                    (observations, run.status, stale) = ([], "forgotten", [])
+                } else if try profile().memoryPaused {
+                    for s in stale { try retractRow(s.id, reason: "source_edited", replacedBy: nil) }
+                    return
+                }
+            }
             try insertRunRow(run, inputs: inputs)
             for var o in observations {
                 if o.aiRunId == nil { o.aiRunId = run.id }

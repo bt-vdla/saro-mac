@@ -560,6 +560,42 @@ private func memoryAI(_ reply: String) -> SaroAI {
     #expect(!rows.isEmpty && rows.allSatisfy { $0.field == "caption_user" })
 }
 
+/// FR-MEM-04 and FR-MEM-03: Forget everything or a pause, pressed while memory's model call is under way, still wins.
+@Test func forgetEverythingOrAPauseDuringALearnWins() async throws {
+    for pause in [false, true] {
+        let l = try tempLedger()
+        let (reached, release) = (Latch(), Latch())
+        let p = Pipeline(ledger: l, ai: SaroAI(stub: { prompt in
+            if prompt.hasSuffix("Label:") { return "NONE" }
+            if prompt.contains("List the people the writer names") {
+                await reached.open()
+                await release.wait()
+                return #"{"people": [{"name": "Ravi", "phrase": 0}], "themes": [], "intentions": []}"#
+            }
+            return prompt.hasPrefix("Notes on today's entries") ? cleanDay : cleanEntry
+        }))
+        let e = Entry(kind: .reflection, body: chai, capturedAt: ago(0, hour: -1))
+        try await l.insertEntry(e)
+        await p.process(entryId: e.id) {}
+        let learn = Task { await p.learn(entryId: e.id) }
+        await reached.wait()
+        if pause {
+            var profile = try await l.profile()
+            profile.memoryPaused = true
+            try await l.saveProfile(profile)
+        } else {
+            try await l.forgetAll()
+        }
+        try await Task.sleep(for: .milliseconds(20)) // the model's reply lands after the click, by seconds in the app
+        await release.open()
+        _ = await learn.value
+        #expect(try await l.standingObservations(entryId: e.id).isEmpty)
+        #expect(try await l.activeObservations().isEmpty)
+        // Paused, the entry is learned once memory is back on; from before the cutoff, it is never read again.
+        #expect(try await l.unlearnedEntryIDs(extractor: MemoryRules.extractorVersion) == (pause ? [e.id] : []))
+    }
+}
+
 // MARK: The graph
 
 @Test func graphNodesEdgesAndALayoutThatSettlesTheSameWayEveryTime() throws {
