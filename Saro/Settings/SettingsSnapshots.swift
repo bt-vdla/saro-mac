@@ -90,10 +90,18 @@ private struct ComfortProbe: View {
     @Environment(\.accessibilityReduceTransparency) private var transparency
 
     var body: some View {
-        let _ = try? "reduceMotion=\(motion) reduceTransparency=\(transparency)\n"
-            .write(toFile: "\(dir)/comfort-probe.txt", atomically: true, encoding: .utf8)
+        // Every reading is appended: on while the switches are on, then off once the next step turns them off.
+        let _ = append("reduceMotion=\(motion) reduceTransparency=\(transparency)\n")
         Text("Comfort probe: reduce motion \(motion ? "on" : "off"), reduce transparency \(transparency ? "on" : "off")")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func append(_ line: String) {
+        let path = "\(dir)/comfort-probe.txt"
+        guard let h = FileHandle(forWritingAtPath: path) else { FileManager.default.createFile(atPath: path, contents: Data(line.utf8)); return }
+        h.seekToEndOfFile()
+        h.write(Data(line.utf8))
+        h.closeFile()
     }
 }
 #endif
