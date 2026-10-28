@@ -65,11 +65,53 @@ private func people(_ entries: [String]) -> [String] { texts(derived(entries).fi
     try await l.restore(batch: batch)
     #expect(try await keys().contains("theme:nature"))
 
-    // Forgetting a key tombstones it (only its hash is kept) and retracts its rows.
+    // Forgetting a key tombstones it (only its hash is kept) and deletes its rows, words and all.
     try await l.forget(keys: ["theme:nature"])
     #expect(try await !keys().contains("theme:nature"))
     #expect(try await l.run("SELECT * FROM memory_tombstone").allSatisfy { $0["key_sha256"] != .text("theme:nature") })
-    #expect(try await l.run("SELECT reason FROM observation_retraction").contains { $0["reason"] == .text("user_deleted") })
+    #expect(try await l.run("SELECT 1 FROM observation WHERE key='theme:nature'").isEmpty)
+}
+
+@Test func aHoldAfterLearningDropsWhatWasLearnedAndClearingAgainLearnsAgain() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let e = try await write(l, p, "Dinner with my sister Maya was lovely. Work was a lot.", at: ago(1))
+    // An edit leaves the first text's rows behind, retracted.
+    let text = "Dinner with my sister Maya was lovely. Maya stayed late."
+    try await l.updateEntryText(id: e.id, body: text, titleUser: nil)
+    await p.process(entryId: e.id) {}
+    #expect(await p.learn(entryId: e.id))
+    let count = { (sql: String) in try await l.run(sql, [.text(e.id)]).first?["n"] }
+    let rows = "SELECT COUNT(*) AS n FROM observation WHERE entry_id=?"
+    let retractions = "SELECT COUNT(*) AS n FROM observation_retraction r JOIN observation o ON o.id = r.observation_id WHERE o.entry_id=?"
+    let inputs = "SELECT COUNT(*) AS n FROM ai_run_input i JOIN ai_run r ON r.id = i.ai_run_id WHERE r.feature='memory' AND i.entry_id=?"
+    #expect(try await count(retractions) != .int(0))
+
+    // The same text held later (a gate version bump, the classifier once the model is back, or layer 3 on the day's
+    // reading): nothing learned from it stays on disk, retracted or not, so Export can't write it out.
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(text), safetyVersion: SafetyGate.version, layer: 3,
+                                               verdict: "safety_hold", reasonCode: "output_gate"))
+    #expect(try await count(rows) == .int(0))
+    #expect(try await count(retractions) == .int(0))
+    #expect(try await count(inputs) == .int(0))
+    #expect(try await l.run("SELECT 1 FROM ai_run WHERE feature='memory'").isEmpty)
+    let url = FileManager.default.temporaryDirectory.appending(path: "export-\(UUID().uuidString).json")
+    try await l.exportJSON(to: url)
+    let obj = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    #expect((obj["observation"] as? [Any])?.isEmpty == true)
+    #expect((obj["memories"] as? [Any])?.isEmpty == true)
+
+    // Cleared again, the text is learned afresh, by the next pass or the launch backfill.
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(text), safetyVersion: SafetyGate.version, layer: 2,
+                                               verdict: "clear", reasonCode: "t"))
+    #expect(try await l.unlearnedEntryIDs(extractor: MemoryRules.extractorVersion) == [e.id])
+    #expect(await p.learn(entryId: e.id))
+    #expect(try await l.standingObservations(entryId: e.id).contains { $0.key == "person:maya" })
+
+    // An unchecked verdict drops it too: unchecked text never feeds memory.
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(text), safetyVersion: SafetyGate.version, layer: 1,
+                                               verdict: "unavailable_caution", reasonCode: "caution_hit"))
+    #expect(try await count(rows) == .int(0))
 }
 
 // MARK: Extraction
@@ -318,6 +360,18 @@ private func rows(_ entries: [String], now: Date = .now) -> [MemoryObservation] 
 
     try await l.forget(keys: ["user:1", "person:maya"])
     #expect(try await l.run("SELECT * FROM observation WHERE label='I work nights.'").isEmpty, "what the person wrote is deleted, not kept")
+    #expect(try await l.run("SELECT * FROM observation WHERE key='person:maya'").isEmpty, "nor are the entry quotes behind a forgotten key")
+
+    // Export carries the lines as the pane shows them, with their sightings; a forgotten key only as its hash.
+    let url = FileManager.default.temporaryDirectory.appending(path: "export-\(UUID().uuidString).json")
+    try await l.exportJSON(to: url)
+    let obj = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    let exported = try #require(obj["memories"] as? [[String: Any]])
+    let line = try #require(exported.first { $0["key"] as? String == "theme:work" })
+    #expect(line["text"] as? String == "Work is calmer now." && line["group"] as? String == "On your mind" && line["entries"] as? Int == 3)
+    #expect((line["sightings"] as? [[String: Any]])?.first?["quote"] as? String == "Work again, a long meeting.")
+    let raw = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+    #expect(!raw.contains("I work nights") && !raw.contains("person:maya"))
     _ = try await write(l, p, "Maya came over. Maya stayed for dinner.")
     #expect(try await !memories(l).contains { $0.key == "person:maya" })
 }

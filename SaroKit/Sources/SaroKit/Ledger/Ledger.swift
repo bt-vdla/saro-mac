@@ -319,7 +319,8 @@ public actor Ledger {
     }
 
     /// A safety hold also drops what was generated from the entry: its readings, and its day's readings and kept
-    /// letters, which Export would otherwise still write out (SR-15, which outranks DR-05's append-only rule here).
+    /// letters, which Export would otherwise still write out (SR-15, which outranks DR-05's append-only rule here). Any
+    /// verdict that doesn't clear the entry drops what memory learned from it.
     public func insertVerdict(_ v: SafetyVerdictRow) throws {
         try db.transaction {
             try db.run("""
@@ -327,6 +328,7 @@ public actor Ledger {
                 VALUES (?,?,?,?,?,?,?,?)
                 """, [.text(v.id), .text(v.entryId), .text(v.textSha256), .text(v.safetyVersion), .int(Int64(v.layer)),
                       .text(v.verdict), .text(v.reasonCode), .text(v.createdAt.iso)])
+            if v.verdict != "clear" && v.verdict != "unavailable_clear" { try dropMemory(entryId: v.entryId) }
             guard v.verdict == "safety_hold" else { return }
             try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(v.entryId)])
             try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=(SELECT local_day FROM entry WHERE id=?)",
@@ -390,6 +392,7 @@ public actor Ledger {
         let tables = try db.run("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").compactMap { $0.str("name") }
         var out: [String: Any] = ["export_version": 1, "schema_version": try schemaVersion(), "exported_at": Date.now.iso]
         for t in tables { out[t] = try db.run("SELECT * FROM \(t)").map { $0.mapValues(\.json) } }
+        out["memories"] = try memoriesForExport()
         try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
     }
 }

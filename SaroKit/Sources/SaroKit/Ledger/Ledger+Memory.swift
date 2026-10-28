@@ -136,21 +136,46 @@ extension Ledger {
         }
     }
 
-    /// Delete (FR-MEM-03): a retraction and a tombstone, so the key never comes back. What the person wrote here is their
-    /// own text, not their entries', so it goes for good; only the key's hash is kept.
+    /// Delete (FR-MEM-03): every row with the key goes for good (secure_delete overwrites its words) and a tombstone keeps
+    /// only the key's hash, so the key never comes back. The entry's runs stay, so its text isn't read again for it.
     public func forget(keys: [String]) throws {
         let now = Date.now.iso
         try db.transaction {
             for key in keys {
-                try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE key=? AND source='user')", [.text(key)])
-                try db.run("DELETE FROM observation WHERE key=? AND source='user'", [.text(key)])
-                for id in try db.run("""
-                    SELECT id FROM observation o WHERE key=?
-                      AND NOT EXISTS (SELECT 1 FROM observation_retraction r WHERE r.observation_id = o.id)
-                    """, [.text(key)]).compactMap({ $0.str("id") }) {
-                    try retractRow(id, reason: "user_deleted", replacedBy: nil)
-                }
+                try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE key=?)", [.text(key)])
+                try db.run("DELETE FROM observation WHERE key=?", [.text(key)])
                 try db.run("INSERT OR IGNORE INTO memory_tombstone (key_sha256, at) VALUES (?, ?)", [.text(sha256(key)), .text(now)])
+            }
+        }
+    }
+
+    /// A gate that no longer clears an entry takes back everything memory learned from it, retracted rows included
+    /// (SR-15: nothing generated is kept for a held entry), and its memory runs, so text cleared again is learned afresh.
+    /// Called inside `insertVerdict`'s transaction.
+    func dropMemory(entryId: String) throws {
+        let runs = try db.run("""
+            SELECT DISTINCT r.id FROM ai_run r JOIN ai_run_input i ON i.ai_run_id = r.id WHERE r.feature=? AND i.entry_id=?
+            """, [.text(Self.memoryFeature), .text(entryId)]).compactMap { $0.str("id") }
+        try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE entry_id=?)", [.text(entryId)])
+        try db.run("DELETE FROM observation WHERE entry_id=?", [.text(entryId)])
+        for id in runs {
+            try db.run("DELETE FROM ai_run_input WHERE ai_run_id=?", [.text(id)])
+            try db.run("DELETE FROM ai_run WHERE id=? AND NOT EXISTS (SELECT 1 FROM observation WHERE ai_run_id=?)", [.text(id), .text(id)])
+        }
+    }
+
+    /// What Saro knows, as readable lines for Export (FR-MEM feeding): what the pane shows, with every dated sighting.
+    /// Forgotten keys are left out; the tombstone table carries only their hashes.
+    func memoriesForExport() throws -> [[String: Any]] {
+        let memories = MemoryList.derive(try activeObservations(), starter: try latestStarter(), commitments: try openCommitments(),
+                                         tombstones: try tombstoneHashes(), forgotAllAt: try forgotAllAt(), pauses: try pauses())
+        return MemoryList.group(memories).flatMap { g in
+            g.items.map { m -> [String: Any] in
+                var out: [String: Any] = ["key": m.key, "text": m.text, "group": g.group.label, "source": "\(m.source)", "entries": m.count,
+                                          "last_seen": m.lastSeen.iso, "updated_at": m.updatedAt.iso,
+                                          "sightings": m.sightings.map { ["day": $0.day, "quote": $0.quote, "entry_id": $0.entryId as Any] }]
+                if let told = m.told { out["told"] = told }
+                return out
             }
         }
     }
