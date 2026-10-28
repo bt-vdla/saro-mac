@@ -274,7 +274,7 @@ private struct ReadingBadge: View {
                     .background(Tok.surface, in: .capsule)
                     .overlay(Capsule().strokeBorder(Tok.rim.opacity(0.6)))
                     .shadow(color: Tok.sage.opacity(0.35), radius: 11)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.95)))
                     .accessibilityLabel("Insights updated")
             } else if model.dayStatus == .working && !model.entries.isEmpty {
                 Circle().fill(Tok.voice).frame(width: 8, height: 8)
