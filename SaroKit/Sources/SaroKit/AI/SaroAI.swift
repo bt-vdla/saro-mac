@@ -55,7 +55,7 @@ public actor SaroAI {
     static let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: outputReserve)
     static let classifierTimeout: Duration = .seconds(6)
 
-    private let base = SystemLanguageModel.default
+    let base = SystemLanguageModel.default
     private let permissive = SystemLanguageModel(guardrails: .permissiveContentTransformations)
     private var warm: LanguageModelSession?
     private var personal: (name: String?, tone: Tone, focus: [FocusArea], known: [String])?
