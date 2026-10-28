@@ -784,7 +784,8 @@ extension DayFormat {
         if day == LocalDay.adding(-1, to: today) { return "Yesterday" }
         if day == LocalDay.adding(1, to: today) { return "Tomorrow" }
         guard let d = LocalDay.date(day) else { return day }
-        let style = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
-        return day.prefix(4) == today.prefix(4) ? d.formatted(style) : d.formatted(style.year())
+        // Spelled out piece by piece, so it reads "Tue 22 Sep" as the web's does, with no comma.
+        let label = [d.formatted(.dateTime.weekday(.abbreviated)), d.formatted(.dateTime.day()), d.formatted(.dateTime.month(.abbreviated))]
+        return (label + (day.prefix(4) == today.prefix(4) ? [] : [String(day.prefix(4))])).joined(separator: " ")
     }
 }

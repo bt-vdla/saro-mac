@@ -641,7 +641,7 @@ struct DayStage: View {
             Color.clear
             // The letter, the Noticed panel, ⌘K and dev notes scroll themselves; the monitor would take their wheel.
             CanvasEvents(enabled: isCurrent && shownID == nil && model.recorderKind == nil && model.openStackID == nil
-                             && model.insight == .spine && !model.searchOpen && !model.devNotesVisible && model.lens == nil
+                             && model.insight == .spine && !model.searchOpen && !model.devNotesVisible && model.lens?.exiting != false
                              && !model.datePickerOpen,
                          onPan: { d, p, e in
                              // A mouse wheel's notch springs through its step; a trackpad follows the fingers.

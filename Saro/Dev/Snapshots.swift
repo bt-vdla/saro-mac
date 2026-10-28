@@ -173,6 +173,9 @@ enum Snapshots {
                     model.go(to: LocalDay.adding(-200, to: LocalDay.today()))
                 }),
                 ("nav-today", { model.goToday() }),
+                // Opened by a pinch: the day has flown into its tile; then the X flies back out and the day is refitted.
+                ("nav-lens-pinch", { model.openLens(level: .week, opener: .pinch) }),
+                ("nav-lens-back", { model.lens?.close(how: .animated) }),
                 // ⌘K's actions menu, then a day not yet loaded as it loads and as it couldn't be read, on its own ground
                 // (the canvas's own load is too quick to catch). These leave the live UI, so they come after its states.
                 ("actions", {
