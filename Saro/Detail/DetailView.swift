@@ -172,6 +172,7 @@ private struct MediaDetail: View {
         }
         .task(id: entry.id) {
             if let url = model.mediaURL(for: entry), FileManager.default.fileExists(atPath: url.path) { player = PlayerModel(url: url) }
+            if let ms = model.memory.takePlayFrom(entry.id) { player?.seek(ms: ms) }
             await loadTranscript()
         }
         .onChange(of: entry.processingStatus) { _, _ in Task { await loadTranscript() } }

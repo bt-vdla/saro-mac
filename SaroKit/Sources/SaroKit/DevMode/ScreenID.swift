@@ -22,6 +22,7 @@ public enum ScreenID: String, Sendable, Codable, CaseIterable, Identifiable {
     case onboardingAboutYou = "onboarding.about"
     case onboardingFirstWeek = "onboarding.firstweek"
     case onboardingFindLight = "onboarding.light"
+    case knows = "memory.knows"
 
     public var id: String { rawValue }
 }

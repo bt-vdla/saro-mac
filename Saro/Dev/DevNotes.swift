@@ -236,6 +236,22 @@ struct DevNotes {
                 issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras",
                          "The first question shows in the recorder and voice pill once the capture package renders todaysPrompt"],
                 brd: ["FR-ONB-05", "FR-ONB-03"])
+        case .knows:
+            DevNotes(
+                name: "What Saro knows",
+                does: "The memory pane (⌥⌘K, ⌘K, the sidebar): what Saro picked up from cleared entries, as a knowledge graph or the web's list, every line editable and deletable.",
+                built: ["Learning after each entry's gate and reading: verbatim sentence quotes with UTF-16 spans, one transaction with a content-free ai_run (mem-1); an edit retracts (source_edited) and re-learns; launch backfill",
+                        "Model rung: a guided call picks people, themes and intentions by phrase number; an invented name rejects the reply; heuristic twin ports memory.ts plus NLTagger places",
+                        "active_observation hides retracted, forgotten, trashed, duplicated and held-day rows; a re-gate that clears the day brings them back",
+                        "List: About you, People, On your mind, What you're working on, Feelings; meta lines; Why lists every dated sighting and opens it (recordings play from the quote)",
+                        "Edit (↵ save · esc cancel, 90 chars), Add, Delete with in-row Undo for 6 s and ⌘Z, Forget everything with its inline confirm, Memory switch (pause)",
+                        "Graph: force-directed, sized by mentions, coloured by kind, kind and time filters, hover lights neighbours, side panel with mentions, 12-week bars, related, Forget and Rename"],
+                stubbed: ["What you're working on needs reflection's commitment table (v4); it reads it once it exists",
+                          "About you lines use a short goalPhrase until onboarding's SayBack merges",
+                          "Feeding prompts: knownLabels is ready; reflection's setPersonalization reads it"],
+                issues: ["Pausing is recorded per window; text gated while paused is learned once memory is back on only if it was written outside the pause",
+                         "Forget everything removes memories only; readings and letters stay (decision flagged)"],
+                brd: ["FR-MEM-01", "FR-MEM-02", "FR-MEM-03", "FR-MEM-04", "FR-MEM-05", "FR-MEM-06", "FR-MEM-09", "DR-06", "DR-09", "DR-13", "DR-17"])
         }
     }
 }

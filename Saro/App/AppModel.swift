@@ -27,6 +27,8 @@ final class AppModel {
     let ledger: Ledger
     let ai = SaroAI()
     let pipeline: Pipeline
+    /// What Saro knows (Saro/Memory).
+    let memory: MemoryModel
     var pane: Pane = .day
     /// Another day ends a replay where it is.
     var day: String = LocalDay.today() { didSet { if replay.day.map({ $0 != day }) ?? false { replay.exit(animated: false) } } }
@@ -115,6 +117,7 @@ final class AppModel {
     init(ledger: Ledger) {
         self.ledger = ledger
         pipeline = Pipeline(ledger: ledger, ai: ai)
+        memory = MemoryModel(ledger: ledger, pipeline: pipeline)
         let center = NotificationCenter.default
         // The menu bar and ⌘K post this, sometimes before the window they open has a RootView to receive it.
         center.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
@@ -159,6 +162,9 @@ final class AppModel {
             let root = URL.temporaryDirectory.appending(path: "SaroDemo-\(UUID().uuidString)")
             let model = AppModel(ledger: try Ledger(rootURL: root))
             Task { await model.seedDemo() }
+            #if DOGFOOD
+            Task { Snapshots.runIfRequested(model) }
+            #endif
             return .success(model)
         } catch {
             return .failure(error)
@@ -468,6 +474,7 @@ final class AppModel {
                     current = id
                     if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
                     await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
+                    await memory.learn(entryId: id)
                 }
                 current = nil
                 for d in days { await pipeline.readDay(d) }
@@ -555,6 +562,7 @@ final class AppModel {
             if e.processingStatus == ProcessingStatus.recording { try? await ledger.setProcessingStatus(id: e.id, ProcessingStatus.pending) }
             process(e.id)
         }
+        for id in await memory.unlearned() { process(id) }
         await regateWaiting()
         await reload()
     }

@@ -177,6 +177,14 @@ struct SearchPalette: View {
         all.append(PaletteCommand(id: "decisions", title: "Decisions", symbol: "checklist", keywords: "dev log choices") { $0.pane = .decisions })
         #endif
         all += [
+            PaletteCommand(id: "knows", title: "What Saro knows", symbol: "point.3.connected.trianglepath.dotted",
+                           keywords: "memory memories people graph remember forget", shortcut: "⌥⌘K") { $0.pane = .knows },
+            PaletteCommand(id: "memory-pause", title: "Pause memory", symbol: "pause.circle", keywords: "stop learning remember") { m in
+                Task { await m.setMemoryPaused(true) }
+            },
+            PaletteCommand(id: "memory-resume", title: "Resume memory", symbol: "play.circle", keywords: "start learning remember") { m in
+                Task { await m.setMemoryPaused(false) }
+            },
             PaletteCommand(id: "trash", title: "Trash", symbol: "trash", keywords: "deleted bin restore") { $0.pane = .trash },
             PaletteCommand(id: "settings", title: "Settings…", symbol: "gearshape", keywords: "preferences tone reminder privacy text size say it",
                            shortcut: "⌘,") { _ in WindowActions.openSettings() },
@@ -496,7 +504,9 @@ struct SearchPalette: View {
         var out: [PaletteSection] = []
         var entries = hits
         if scope == nil {
-            var matched = Self.commands.filter { $0.matches(q) && $0.available(model) }
+            // One of Pause memory and Resume memory, whichever would change something.
+            let memoryOff = model.profile?.memoryPaused == true ? "memory-pause" : "memory-resume"
+            var matched = Self.commands.filter { $0.matches(q) && $0.available(model) && $0.id != memoryOff }
             var top: Row?
             if let day = LocalDay.parse(q) {
                 top = .day(day)

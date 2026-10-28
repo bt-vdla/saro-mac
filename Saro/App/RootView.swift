@@ -27,7 +27,7 @@ struct RootView: View {
                             #else
                             EmptyView()
                             #endif
-                        case .knows: Color.clear
+                        case .knows: WhatSaroKnowsView()
                         }
                     }
                     .overlayPreferenceValue(TrashFlightKey.self) { ToastHost(flying: $0) }
@@ -73,6 +73,7 @@ struct Sidebar: View {
                 ForEach(model.days, id: \.day) { dayRow($0.day, count: $0.count) }
             }
             Section {
+                row("What Saro knows", systemImage: "point.3.connected.trianglepath.dotted", selected: model.pane == .knows) { model.pane = .knows }
                 row("Trash", systemImage: "trash", selected: model.pane == .trash) { model.pane = .trash }
                 row("Decisions", systemImage: "checklist", selected: model.pane == .decisions) { model.pane = .decisions }
             }

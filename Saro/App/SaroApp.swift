@@ -99,6 +99,8 @@ struct SaroCommands: Commands {
                 // During onboarding ⌘[ and ⌘] are its own Previous and Next Step, so these give the keys up.
                 Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("[", modifiers: .command))
                 Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("]", modifiers: .command))
+                Divider()
+                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option])
             }
             .disabled(model.showsOnboarding)
         }
