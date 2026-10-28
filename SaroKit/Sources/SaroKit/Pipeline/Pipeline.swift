@@ -180,9 +180,12 @@ public actor Pipeline {
         let verdicts = (try? await ledger.verdicts(day: day)) ?? [:]
         var states: [EntryState] = []
         for e in entries {
+            let src = try? await text(for: e)
+            // Emptied text has nothing left to read, whatever was gated before (a cleared page or still caption).
+            if let src, src.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
             if let v = verdicts[e.id] {
                 // A verdict only counts for the text it was given: edited text is unchecked until it is gated again.
-                if let src = try? await text(for: e), sha256(src.text) != v.textSha256 { return .working }
+                if let src, sha256(src.text) != v.textSha256 { return .working }
                 states.append(EntryState(verdict: v.verdict))
                 continue
             }

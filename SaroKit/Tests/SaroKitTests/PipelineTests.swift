@@ -66,6 +66,24 @@ import Testing
     #expect(await p.readDay(e.localDay) == nil)
 }
 
+@Test func emptiedTextDoesNotStrandTheDay() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: SaroAI())
+    let page = Entry(kind: .reflection, body: "I want to die.")
+    let still = Entry(kind: .still, captionUser: "I want to die.", processingStatus: ProcessingStatus.done)
+    try await l.insertEntry(page)
+    try await l.insertEntry(still)
+    await p.process(entryId: page.id) {}
+    await p.process(entryId: still.id) {}
+    #expect(await p.dayStatus(page.localDay) == .held)
+    // Cleared with no further pass (the editor discards an empty page instead of processing it), then with one.
+    try await l.updateEntryText(id: page.id, body: "", titleUser: nil)
+    try await l.updateEntryText(id: still.id, body: nil, titleUser: nil, captionUser: nil)
+    #expect(await p.dayStatus(page.localDay) == .empty)
+    await p.process(entryId: page.id) {}
+    #expect(await p.dayStatus(page.localDay) == .empty)
+}
+
 @Test func missingMediaFailsInsteadOfWaiting() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: SaroAI())
