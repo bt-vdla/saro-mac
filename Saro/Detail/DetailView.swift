@@ -331,7 +331,7 @@ private struct WritingEditor: View {
                         .foregroundStyle(Tok.ink)
                         .scrollContentBackground(.hidden)
                         .scrollIndicators(.never)
-                        .writingToolsBehavior(.disabled)
+                        .saroWritingTools()
                 }
             }
             .frame(maxWidth: 600, maxHeight: .infinity, alignment: .topLeading)

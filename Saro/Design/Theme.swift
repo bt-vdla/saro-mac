@@ -58,7 +58,9 @@ extension Color {
     }
 }
 
-/// Geist for UI and the user's words, Geist Mono for times and labels, Newsreader for Saro's voice.
+/// Geist for UI and the user's words, Geist Mono for times and labels, Newsreader for Saro's voice. Every size follows
+/// Settings → Comfort → Text size; read inside a view's body, a change re-renders it.
+@MainActor
 enum Typo {
     static func registerFonts() {
         guard let dir = Bundle.main.url(forResource: "Fonts", withExtension: nil),
@@ -69,6 +71,7 @@ enum Typo {
     static var geistAvailable: Bool { NSFont(name: "Geist-Regular", size: 12) != nil }
 
     static func ui(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        let size = size * PrefsStore.shared.textScale
         guard geistAvailable else { return .system(size: size, weight: weight) }
         let name = switch weight {
         case .medium: "Geist-Medium"
@@ -82,6 +85,7 @@ enum Typo {
 
     /// Mono caps labels (metadata, shortcuts, dev notes).
     static func mono(_ size: CGFloat = 10.5, _ weight: Font.Weight = .medium) -> Font {
+        let size = size * PrefsStore.shared.textScale
         guard geistAvailable else { return .system(size: size, weight: weight, design: .monospaced) }
         return .custom(weight == .regular ? "GeistMono-Regular" : "GeistMono-Medium", size: size)
     }
@@ -90,6 +94,7 @@ enum Typo {
 
     /// Newsreader is Saro's voice (questions, prompts, the letter, quotes); New York if it isn't registered.
     static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular, italic: Bool = false) -> Font {
+        let size = size * PrefsStore.shared.textScale
         guard newsreaderAvailable else {
             let f = Font.system(size: size, weight: weight, design: .serif)
             return italic ? f.italic() : f
