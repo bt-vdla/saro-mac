@@ -79,6 +79,9 @@ final class AppModel {
     /// The world rect the day's camera shows inside the chrome, published by the stage; new cards land in it.
     var visibleWorld: CGRect?
     var stageSize = CGSize(width: 1320, height: 860)
+    /// How far the bottom bar reaches up from the window's bottom (one row or two), published by the day view; the
+    /// voice pill, toasts and the spine keep clear of it.
+    var barClear: CGFloat = 84
     /// Days loaded ahead of a click (a hovered chevron, a picker day, the days either side), newest last.
     private var neighbours: [(day: String, data: DayData)] = []
     /// Bumped by every reload, so a day read ahead before a write can't land in the cache after it.

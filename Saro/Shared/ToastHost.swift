@@ -25,8 +25,8 @@ struct ToastHost: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 8 pt above the bar (20 pt off the bottom, 64 tall).
-        .padding(.leading, 24).padding(.bottom, 92)
+        // 8 pt above the bar, one row or two.
+        .padding(.leading, 24).padding(.bottom, model.barClear + 8)
         .animation(Motion.pick(Motion.easeOut(0.24), reduce: reduceMotion), value: model.toast)
         .overlay {
             if let flight = model.trashFlight, let flying {

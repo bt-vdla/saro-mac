@@ -35,8 +35,8 @@ struct OrbitNav: View {
 
 /// The bottom glass bar (BottomLeftStatus.tsx): day and mood ribbon, capture, then History and Recenter, in one row when
 /// it fits and two below that (the day over the captures), so large text never pushes a control off it. The day and the
-/// replay share one cell, so opening the replay never resizes the bar; its track grows out of the date. It publishes
-/// its frame for the surfaces that sit above it.
+/// replay share one cell, so opening the replay never resizes the bar; its track grows out of the date. The day view
+/// publishes its height for the surfaces that sit above it.
 struct BottomBar: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -64,7 +64,6 @@ struct BottomBar: View {
         .padding(6)
         .glassPanel(radius: Radius.sheet)
         .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: model.replay.active)
-        .anchorPreference(key: BottomBarKey.self, value: .bounds) { $0 }
         .tourAnchor(.captureBar)
     }
 
@@ -285,12 +284,6 @@ private struct DateLabel: View {
         // Only a change that came animated (a pointer's slide) steps in, on the small spring.
         .transaction { if $0.animation != nil { $0.animation = Motion.pick(Motion.small, reduce: reduceMotion) } }
     }
-}
-
-/// The bar's frame, for the surfaces that sit above it (the date picker; toasts and the spine can anchor on it too).
-struct BottomBarKey: PreferenceKey {
-    static let defaultValue: Anchor<CGRect>? = nil
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
 }
 
 enum MoodPalette {

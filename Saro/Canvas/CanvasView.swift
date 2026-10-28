@@ -38,7 +38,7 @@ struct DayView: View {
                 if let kind {
                     // The voice pill sits 8 pt above the bar; the moment frame fills the canvas.
                     RecorderView(kind: kind, origin: grows ? origins[kind] : nil) { model.recorderKind = nil }
-                        .padding(.bottom, kind == .voice ? 92 : 0)
+                        .padding(.bottom, kind == .voice ? model.barClear + 8 : 0)
                         // A window close or pane switch ends the session too; left set, the camera would come back on its own.
                         .onDisappear { model.recorderKind = nil }
                 }
@@ -201,7 +201,7 @@ struct DayView: View {
             OrbitNav()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.leading, 24).padding(.top, 40)
-            InsightSurface(height: size.height - size.height * 0.075 - 120)
+            InsightSurface(height: size.height - size.height * 0.075 - model.barClear - 36)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(.trailing, 24).padding(.top, size.height * 0.075)
             // A click anywhere else closes the date picker.
@@ -215,6 +215,7 @@ struct DayView: View {
                     SelectionToolbar().transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 BottomBar()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height + 20 } action: { if model.barClear != $0 { model.barClear = $0 } }
             }
             .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.selection.isEmpty)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
