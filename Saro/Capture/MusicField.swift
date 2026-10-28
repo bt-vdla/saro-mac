@@ -57,6 +57,7 @@ struct MusicField: View {
             .accessibilityLabel("Close")
         }
         .padding(.leading, 16).padding(.trailing, 8)
+        .frame(height: 48)
         .background(Tok.paper.opacity(0.7), in: .capsule)
         .background(.frosted(.thickMaterial, solid: Tok.paper), in: .capsule)
         .overlay(Capsule().strokeBorder(focused ? Tok.sage : Tok.rim.opacity(0.7), lineWidth: focused ? 2 : 1))
