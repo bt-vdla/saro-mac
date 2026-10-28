@@ -149,6 +149,18 @@ enum Snapshots {
                     model.memory.query = ""
                     if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
                 }),
+                // ⌘K's Recent list on today, then Trash with today's first page in it.
+                ("search", {
+                    model.goToday()
+                    model.searchOpen = true
+                }),
+                ("trash-pane", {
+                    model.searchOpen = false
+                    Task {
+                        if let e = model.entries.first(where: { $0.kind == .reflection }) { await model.trash([e.id]) }
+                        model.pane = .trash
+                    }
+                }),
                 // ⌘K's actions menu, then a day not yet loaded as it loads and as it couldn't be read, on its own ground
                 // (the canvas's own load is too quick to catch). These leave the live UI, so they come after its states.
                 ("actions", {
