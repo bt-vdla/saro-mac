@@ -25,7 +25,7 @@ extension AppModel {
             do {
                 try await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: prompt, generator: generator, localDay: e.localDay, entryId: e.id))
             } catch {
-                show(Toast("Couldn’t keep today’s prompt with your page: \(error.localizedDescription)", style: .error))
+                show(.failed("Couldn’t keep today’s prompt with your page", error))
             }
             openEntryID = e.id
         }
