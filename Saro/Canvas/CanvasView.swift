@@ -214,7 +214,9 @@ struct DayView: View {
                 } else if !model.selection.isEmpty && model.openStackID == nil {
                     SelectionToolbar().transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                // Never edge to edge: past its one row's width the bar takes two.
                 BottomBar()
+                    .padding(.horizontal, 16)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height + 20 } action: { if model.barClear != $0 { model.barClear = $0 } }
             }
             .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.selection.isEmpty)
