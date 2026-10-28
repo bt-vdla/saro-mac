@@ -423,9 +423,9 @@ struct StillBelow: View {
     private var held: Bool { verdict == "safety_hold" }
     private var yours: String? { entry.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } }
     /// Saro's description, only while the still's newest check is a clear and nothing since has held the description or
-    /// left it waiting (a hold deletes it, SR-15).
+    /// left it waiting (a hold deletes it, SR-15), and never on a held day (SR-13).
     private var saros: String? {
-        guard verdict == "clear" || verdict == "unavailable_clear", let d = described, !d.standsHeld else { return nil }
+        guard !model.isDayHeld, verdict == "clear" || verdict == "unavailable_clear", let d = described, !d.standsHeld else { return nil }
         return d.caption
     }
     private var showingSaros: Bool { yours == nil && saros != nil && caption.trimmingCharacters(in: .whitespaces) == saros }
@@ -456,7 +456,7 @@ struct StillBelow: View {
             HStack(alignment: .center, spacing: 16) {
                 Text(details).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink3).lineLimit(1)
                 Spacer(minLength: 0)
-                if !held, model.mediaURL(for: entry) != nil { describeButton }
+                if !model.isDayHeld, model.mediaURL(for: entry) != nil { describeButton }
             }
             .padding(.top, 2)
         }
@@ -491,6 +491,10 @@ struct StillBelow: View {
     @ViewBuilder private var below: some View {
         if held {
             SafetyNotice()
+        } else if model.isDayHeld {
+            // A safety hold anywhere that day hides every entry's AI text (SR-13).
+            Text("Saro isn't writing about this day. This photo is kept, and your caption is always yours to change.")
+                .font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
         } else if working {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
