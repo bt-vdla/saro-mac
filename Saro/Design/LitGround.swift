@@ -20,7 +20,7 @@ struct LitGround: View {
                 Tok.bg
             } else {
                 TimelineView(.everyMinute) { context in
-                    let ground = Sky.ground(at: hour ?? Sky.localHour(context.date), dark: scheme == .dark,
+                    let ground = Sky.ground(at: hour ?? Daylight.shared.hour(at: context.date), dark: scheme == .dark,
                                             followsDay: Daylight.shared.mode == .clock)
                     GeometryReader { geo in
                         Rectangle().colorEffect(shader(ground, size: geo.size))

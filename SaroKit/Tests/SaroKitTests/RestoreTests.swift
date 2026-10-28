@@ -47,8 +47,8 @@ func restoringAHeldEntryDropsItsDaysReadings(byBatch: Bool) async throws {
     #expect(try await l.run("SELECT COUNT(*) AS n FROM insight_snapshot WHERE from_day=?", [.text(a.localDay)]).first?["n"]?.int == 1)
 }
 
-/// Delete for good (FR-DAY-05, DR-15): the entry, every row derived from it, the readings that quote it and its file go;
-/// the person's answer and commitment stay, unlinked. A live entry and a file another entry shares stay.
+/// Delete for good (FR-DAY-05, DR-15): the entry, every row derived from it, the questions asked of it, the readings that
+/// quote it and its file go; the person's commitment stays, unlinked. A live entry and a file another entry shares stay.
 @Test func purgeDeletesATrashedEntryAndEverythingDerivedFromIt() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: answers())
@@ -85,15 +85,14 @@ func restoringAHeldEntryDropsItsDaysReadings(byBatch: Bool) async throws {
     for e in [twin, twinKept, still] { try await l.insertEntry(e) }
 
     try await l.trash([gone.id, twin.id, still.id])
-    #expect(try await l.purge([gone.id, twin.id, still.id, kept.id]) == 3)
+    #expect(try await l.hardDelete(ids: [gone.id, twin.id, still.id, kept.id]) == 3)
     func count(_ sql: String) async throws -> Int? { try await l.run(sql).first?["n"]?.int }
     for table in ["observation", "entry_annotation", "ai_run_input", "safety_verdict", "card_layout"] {
         #expect(try await count("SELECT COUNT(*) AS n FROM \(table) WHERE entry_id='\(gone.id)'") == 0, "\(table)")
     }
     #expect(try await count("SELECT COUNT(*) AS n FROM observation_retraction") == 0)
     #expect(try await count("SELECT COUNT(*) AS n FROM insight_snapshot WHERE instr(payload, '\(gone.id)') > 0") == 0)
-    #expect(try await count("SELECT COUNT(*) AS n FROM reflection_turn") == 1)
-    #expect(try await l.run("SELECT entry_id FROM reflection_turn WHERE id=?", [.text(answered.id)]).first?.str("entry_id") == nil)
+    #expect(try await count("SELECT COUNT(*) AS n FROM reflection_turn") == 0)
     #expect(try await l.run("SELECT source_entry_id FROM commitment WHERE id=?", [.text(promise.id)]).first?.str("source_entry_id") == nil)
     #expect(try await l.run("SELECT duplicated_from_id FROM entry WHERE id=?", [.text(copy.id)]).first?.str("duplicated_from_id") == nil)
     #expect(Set(try await l.allEntries(includeTrashed: true).map(\.id)) == [kept.id, copy.id, twinKept.id])
@@ -111,6 +110,6 @@ func restoringAHeldEntryDropsItsDaysReadings(byBatch: Bool) async throws {
     for e in [old, recent] { try await l.insertEntry(e) }
     try await l.trash([old.id, recent.id])
     try await l.run("UPDATE entry SET trashed_at=? WHERE id=?", [.text(Date.now.addingTimeInterval(-31 * 86_400).iso), .text(old.id)])
-    #expect(try await l.purgeTrash(before: .now.addingTimeInterval(-30 * 86_400)) == 1)
+    #expect(try await l.purgeTrash(now: .now) == 1)
     #expect(try await l.trashed().map(\.id) == [recent.id])
 }

@@ -272,11 +272,11 @@ extension Ledger {
             .filter { !SafetyGate.phraseHit($0.text) }
     }
 
-    /// How many live entries have cleared text, for the empty state's count (R-14).
+    /// How many live entries have cleared text, for the empty state's count (R-14); duplicates aren't counted (FR-DAY-07).
     public func clearedEntryCount() throws -> Int {
         try db.run("""
             SELECT COUNT(*) AS n FROM live_entry e JOIN safety_verdict v ON v.entry_id = e.id
-            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id) AND v.verdict IN ('clear','unavailable_clear')
+            WHERE e.duplicated_from_id IS NULL AND v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = e.id) AND v.verdict IN ('clear','unavailable_clear')
             """).first?.int("n") ?? 0
     }
 

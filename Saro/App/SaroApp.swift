@@ -40,8 +40,10 @@ struct SaroApp: App {
                     .task { Scenarios.runIfRequested(model) }
                     #endif
             case .failure(let error):
-                ContentUnavailableView("Saro couldn't open its journal", systemImage: "externaldrive.badge.exclamationmark",
-                                       description: Text(error.localizedDescription))
+                RecoveryView(error: error) {
+                    boot = AppModel.boot()
+                    if case .success(let model) = boot { CapturePanelController.shared.install(model) }
+                }
             }
         }
         .defaultSize(width: 1320, height: 860)
@@ -58,10 +60,23 @@ struct SaroApp: App {
         }
 
         Settings {
-            if case .success(let model) = boot { SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment() }
+            if case .success(let model) = boot {
+                SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment().lockable()
+            }
         }
         .defaultSize(width: 920, height: 720)
         .windowResizability(.contentMinSize)
+
+        Window("About Saro", id: "about") { AboutView().comfortEnvironment() }
+            .windowResizability(.contentSize)
+            .windowStyle(.hiddenTitleBar)
+            .restorationBehavior(.disabled)
+        Window("Keyboard Shortcuts", id: "shortcuts") { ShortcutsView().comfortEnvironment() }
+            .defaultSize(width: 720, height: 620)
+            .restorationBehavior(.disabled)
+        Window("Acknowledgements", id: "acknowledgements") { AcknowledgementsView().comfortEnvironment() }
+            .defaultSize(width: 600, height: 640)
+            .restorationBehavior(.disabled)
 
         SaroMenuBar()
     }
@@ -91,39 +106,55 @@ struct SaroCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About Saro") { openWindow(id: "about") }
+        }
+        CommandGroup(after: .appSettings) {
+            Button("Lock Saro") { Locker.shared.lock() }
+                .keyboardShortcut(KeyboardShortcut(.lock))
+                .disabled(!PrefsStore.shared.lockEnabled || Locker.shared.locked)
+        }
+        // The journal doesn't change under the lock: ⌘Z can't bring back a Move to Trash or a deleted memory behind it.
+        if Locker.shared.locked {
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") {}.keyboardShortcut("z").disabled(true)
+                Button("Redo") {}.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(true)
+            }
+        }
+        CommandMenu("Entry") { EntryCommands(model: model).disabled(Locker.shared.locked) }
         CommandMenu("Go") {
             Group {
-                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
+                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut(KeyboardShortcut(.search))
                 Divider()
-                Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
+                Button("Today") { model.goToday() }.keyboardShortcut(KeyboardShortcut(.today))
                 // During onboarding ⌘[ and ⌘] are its own Previous and Next Step, so these give the keys up.
-                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("[", modifiers: .command))
-                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("]", modifiers: .command))
+                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut(.previousDay))
+                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut(.nextDay))
                 Divider()
-                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option])
+                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut(KeyboardShortcut(.whatSaroKnows))
             }
-            .disabled(model.showsOnboarding)
+            .disabled(model.showsOnboarding || Locker.shared.locked)
         }
         CommandGroup(after: .toolbar) {
             Group {
-                Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
-                Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
-                Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
+                Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut(KeyboardShortcut(.zoomIn))
+                Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut(KeyboardShortcut(.zoomOut))
+                Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut(KeyboardShortcut(.showDays))
                 Divider()
                 Button("What Saro Noticed") {
                     model.pane = .day
                     model.insight = model.insight == .panel ? .spine : .panel
                 }
-                .keyboardShortcut("i", modifiers: [.command, .option])
+                .keyboardShortcut(KeyboardShortcut(.noticed))
                 Button("Evening Letter") {
                     model.pane = .day
                     model.insight = model.insight == .letter ? .spine : .letter
                 }
-                .keyboardShortcut("l", modifiers: [.command, .option])
+                .keyboardShortcut(KeyboardShortcut(.letter))
                 Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
                     .disabled(!model.reflection.canRefresh)
             }
-            .disabled(model.showsOnboarding)
+            .disabled(model.showsOnboarding || Locker.shared.locked)
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") {
@@ -131,12 +162,20 @@ struct SaroCommands: Commands {
                 openWindow(id: "main")
                 model.safetyCardRequested = true
             }
+            Button("Keyboard Shortcuts") { openWindow(id: "shortcuts") }.keyboardShortcut(KeyboardShortcut(.shortcuts))
+            Button("Privacy") { model.open(DeepLink.settings("data").url) }
+            Button("Acknowledgements") { openWindow(id: "acknowledgements") }
         }
         CommandGroup(after: .importExport) {
-            Button("Export Everything…") { Task { await model.exportEverything() } }
-                .disabled(model.showsOnboarding)
+            Group {
+                Button("Export Day as Image…") { Task { await model.exportDayImage() } }
+                    .disabled(model.pane != .day || model.entries.isEmpty)
+                Button("Export Everything…") { Task { await model.exportEverything() } }
+            }
+            .disabled(model.showsOnboarding || Locker.shared.locked)
             // From the welcome door too: a blank profile takes the export's, which ends onboarding (DR-20).
             Button("Import…") { Task { await model.importJournal() } }
+                .disabled(Locker.shared.locked)
         }
     }
 }

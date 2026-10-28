@@ -9,7 +9,7 @@ extension AppModel {
             if profile.map({ p.updatedAt >= $0.updatedAt }) ?? true { profile = p }
             starter = try await ledger.latestStarter()
         } catch {
-            show(Toast("Couldn't read your profile: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't read your profile", error))
         }
     }
 
@@ -18,10 +18,10 @@ extension AppModel {
         do {
             var p = if let profile { profile } else { try await ledger.profile() }
             change(&p)
-            try await ledger.saveProfile(p)
+            try await saves.track("profile") { [ledger, p] in try await ledger.saveProfile(p) }
             profile = try await ledger.profile()
         } catch {
-            show(Toast("Couldn't save your profile: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't save your profile", error))
         }
     }
 

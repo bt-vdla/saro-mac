@@ -66,6 +66,7 @@ extension AppModel {
 enum WindowActions {
     static var openMain: () -> Void = {}
     static var openSettings: () -> Void = {}
+    static var openWindow: (String) -> Void = { _ in }
 }
 
 extension View {
@@ -89,6 +90,10 @@ private struct DeepLinks: ViewModifier {
                 WindowActions.openSettings = { [openSettings] in
                     NSApp.activate()
                     openSettings()
+                }
+                WindowActions.openWindow = { [openWindow] id in
+                    NSApp.activate()
+                    openWindow(id: id)
                 }
                 Reminders.shared.route = { model.open($0) }
             }

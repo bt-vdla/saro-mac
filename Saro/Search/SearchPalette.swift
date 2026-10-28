@@ -73,7 +73,7 @@ private enum EntryAction: CaseIterable {
         switch self {
         case .open: "↵"
         case .replay: "⌘↵"
-        case .copy: "⇧⌘C"
+        case .copy: Shortcut.copyText.keys
         case .day, .trash: nil
         }
     }
@@ -141,26 +141,27 @@ struct SearchPalette: View {
     private static let scopes: [EntryKind] = [.moment, .voice, .reflection, .still]
     private static let commands: [PaletteCommand] = {
         var all = [
-            PaletteCommand(id: "today", title: "Today", symbol: "sun.max", keywords: "go now day home", shortcut: "⌘T") { $0.goToday() },
+            PaletteCommand(id: "today", title: "Today", symbol: "sun.max", keywords: "go now day home", shortcut: Shortcut.today.keys) { $0.goToday() },
             PaletteCommand(id: "replay", title: "Replay today", symbol: "clock.arrow.circlepath", keywords: "play timelapse rewind history") {
                 $0.requestReplay(LocalDay.today())
             },
-            PaletteCommand(id: "moment", title: "Record a moment", symbol: "video", keywords: "video camera capture new", shortcut: "⌘N") {
+            PaletteCommand(id: "moment", title: "Record a moment", symbol: "video", keywords: "video camera capture new", shortcut: Shortcut.recordMoment.keys) {
                 $0.pane = .day
                 $0.recorderKind = .moment
             },
-            PaletteCommand(id: "voice", title: "Voice note", symbol: "waveform", keywords: "audio record speak microphone new", shortcut: "⇧⌘N") {
+            PaletteCommand(id: "voice", title: "Voice note", symbol: "waveform", keywords: "audio record speak microphone new", shortcut: Shortcut.voiceNote.keys) {
                 $0.pane = .day
                 $0.recorderKind = .voice
             },
             PaletteCommand(id: "write", title: "Write", symbol: "square.and.pencil", keywords: "writing reflection text page journal new",
-                           shortcut: "⌥⌘W") { write("", in: $0) },
+                           shortcut: Shortcut.write.keys) { write("", in: $0) },
             PaletteCommand(id: "noticed", title: "What Saro noticed", symbol: "sparkles", keywords: "insight inspector patterns mood",
-                           shortcut: "⌥⌘I") {
+                           shortcut: Shortcut.noticed.keys) {
                 $0.pane = .day
                 $0.showNoticed = true
             },
-            PaletteCommand(id: "letter", title: "Evening letter", symbol: "envelope.open", keywords: "letter night reading") {
+            PaletteCommand(id: "letter", title: "Evening letter", symbol: "envelope.open", keywords: "letter night reading",
+                           shortcut: Shortcut.letter.keys) {
                 $0.pane = .day
                 $0.showLetter = true
             },
@@ -180,7 +181,7 @@ struct SearchPalette: View {
         #endif
         all += [
             PaletteCommand(id: "knows", title: "What Saro knows", symbol: "point.3.connected.trianglepath.dotted",
-                           keywords: "memory memories people graph remember forget", shortcut: "⌥⌘K") { $0.pane = .knows },
+                           keywords: "memory memories people graph remember forget", shortcut: Shortcut.whatSaroKnows.keys) { $0.pane = .knows },
             PaletteCommand(id: "memory-pause", title: "Pause memory", symbol: "pause.circle", keywords: "stop learning remember") { m in
                 Task { await m.setMemoryPaused(true) }
             },
@@ -189,7 +190,7 @@ struct SearchPalette: View {
             },
             PaletteCommand(id: "trash", title: "Trash", symbol: "trash", keywords: "deleted bin restore") { $0.pane = .trash },
             PaletteCommand(id: "settings", title: "Settings…", symbol: "gearshape", keywords: "preferences tone reminder privacy text size say it",
-                           shortcut: "⌘,") { _ in WindowActions.openSettings() },
+                           shortcut: Shortcut.settings.keys) { _ in WindowActions.openSettings() },
             PaletteCommand(id: "sayit", title: "Change a setting in words…", symbol: "text.bubble", keywords: "say it settings remind bigger text tone") { _ in
                 SettingsWindow.askInWords()
             },
@@ -200,6 +201,14 @@ struct SearchPalette: View {
             PaletteCommand(id: "export", title: "Export everything", symbol: "square.and.arrow.up", keywords: "backup download save data") { m in
                 Task { await m.exportEverything() }
             },
+            PaletteCommand(id: "dayimage", title: "Export day image", symbol: "photo.on.rectangle", keywords: "picture png canvas share download") { m in
+                Task { await m.exportDayImage() }
+            },
+            PaletteCommand(id: "shortcuts", title: "Keyboard shortcuts", symbol: "keyboard", keywords: "keys help hotkeys", shortcut: Shortcut.shortcuts.keys) { _ in
+                WindowActions.openWindow("shortcuts")
+            },
+            PaletteCommand(id: "lock", title: "Lock Saro", symbol: "lock", keywords: "touch id privacy hide away", shortcut: Shortcut.lock.keys,
+                           available: { _ in PrefsStore.shared.lockEnabled }) { _ in Locker.shared.lock() },
             PaletteCommand(id: "onboarding", title: "Replay onboarding", symbol: "arrow.counterclockwise", keywords: "welcome about you first week setup start again") { m in
                 Task { await m.replayOnboarding() }
             },
@@ -267,7 +276,7 @@ struct SearchPalette: View {
                 hits = found
                 hitsKey = k
             } catch {
-                model.show(Toast("Couldn't search: \(error.localizedDescription)", style: .error))
+                model.show(.failed("Couldn't search", error))
             }
         }
     }

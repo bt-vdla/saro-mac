@@ -149,18 +149,28 @@ enum Snapshots {
                     model.memory.query = ""
                     if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
                 }),
-                // ⌘K's Recent list on today, then Trash with today's first page in it.
+                // ⌘K's Recent list on today.
                 ("search", {
                     model.goToday()
                     model.searchOpen = true
                 }),
-                ("trash-pane", {
-                    model.searchOpen = false
-                    Task {
-                        if let e = model.entries.first(where: { $0.kind == .reflection }) { await model.trash([e.id]) }
-                        model.pane = .trash
-                    }
+                // The shell on the demo day: what Edit Details saved, on its cards; the toast stack, the account menu with a save
+                // that failed, Trash over the bar
+                // and as the pane, the Light Lab at dusk, the lock, and the day as Export Day as Image draws it.
+                ("shell-details", { ShellSnapshots.details(model) }),
+                ("shell-toasts", { ShellSnapshots.toasts(model) }),
+                ("shell-account", { ShellSnapshots.accountMenu(model) }),
+                ("shell-trash", { ShellSnapshots.trash(model) }),
+                ("shell-trash-pane", {
+                    ShellPanels.shared.panel = nil
+                    model.pane = .trash
                 }),
+                ("shell-lightlab", {
+                    model.pane = .day
+                    ShellSnapshots.lightLab()
+                }),
+                ("shell-lock", { ShellSnapshots.lock() }),
+                ("shell-dayimage", { ShellSnapshots.dayImage(model, dir: dir) }),
                 // ⌘K's actions menu, then a day not yet loaded as it loads and as it couldn't be read, on its own ground
                 // (the canvas's own load is too quick to catch). These leave the live UI, so they come after its states.
                 ("actions", {
@@ -228,7 +238,7 @@ enum Snapshots {
             ]
             // `-SaroSnapshotOnly <prefix>` runs only the states whose names start with it.
             let only = UserDefaults.standard.string(forKey: "SaroSnapshotOnly")
-            for (name, apply) in steps + SettingsSnapshots.steps(p, model, dir) where only.map(name.hasPrefix) ?? true {
+            for (name, apply) in steps + ShellSnapshots.galleries(p, model) + SettingsSnapshots.steps(p, model, dir) where only.map(name.hasPrefix) ?? true {
                 apply()
                 try? await Task.sleep(for: .seconds(2.5))
                 if let v = p.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {

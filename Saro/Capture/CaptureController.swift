@@ -154,7 +154,7 @@ final class CaptureController {
                 starting = false
                 turn -= 1
                 state = turn == 0 ? .previewing : .paused
-                model.show(Toast("Couldn't start recording: \(error.localizedDescription)", style: .error))
+                model.show(.failed("Couldn't start recording", error))
                 teardownIfDone()
             }
         }
@@ -179,7 +179,8 @@ final class CaptureController {
         if current?.url == url {
             bank()
             if state == .recording { state = .paused }
-            model?.show(Toast("Recording paused: \(error?.localizedDescription ?? "the camera or microphone stopped")", style: .error))
+            model?.show(error.map { .failed("Recording paused", $0, context: "The camera or microphone stopped.") }
+                        ?? Toast(title: "Recording paused", detail: "The camera or microphone stopped.", style: .destructive))
             Task { await configure() }
         }
         let duration = try? await AVURLAsset(url: url).load(.duration)

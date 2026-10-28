@@ -45,6 +45,7 @@ enum Tok {
     static let echoInk = Color(0x5A55A8, 0xA7A2EC)
     static let stillInk = Color(0xA24E3A, 0xEC9A86)
     static let reflectionInk = Color(0x7D5E1A, 0xD8B062)
+    static let musicInk = Color(0x2F6396, 0x86B7EA)
 }
 
 extension Color {

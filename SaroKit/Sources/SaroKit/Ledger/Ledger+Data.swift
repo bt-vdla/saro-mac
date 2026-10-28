@@ -11,14 +11,17 @@ public struct StorageSummary: Sendable, Hashable {
         /// The media file; entries sharing one (a duplicate) weigh it once.
         public var file: String?
         public var inTrash = false
+        /// A copy from Duplicate To, which isn't counted (FR-DAY-07).
+        public var duplicate = false
 
-        public init(entryId: String, kind: EntryKind, day: String, bytes: Int64, file: String? = nil, inTrash: Bool = false) {
+        public init(entryId: String, kind: EntryKind, day: String, bytes: Int64, file: String? = nil, inTrash: Bool = false, duplicate: Bool = false) {
             self.entryId = entryId
             self.kind = kind
             self.day = day
             self.bytes = bytes
             self.file = file
             self.inTrash = inTrash
+            self.duplicate = duplicate
         }
     }
 
@@ -45,7 +48,7 @@ public struct StorageSummary: Sendable, Hashable {
         // Live entries first, so a file shared with a trashed copy counts as live.
         for item in items.sorted(by: { !$0.inTrash && $1.inTrash }) {
             guard let i = kinds.firstIndex(where: { $0.kind == item.kind }) else { continue }
-            if !item.inTrash { kinds[i].count += 1 }
+            if !item.inTrash && !item.duplicate { kinds[i].count += 1 }
             if let file = item.file, !seen.insert(file).inserted { continue }
             let bytes = max(0, item.bytes)
             kinds[i].bytes += bytes
@@ -75,7 +78,8 @@ extension Ledger {
 
     public func storageSummary() throws -> StorageSummary {
         let rows = try db.run("""
-            SELECT e.id, e.kind, e.local_day, e.trashed_at, e.title_user, e.body, e.caption_user, m.file_name, m.bytes, m.poster_file
+            SELECT e.id, e.kind, e.local_day, e.trashed_at, e.duplicated_from_id, e.title_user, e.body, e.caption_user, m.file_name, m.bytes,
+                   m.poster_file
             FROM entry e LEFT JOIN media_asset m ON m.id = e.media_id
             """)
         let items = rows.map { r -> StorageSummary.Item in
@@ -87,7 +91,7 @@ extension Ledger {
                 if let poster = r.str("poster_file") { bytes += Self.size(of: mediaURL.appending(path: poster)) ?? 0 }
             }
             return .init(entryId: r.str("id") ?? "", kind: kind, day: r.str("local_day") ?? "", bytes: bytes, file: r.str("file_name"),
-                         inTrash: r.str("trashed_at") != nil)
+                         inTrash: r.str("trashed_at") != nil, duplicate: r.str("duplicated_from_id") != nil)
         }
         var summary = StorageSummary(items: items)
         summary.databaseBytes = ["saro.sqlite", "saro.sqlite-wal", "saro.sqlite-shm"].compactMap { Self.size(of: rootURL.appending(path: $0)) }.reduce(0, +)
@@ -106,10 +110,12 @@ extension Ledger {
 
     // MARK: Rhythm
 
-    /// When the person wrote or recorded on each of the last `days` local days (not music: that isn't a reflection).
+    /// When the person wrote or recorded on each of the last `days` local days (not music: that isn't a reflection; nor a
+    /// duplicate, which wasn't written then).
     public func entryTimes(days: Int = Rhythm.windowDays, today: String = LocalDay.today()) throws -> [Rhythm.EntryTime] {
         try db.run("""
-            SELECT local_day, captured_at, tz_id FROM live_entry WHERE kind IN ('moment','voice','reflection','still') AND local_day >= ?
+            SELECT local_day, captured_at, tz_id FROM live_entry
+            WHERE kind IN ('moment','voice','reflection','still') AND duplicated_from_id IS NULL AND local_day >= ?
             """, [.text(LocalDay.adding(-(days - 1), to: today))])
             .compactMap { r in
                 guard let day = r.str("local_day"), let at = r.date("captured_at") else { return nil }

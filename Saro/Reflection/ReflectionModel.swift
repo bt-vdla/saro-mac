@@ -324,12 +324,15 @@ final class ReflectionModel {
             model.show(Toast("Couldn’t save your answer. Your words are still in the box.", style: .error))
             return false
         }
+        let by = model.dayReading?.payload.questionGenerator ?? model.dayReading?.generator ?? "heuristic"
+        let runId = model.dayReading?.runId
         do {
-            let open = try await model.ledger.turns(day: day, kind: .dailyQuestion).last { $0.question == question }
-            let by = model.dayReading?.payload.questionGenerator ?? model.dayReading?.generator ?? "heuristic"
-            let turn = open ?? ReflectionTurn(kind: .dailyQuestion, question: question, generator: by, localDay: day, aiRunId: model.dayReading?.runId)
-            if open == nil { try await model.ledger.insertTurn(turn) }
-            try await model.ledger.setTurnAnswer(id: turn.id, answer: text, verdict: verdict.verdict)
+            try await model.saves.track("answer:\(day)") { [ledger = model.ledger] in
+                let open = try await ledger.turns(day: day, kind: .dailyQuestion).last { $0.question == question }
+                let turn = open ?? ReflectionTurn(kind: .dailyQuestion, question: question, generator: by, localDay: day, aiRunId: runId)
+                if open == nil { try await ledger.insertTurn(turn) }
+                try await ledger.setTurnAnswer(id: turn.id, answer: text, verdict: verdict.verdict)
+            }
         } catch {
             model.show(Toast("Couldn’t save your answer. Your words are still in the box.", style: .error))
             return false
@@ -353,7 +356,9 @@ final class ReflectionModel {
             verdict = r.verdict
         }
         do {
-            try await model.ledger.setUserMood(day: day, label: mood, note: note.isEmpty ? nil : note, verdict: verdict)
+            try await model.saves.track("mood:\(day)") { [ledger = model.ledger, verdict] in
+                try await ledger.setUserMood(day: day, label: mood, note: note.isEmpty ? nil : note, verdict: verdict)
+            }
         } catch {
             model.show(Toast("Couldn’t save that change. Try again in a moment.", style: .error))
             return false
@@ -451,7 +456,7 @@ final class ReflectionModel {
     private func change(_ write: @escaping () async throws -> Void) async {
         guard let model, let day else { return }
         do {
-            try await write()
+            try await model.saves.track("commitments:\(day)") { try await write() }
             let list = try await model.ledger.commitments(day: day)
             commitments = list
             commitmentHeld = false

@@ -59,10 +59,11 @@ struct BottomBar: View {
             history
                 .tourAnchor(.history)
             iconButton("scope", "Recenter") { model.camera = .fit(UUID()) }
-                .keyboardShortcut("0", modifiers: .command).help("Fit the day  ⌘0")
+                .keyboardShortcut(KeyboardShortcut(.fitDay)).help("Fit the day  \(Shortcut.fitDay.keys)")
         }
         .padding(6)
         .glassPanel(radius: Radius.sheet)
+        .overlay(alignment: .bottomLeading) { ShellPanelLayer() }
         .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: replaying)
         .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.day)
         .onChange(of: model.day) { old, new in dateDirection = new > old ? 1 : -1 }
@@ -71,7 +72,8 @@ struct BottomBar: View {
 
     private var day: some View {
         HStack(spacing: 2) {
-            iconButton("chevron.left", "Previous day") { model.slide(-1) }.help("Previous day  ⌘[")
+            AvatarButton()
+            iconButton("chevron.left", "Previous day") { model.slide(-1) }.help("Previous day  \(Shortcut.previousDay.keys)")
             VStack(spacing: 4) {
                 Text(DayFormat.bar(model.day)).monoCaps(11.5, tracking: 0.04).foregroundStyle(Tok.sageDark)
                     .id(model.day)
@@ -85,22 +87,22 @@ struct BottomBar: View {
             .tourAnchor(.dayNav)
             .contentShape(.rect)
             .onTapGesture { if !model.isToday { model.slide(to: LocalDay.today()) } }
-            .help(model.isToday ? "Today" : "Back to today  ⌘T")
-            iconButton("chevron.right", "Next day") { model.slide(1) }.help("Next day  ⌘]")
+            .help(model.isToday ? "Today" : "Back to today  \(Shortcut.today.keys)")
+            iconButton("chevron.right", "Next day") { model.slide(1) }.help("Next day  \(Shortcut.nextDay.keys)")
             Divider().frame(height: 26).padding(.horizontal, 4)
             // Switching kind under a live recorder would keep the camera running behind the voice pill.
             Group {
                 recorderTile(.moment)
-                    .keyboardShortcut("n", modifiers: .command).help("Record a moment  ⌘N")
+                    .keyboardShortcut(KeyboardShortcut(.recordMoment)).help("Record a moment  \(Shortcut.recordMoment.keys)")
                     .tourAnchor(.recordButton)
                 recorderTile(.voice)
-                    .keyboardShortcut("n", modifiers: [.command, .shift]).help("Leave a voice note  ⇧⌘N")
+                    .keyboardShortcut(KeyboardShortcut(.voiceNote)).help("Leave a voice note  \(Shortcut.voiceNote.keys)")
                 CaptureTile(face: CaptureFace(title: "Still", symbol: "photo", tint: Tok.stillInk)) { model.pickStill() }
                     .help("Add a photo (or drop or paste one onto the canvas)")
                 CaptureTile(face: CaptureFace(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk)) {
                     Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
                 }
-                .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
+                .keyboardShortcut(KeyboardShortcut(.write)).help("Write  \(Shortcut.write.keys)")
             }
             .disabled(model.recorderKind != nil)
         }
@@ -233,6 +235,7 @@ struct PressStyle: ButtonStyle {
             .background(hoverFill && hover ? Tok.ink.opacity(0.05) : .clear, in: .rect(cornerRadius: radius))
             .scaleEffect(configuration.isPressed ? scale : 1)
             .animation(Motion.press, value: configuration.isPressed)
+            .focusRing(radius: radius)
             .onHover { hover = $0 }
     }
 }

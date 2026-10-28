@@ -46,7 +46,11 @@ final class AppModel {
     var openStackID: String?
     /// The voice note open in place on its card (VoiceEchoCard.tsx), if any.
     var openVoiceID: String?
-    var toast: Toast?
+    var toasts: [Toast] = []
+    /// Toasts the pointer or VoiceOver is on, whose time doesn't run.
+    var heldToasts: Set<UUID> = []
+    /// Every user-content write, so the avatar's dot is honest (Saro/Shell/SaveStatus.swift).
+    let saves = SaveStatus()
     /// Cards flying into the Undo toast, or out of it back to their places.
     var trashFlight: TrashFlight?
     enum Insight { case spine, panel, letter }
@@ -75,8 +79,11 @@ final class AppModel {
     /// Non-nil while the in-window recorder is up.
     var recorderKind: EntryKind? {
         didSet {
-            // Only the bar button that opens it sets this, just after.
-            if recorderKind != oldValue { recorderGrows = false }
+            // Only the bar button (or the background menu) that opens it sets these, just after.
+            if recorderKind != oldValue {
+                recorderGrows = false
+                recorderLandsAt = nil
+            }
             guard recorderKind != nil else { handoffPrompt = nil; return }
             openVoiceID = nil
             replay.exit(animated: false)
@@ -86,6 +93,8 @@ final class AppModel {
     var recorderGrows = false
     /// The first reflection's question, from before onboarding closes until its recorder does (AppModel+Onboarding).
     var handoffPrompt: String?
+    /// The background menu's New ▸ Moment or Voice Note: where, in the day's world space, the recording's card lands.
+    var recorderLandsAt: CGPoint?
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false
@@ -125,6 +134,7 @@ final class AppModel {
         memory = MemoryModel(ledger: ledger, pipeline: pipeline)
         memory.showError = { [weak self] in self?.show(Toast($0, style: .error)) }
         memory.gate = { [weak self, pipeline] text in await self?.exclusive { await pipeline.check(text) } }
+        memory.saves = saves
         let center = NotificationCenter.default
         // The menu bar and ⌘K post this, sometimes before the window they open has a RootView to receive it.
         center.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
@@ -138,6 +148,13 @@ final class AppModel {
 
     /// Midnight, wake or activation: the day on screen follows today, and entries that waited for the model re-gate.
     private func catchUp() {
+        // The day changed under a running Saro: Trash's 30 days and the daily snapshot follow it.
+        if LocalDay.today() != today {
+            Task {
+                _ = try? await ledger.purgeTrash(now: .now)
+                _ = try? await ledger.dailySnapshot(now: .now)
+            }
+        }
         rollOver()
         Task { await regateWaiting() }
     }
@@ -176,7 +193,9 @@ final class AppModel {
             guard UserDefaults.standard.bool(forKey: "SaroDemo") else { return .success(AppModel(ledger: try Ledger())) }
             let root = URL.temporaryDirectory.appending(path: "SaroDemo-\(UUID().uuidString)")
             let model = AppModel(ledger: try Ledger(rootURL: root))
-            Task { await model.seedDemo() }
+            #if DOGFOOD
+            Task { await DemoJournal.seed(model) }
+            #endif
             return .success(model)
         } catch {
             return .failure(error)
@@ -184,39 +203,6 @@ final class AppModel {
     }
 
     var isDemo: Bool { ledger.rootURL.lastPathComponent.hasPrefix("SaroDemo") }
-
-    /// Synthetic entries only (SR-28: real user text never enters fixtures).
-    private func seedDemo() async {
-        if !UserDefaults.standard.bool(forKey: "SaroOnboarding") { await completeOnboarding() }
-        let texts = [
-            "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. Feeling tired but good.",
-            "It's been a year since Dad died. I keep picking up the phone to call him on Sundays. Today I cried in the car outside the grocery store and couldn't go in.",
-            "This deadline is killing me. If I have to sit through one more status meeting I'll die.\nAnyway, walked home the long way and the sky was pink over the park.",
-        ]
-        for (i, t) in texts.enumerated() {
-            try? await ledger.insertEntry(Entry(kind: .reflection, body: t, capturedAt: .now.addingTimeInterval(Double(i - 3) * 3600)))
-        }
-        let ctx = CGContext(data: nil, width: 640, height: 420, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        let colors = [CGColor(srgbRed: 0.95, green: 0.63, blue: 0.47, alpha: 1), CGColor(srgbRed: 0.12, green: 0.29, blue: 0.22, alpha: 1)]
-        let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors as CFArray, locations: [0, 1])!
-        ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 640, y: 420), options: [])
-        if let img = ctx.makeImage(), let data = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
-            await importStill(data, origin: "demo", at: nil)
-        }
-        // A synthetic voice note, spoken by the system voice, so the demo exercises transcription → gate → reading.
-        let voice = Entry(kind: .voice, capturedAt: .now.addingTimeInterval(-1800), processingStatus: ProcessingStatus.pending)
-        let asset = MediaAsset(fileName: "\(voice.localDay)/voice/\(voice.id).caf", kind: .audio, origin: "demo", state: "ready")
-        if await DemoSpeech.write("I walked home through the park after work. The sky was pink, and I felt lighter than I have in weeks.",
-                                  to: ledger.url(for: asset)) {
-            var v = voice
-            v.mediaId = asset.id
-            try? await ledger.insertMedia(asset)
-            try? await ledger.insertEntry(v)
-        }
-        await reload()
-        for e in entries { process(e.id) }
-    }
 
     var isToday: Bool { day == LocalDay.today() }
 
@@ -318,7 +304,7 @@ final class AppModel {
                 apply(DayData())
                 loadFailed = true
             } else {
-                show(Toast("Couldn't read the journal: \(error.localizedDescription)", style: .error))
+                show(.failed("Couldn't refresh this day", error, retry: { [weak self] in Task { await self?.reload() } }))
             }
         }
     }
@@ -376,8 +362,8 @@ final class AppModel {
         go(to: day, animation: PrefsStore.shared.reduceMotionEffective ? Motion.fade : Motion.surface)
     }
 
-    /// Adds photos chosen in an open panel as stills on the day on screen.
-    func pickStill() {
+    /// Adds photos chosen in an open panel as stills on the day on screen, fanned from `at` when given.
+    func pickStill(at point: CGPoint? = nil) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
@@ -385,8 +371,9 @@ final class AppModel {
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
         Task {
-            for url in urls {
-                if let data = try? await Task.detached(operation: { try Data(contentsOf: url) }).value { await importStill(data, origin: "picked", at: nil) }
+            for (i, url) in urls.enumerated() {
+                guard let data = try? await Task.detached(operation: { try Data(contentsOf: url) }).value else { continue }
+                await importStill(data, origin: "picked", at: point.map { CGPoint(x: $0.x + CGFloat(i) * 30, y: $0.y + CGFloat(i) * 30) })
             }
         }
     }
@@ -413,6 +400,13 @@ final class AppModel {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await ledger.insertMedia(asset)
         try await ledger.insertEntry(e)
+        // The first turn's card goes where the background menu opened; later turns join its stack.
+        if turn == 1, kind == recorderKind, let p = recorderLandsAt {
+            recorderLandsAt = nil
+            let l = CardLayout(entryId: e.id, x: p.x, y: p.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, stackId: sessionId, userPlaced: true)
+            try await ledger.setLayouts([l])
+            if e.localDay == loadedDay { layouts[e.id] = l }
+        }
         return TurnTicket(entryId: e.id, mediaId: asset.id, url: url)
     }
 
@@ -420,9 +414,11 @@ final class AppModel {
     func finishTurn(_ ticket: TurnTicket, durationMs: Int, error: Error?) async {
         let bytes = (try? ticket.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
         let exists = FileManager.default.fileExists(atPath: ticket.url.path)
-        try? await ledger.updateMedia(id: ticket.mediaId, state: exists ? "ready" : "failed", durationMs: durationMs, bytes: bytes)
-        try? await ledger.setProcessingStatus(id: ticket.entryId, exists ? ProcessingStatus.pending : ProcessingStatus.failed)
-        if let error, !exists { show(Toast("That recording couldn't be saved: \(error.localizedDescription)", style: .error)) }
+        try? await saves.track(ticket.entryId) { [ledger] in
+            try await ledger.updateMedia(id: ticket.mediaId, state: exists ? "ready" : "failed", durationMs: durationMs, bytes: bytes)
+            try await ledger.setProcessingStatus(id: ticket.entryId, exists ? ProcessingStatus.pending : ProcessingStatus.failed)
+        }
+        if let error, !exists { show(.failed("That recording couldn't be saved", error)) }
         await reload()
         guard exists else { return }
         // Don't hold the recorder (and the camera) open while the Speech prompt waits for an answer.
@@ -436,22 +432,27 @@ final class AppModel {
     func newWriting(body: String = "", day: String? = nil) async -> Entry? {
         let e = Entry(kind: .reflection, body: body, localDay: day ?? self.day)
         do {
-            try await ledger.insertEntry(e)
-            await reload()
+            try await saves.track(e.id) { [weak self] in
+                try await self?.ledger.insertEntry(e)
+                await self?.reload()
+            }
             return e
         } catch {
-            show(Toast("Couldn't save: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't save your reflection", error, retry: { [weak self] in Task { await self?.saves.retry(e.id) } }))
             return nil
         }
     }
 
     func saveWriting(id: String, body: String, title: String?) async {
         do {
-            try await ledger.updateEntryText(id: id, body: body, titleUser: title, captionUser: entry(id)?.captionUser)
-            await reload()
-            process(id)
+            let caption = entry(id)?.captionUser
+            try await saves.track(id) { [weak self] in
+                try await self?.ledger.updateEntryText(id: id, body: body, titleUser: title, captionUser: caption)
+                await self?.reload()
+                self?.process(id)
+            }
         } catch {
-            show(Toast("Couldn't save: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't save your changes", error, retry: { [weak self] in Task { await self?.saves.retry(id) } }))
         }
     }
 
@@ -573,8 +574,6 @@ final class AppModel {
         // Once per launch: reopening the window mid-recording must not treat a live turn as crashed.
         guard !Self.swept else { return await reload() }
         Self.swept = true
-        // ponytail: at launch only; a Saro left running for weeks purges at its next launch.
-        _ = try? await ledger.purgeTrash(before: .now.addingTimeInterval(-30 * 86_400))
         for m in (try? await ledger.allMedia()) ?? [] where m.state == "recording" {
             let url = ledger.url(for: m)
             if FileManager.default.fileExists(atPath: url.path) {
@@ -594,6 +593,8 @@ final class AppModel {
         backlog = await memory.unlearned()
         drain()
         await regateWaiting()
+        _ = try? await ledger.purgeTrash(now: .now)
+        _ = try? await ledger.dailySnapshot(now: .now)
         await reload()
     }
 
@@ -737,8 +738,15 @@ final class AppModel {
     private func persist(_ layouts: [CardLayout]) {
         guard !layouts.isEmpty else { return }
         layoutEdits += 1
+        let ids = layouts.map(\.entryId)
+        let key = "layout:" + ids.sorted().joined(separator: ",")
         Task {
-            do { try await ledger.setLayouts(layouts) } catch { show(Toast("Couldn't save the layout: \(error.localizedDescription)", style: .error)) }
+            do {
+                // A retry saves where the cards are by then.
+                try await saves.track(key) { [self] in try await ledger.setLayouts(ids.compactMap { self.layouts[$0] }) }
+            } catch {
+                show(.failed("Couldn't save the layout", error, retry: { [saves] in Task { await saves.retry(key) } }))
+            }
         }
     }
 
@@ -753,6 +761,9 @@ final class AppModel {
         if let flight { trashFlight = flight }
         do {
             let batch = try await ledger.trash(Array(ids))
+            // A deleted card's unsaved change no longer counts (save-status.ts forgetSave).
+            saves.forget(ids)
+            let trashedKinds = entries.filter { ids.contains($0.id) }.map(\.kind)
             selection = []
             if ids.contains(openEntryID ?? "") { openEntryID = nil }
             if ids.contains(openVoiceID ?? "") { openVoiceID = nil }
@@ -765,27 +776,50 @@ final class AppModel {
             let token = TrashUndo()
             undoManager?.registerUndo(withTarget: token) { _ in MainActor.assumeIsolated { withExtendedLifetime(token) { restore() } } }
             undoManager?.setActionName("Move to Trash")
-            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: { [weak undoManager] in
-                undoManager?.removeAllActions(withTarget: token)
-                restore()
-            }, trashed: cards))
+            show(Toast(title: EntryKind.trashTitle(trashedKinds, count: ids.count), detail: "You can undo this",
+                       action: Toast.Action(label: "Undo", run: { [weak undoManager] in
+                           undoManager?.removeAllActions(withTarget: token)
+                           restore()
+                       }), trashed: cards))
         } catch {
             if let flight, trashFlight?.id == flight.id { trashFlight = nil }
-            show(Toast("Couldn't move to Trash: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't move that to Trash", error, context: "It's still on your canvas.", retry: { [weak self] in
+                Task { await self?.trash(ids, undoManager: undoManager) }
+            }))
         }
     }
 
     /// A batch already back (from the Trash pane, say) restores nothing and says nothing.
     func restore(batch: String) async {
-        let ids = (try? await ledger.restore(batch: batch)) ?? []
-        await restored(ids)
-        if !ids.isEmpty { show(Toast("Restored")) }
+        do {
+            var ids: [String] = []
+            try await saves.track("restore:\(batch)") { [weak self] in
+                guard let self else { return }
+                ids = try await ledger.restore(batch: batch)
+                await restored(ids)
+            }
+            // A batch already restored (the toast's Undo, then ⌘Z) says nothing.
+            if !ids.isEmpty { show(Toast("Restored")) }
+        } catch {
+            show(.failed("Couldn't restore that item", error, retry: { [weak self] in Task { await self?.restore(batch: batch) } }))
+        }
     }
 
-    /// The Trash pane's Restore.
-    func restore(ids: [String]) async {
-        try? await ledger.restore(ids: ids)
-        await restored(ids)
+    /// The Trash panel's Restore. Returns whether it landed.
+    @discardableResult
+    func restore(ids: [String]) async -> Bool {
+        do {
+            try await saves.track("restore:" + ids.joined(separator: ",")) { [weak self] in
+                guard let self else { return }
+                try await ledger.restore(ids: ids)
+                await restored(ids)
+            }
+            return true
+        } catch {
+            show(.failed(ids.count == 1 ? "Couldn't restore that item" : "Couldn't restore \(ids.count) items", error,
+                         context: ids.count == 1 ? nil : "They're still in the trash."))
+            return false
+        }
     }
 
     /// Restored entries go back on the queue: one trashed before its pass ran was never read, and its day's reading
@@ -807,19 +841,23 @@ final class AppModel {
         do {
             // Off the main actor: the HEIC encoder's setup and a large photo's encode stall the UI (a main-thread runtime issue).
             guard try await Task.detached(operation: { try Self.writeHEIC(data, to: url) }).value else {
-                show(Toast("That file isn't an image Saro can read", style: .error))
+                show(Toast(title: "That file isn't an image Saro can read", detail: "Try a JPEG, PNG or HEIC photo.", style: .destructive))
                 return
             }
-            try await ledger.insertMedia(asset)
-            try await ledger.insertEntry(entry)
-            if let world {
-                try await ledger.setLayouts([CardLayout(entryId: entry.id, x: world.x, y: world.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, userPlaced: true)])
+            let z = (layouts.values.map(\.z).max() ?? 0) + 1
+            let id = entry.id
+            try await saves.track(id) { [weak self, ledger, entry] in
+                if try await ledger.media(asset.id) == nil { try await ledger.insertMedia(asset) }
+                if try await ledger.entry(id) == nil { try await ledger.insertEntry(entry) }
+                if let world {
+                    try await ledger.setLayouts([CardLayout(entryId: id, x: world.x, y: world.y, z: z, userPlaced: true)])
+                }
+                await self?.reload()
+                self?.process(id)
             }
-            await reload()
-            process(entry.id)
             show(Toast("Still saved to \(DayFormat.sidebar(entry.localDay))"))
         } catch {
-            show(Toast("Couldn't save the still: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't save the still", error, retry: { [weak self, id = entry.id] in Task { await self?.saves.retry(id) } }))
         }
     }
 
@@ -834,17 +872,6 @@ final class AppModel {
         guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
         return true
     }
-
-    // MARK: Toasts
-
-    func show(_ toast: Toast) {
-        self.toast = toast
-        let id = toast.id
-        Task {
-            try? await Task.sleep(for: .seconds(toast.undo == nil ? 2.4 : 5))
-            if self.toast?.id == id { self.toast = nil }
-        }
-    }
 }
 
 private final class TrashUndo: Sendable {}
@@ -855,25 +882,6 @@ struct CanvasItem: Identifiable {
     var isStack: Bool { entries.count > 1 }
     var stackID: String? { isStack ? String(id.dropFirst("stack:".count)) : nil }
     var top: Entry { entries[entries.count - 1] }
-}
-
-struct Toast: Identifiable, Equatable {
-    enum Style { case info, error }
-    let id = UUID()
-    let text: String
-    let style: Style
-    let undo: (@MainActor () -> Void)?
-    /// The cards a trash took off the canvas, which Undo flies back out of the toast.
-    let trashed: [StageCard]
-
-    init(_ text: String, style: Style = .info, undo: (@MainActor () -> Void)? = nil, trashed: [StageCard] = []) {
-        self.text = text
-        self.style = style
-        self.undo = undo
-        self.trashed = trashed
-    }
-
-    static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
 }
 
 /// Trashed cards on their way into the Undo toast, or with `back`, out of it to their places again (Canvas.tsx).

@@ -80,7 +80,7 @@ extension AppModel {
             }
             show(Toast("Exported to \(dir.lastPathComponent)/\(name)"))
         } catch {
-            show(Toast("Export failed: \(error.localizedDescription)", style: .error))
+            show(.failed("Couldn't export everything", error))
         }
     }
 
@@ -109,7 +109,9 @@ extension AppModel {
             show(Toast(added.rows == 0 && added.files == 0 ? "Nothing new: this journal already holds everything in that export."
                 : "Imported \(added.rows) \(added.rows == 1 ? "row" : "rows") and \(added.files) \(added.files == 1 ? "file" : "files")."))
         } catch {
-            show(Toast("Import failed: \(error.localizedDescription)", style: .error))
+            // Saro's own reasons are already plain words; anything else gets a remedy instead.
+            show((error as? ImportError).map { Toast(title: "Couldn't import that", detail: $0.errorDescription, style: .destructive) }
+                 ?? .failed("Couldn't import that", error))
         }
     }
 
