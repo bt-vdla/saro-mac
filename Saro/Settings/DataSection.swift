@@ -245,6 +245,7 @@ private struct BookRow: View {
     @State private var year = Calendar.current.component(.year, from: .now)
     @State private var working = false
     @State private var failed: String?
+    @State private var pdf = false
 
     private var years: [Int] {
         let now = Calendar.current.component(.year, from: .now)
@@ -270,7 +271,7 @@ private struct BookRow: View {
             if let failed {
                 HStack(spacing: 4) {
                     Text("Couldn’t bind your book. \(failed)")
-                    Button("Retry") { self.failed = nil }.buttonStyle(.settingsLink(Tok.danger))
+                    Button("Retry") { bind(pdf: pdf) }.buttonStyle(.settingsLink(Tok.danger))
                 }
                 .font(Typo.ui(12)).foregroundStyle(Tok.danger)
             }
@@ -281,6 +282,7 @@ private struct BookRow: View {
     private func bind(pdf: Bool) {
         working = true
         failed = nil
+        self.pdf = pdf
         Task {
             defer { working = false }
             do {

@@ -16,7 +16,20 @@ struct YouSection: View {
     enum Field { case name, called }
 
     var body: some View {
-        SettingsCard(label: "You", title: "The self you carry in.", autosave: save) {
+        VStack(alignment: .leading, spacing: 16) {
+            // The web's Profile page, as this section's opening.
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Profile").monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+                Text("Who you are.").font(Typo.serif(26)).foregroundStyle(Tok.ink).accessibilityAddTraits(.isHeader)
+                Text("Your name and your corner of Saro.").font(Typo.ui(14)).foregroundStyle(Tok.ink2)
+            }
+            .padding(.leading, 4)
+            card
+        }
+    }
+
+    private var card: some View {
+        SettingsCard(label: "Identity", title: "The self you carry in.", autosave: save) {
             HStack(spacing: 20) {
                 Text(Names.initials(name.isEmpty ? called : name))
                     .font(Typo.serif(28)).foregroundStyle(.white)
