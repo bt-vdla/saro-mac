@@ -20,6 +20,7 @@ struct LetterView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.openURL, OpenURLAction { url in
             guard url.scheme == "saro", url.host == "entry" else { return .systemAction }
+            guard model.entry(url.lastPathComponent) != nil else { return .handled }
             model.insight = .spine
             model.openEntryID = url.lastPathComponent
             return .handled

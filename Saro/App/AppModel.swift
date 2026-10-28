@@ -68,6 +68,8 @@ final class AppModel {
     private var queue: [String] = []
     private var working = false
     private var current: String?
+    private var navigation = 0
+    private static var swept = false
 
     init(ledger: Ledger) {
         self.ledger = ledger
@@ -153,6 +155,8 @@ final class AppModel {
         for e in d.entries { if let id = e.mediaId, let a = try await ledger.media(id) { d.media[id] = a } }
         d.status = await pipeline.dayStatus(day)
         d.reading = d.status == .ready ? await pipeline.latestDayReading(day) : nil
+        let live = Set(d.entries.map(\.id))
+        d.reading?.payload.quotes.removeAll { !live.contains($0.entryId) }
         return d
     }
 
@@ -168,9 +172,13 @@ final class AppModel {
     }
 
     func reload() async {
+        let target = day
         do {
             days = try await ledger.days()
-            apply(try await load(day))
+            let data = try await load(target)
+            // The day changed while this load was in flight: its data belongs to the old day.
+            guard target == day else { return }
+            apply(data)
             try await placeNewCards()
             week = await loadWeek()
         } catch {
@@ -193,8 +201,12 @@ final class AppModel {
     func go(to day: String, animation: Animation? = nil) {
         guard day != self.day || pane != .day else { return }
         let target = day
+        navigation += 1
+        let ticket = navigation
         Task {
             let data = try? await load(target)
+            // A later day change won: drop this one so quick ⌘[ ⌘T can't land on the wrong day.
+            guard ticket == navigation else { return }
             withAnimation(animation) {
                 slideDirection = target > self.day ? 1 : -1
                 self.day = target
@@ -240,7 +252,10 @@ final class AppModel {
 
     func goToday() { go(to: LocalDay.today()) }
     func goPrevious() { go(to: LocalDay.adding(-1, to: day)) }
-    func goNext() { go(to: LocalDay.adding(1, to: day)) }
+    func goNext() {
+        let next = LocalDay.adding(1, to: day)
+        if next <= LocalDay.today() { go(to: next) }
+    }
 
     // MARK: Capture
 
@@ -269,8 +284,11 @@ final class AppModel {
         if let error, !exists { show(Toast("That recording couldn't be saved: \(error.localizedDescription)", style: .error)) }
         await reload()
         guard exists else { return }
-        await askForSpeechOnce()
-        process(ticket.entryId)
+        // Don't hold the recorder (and the camera) open while the Speech prompt waits for an answer.
+        Task {
+            await Self.askForSpeechOnce()
+            process(ticket.entryId)
+        }
     }
 
     /// A new, empty piece of writing on the current day.
@@ -300,18 +318,25 @@ final class AppModel {
     /// days those entries belong to.
     func process(_ entryId: String) {
         if !queue.contains(entryId) && entryId != current { queue.append(entryId) }
+        drain()
+    }
+
+    /// Works the queue until it is empty, re-reading each touched day; work that arrives meanwhile is picked up.
+    private func drain() {
         guard !working else { return }
         working = true
         Task {
-            var days = Set<String>()
-            while !queue.isEmpty {
-                let id = queue.removeFirst()
-                current = id
-                if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
-                await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
-            }
-            current = nil
-            for d in days { await pipeline.readDay(d) }
+            repeat {
+                var days = Set<String>()
+                while !queue.isEmpty {
+                    let id = queue.removeFirst()
+                    current = id
+                    if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
+                    await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
+                }
+                current = nil
+                for d in days { await pipeline.readDay(d) }
+            } while !queue.isEmpty
             working = false
             await reload()
         }
@@ -319,10 +344,30 @@ final class AppModel {
 
     /// On-device transcription may need the Speech permission; ask once, when there is first something to transcribe.
     /// A refusal doesn't stop anything: the recording is kept and shows "Transcript not ready" if Speech says no.
-    private func askForSpeechOnce() async {
+    /// Nonisolated so the handler, which Speech may call off the main queue, isn't main-actor-isolated (Swift 6 would trap).
+    private nonisolated static func askForSpeechOnce() async {
         guard SFSpeechRecognizer.authorizationStatus() == .notDetermined else { return }
         _ = await withCheckedContinuation { (c: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
+        }
+    }
+
+    /// Transcribes a recording again (Try again on "Transcript not ready" or a technical hold), then gates and reads it.
+    func retranscribe(_ entry: Entry) {
+        Task {
+            if let id = entry.mediaId { try? await ledger.clearTranscript(mediaId: id) }
+            try? await ledger.setProcessingStatus(id: entry.id, ProcessingStatus.pending)
+            await reload()
+            process(entry.id)
+        }
+    }
+
+    /// After a trash or restore the day's reading may quote what's gone (or miss what's back): read it again.
+    func rereadDay() {
+        let d = day
+        Task {
+            if !working { await pipeline.readDay(d) }
+            await reload()
         }
     }
 
@@ -333,6 +378,7 @@ final class AppModel {
         Task {
             await pipeline.readDay(day)
             working = false
+            if !queue.isEmpty { drain() }
             await reload()
         }
     }
@@ -340,6 +386,9 @@ final class AppModel {
     /// Launch sweep (DR-12): a turn that was recording when Saro quit is a finished file if it exists on disk
     /// (movie fragments survive a crash) and missing otherwise; unfinished entries go back on the queue.
     func sweep() async {
+        // Once per launch: reopening the window mid-recording must not treat a live turn as crashed.
+        guard !Self.swept else { return await reload() }
+        Self.swept = true
         for m in (try? await ledger.allMedia()) ?? [] where m.state == "recording" {
             let url = ledger.url(for: m)
             if FileManager.default.fileExists(atPath: url.path) {
@@ -352,6 +401,10 @@ final class AppModel {
         for e in (try? await ledger.unfinishedEntries()) ?? [] {
             if e.processingStatus == ProcessingStatus.recording { try? await ledger.setProcessingStatus(id: e.id, ProcessingStatus.pending) }
             process(e.id)
+        }
+        // Entries gated while Apple Intelligence was off go back through the gate now that it can run (SR-17).
+        if ai.status == .available {
+            for id in (try? await ledger.entryIDs(withLatestVerdictIn: ["unavailable_clear", "unavailable_caution"])) ?? [] { process(id) }
         }
         await reload()
     }
@@ -489,6 +542,7 @@ final class AppModel {
             selection = []
             if ids.contains(openEntryID ?? "") { openEntryID = nil }
             await reload()
+            rereadDay()
             let restore: @MainActor () -> Void = { [weak self] in Task { await self?.restore(batch: batch) } }
             undoManager?.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { restore() } }
             undoManager?.setActionName("Move to Trash")
@@ -501,6 +555,7 @@ final class AppModel {
     func restore(batch: String) async {
         try? await ledger.restore(batch: batch)
         await reload()
+        rereadDay()
         show(Toast("Restored"))
     }
 
@@ -579,8 +634,8 @@ enum DemoSpeech {
         init(url: URL) { self.url = url }
     }
 
-    @MainActor
-    static func write(_ text: String, to url: URL) async -> Bool {
+    /// Nonisolated: the synthesizer's buffer callback arrives off the main thread.
+    nonisolated static func write(_ text: String, to url: URL) async -> Bool {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let synth = AVSpeechSynthesizer()
         let sink = Sink(url: url)

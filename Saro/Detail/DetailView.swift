@@ -195,6 +195,9 @@ private struct MediaDetail: View {
             }
             if sentences.isEmpty {
                 Text(transcriptState).font(Typo.ui(13)).foregroundStyle(Tok.ink3)
+                if entry.processingStatus == ProcessingStatus.transcriptUnavailable {
+                    Button("Try again") { model.retranscribe(entry) }.font(Typo.ui(12, .medium))
+                }
             } else {
                 ForEach(sentences) { s in
                     let current = (player?.timeMs ?? -1) >= s.startMs && (player?.timeMs ?? -1) < s.endMs
@@ -220,7 +223,7 @@ private struct MediaDetail: View {
         switch entry.processingStatus {
         case ProcessingStatus.recording: "Still recording."
         case ProcessingStatus.pending, ProcessingStatus.transcribing: "Transcribing on this Mac…"
-        case ProcessingStatus.transcriptUnavailable: "Transcript not ready. The recording is saved and plays; Saro will try again."
+        case ProcessingStatus.transcriptUnavailable: "Transcript not ready. The recording is saved and plays; Saro tries again at launch, or now."
         default: "No speech heard."
         }
     }
@@ -294,7 +297,7 @@ private struct WritingEditor: View {
         }
         .task(id: text) {
             guard loaded else { return }
-            try? await Task.sleep(for: .milliseconds(800))
+            do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
             await save(process: false)
         }
         .onDisappear { Task { await save(process: true) } }
@@ -311,7 +314,8 @@ private struct WritingEditor: View {
                 return
             }
             await model.reload()
-            if changed || model.verdicts[entry.id] == nil { model.process(entry.id) }
+            // Always: the pipeline skips text it has already gated and read, and an autosave may have saved the edit.
+            model.process(entry.id)
         }
     }
 }
@@ -433,7 +437,7 @@ struct ReadingSection: View {
             SafetyNotice()
         case "technical_hold":
             Text("Saro couldn't hear this one clearly. The recording is saved and plays.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
-            Button("Try again") { model.process(entry.id) }.font(Typo.ui(12, .medium))
+            Button("Try again") { model.retranscribe(entry) }.font(Typo.ui(12, .medium))
         case "unavailable_caution":
             Text("Saro will read this when Apple Intelligence is ready.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
             Button("Talk to someone") { NotificationCenter.default.post(name: .showSafetyCard, object: nil) }

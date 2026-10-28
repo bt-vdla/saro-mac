@@ -23,7 +23,7 @@ struct DayView: View {
                     // The world steps back while the moment frame is up (ease.drawer, 400 ms).
                     .scaleEffect(model.recorderKind == .moment && !reduceMotion ? 0.98 : 1)
                     .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.4), value: model.recorderKind)
-                if model.openEntryID == nil { chrome(geo.size) }
+                if model.openEntryID.flatMap(model.entry) == nil { chrome(geo.size) }
                 if let kind = model.recorderKind {
                     // The voice pill sits 8 pt above the bar; the moment frame fills the canvas.
                     RecorderView(kind: kind) { model.recorderKind = nil }
@@ -423,7 +423,7 @@ struct DayStage: View {
             HStack(spacing: 12) {
                 Text("\(members.count) turns").monoCaps(10).foregroundStyle(Tok.ink3)
                 Button("Unstack") { withAnimation(Motion.pick(Motion.small, reduce: reduceMotion)) { model.unstack(sid) } }
-                Button("Done") { close(sid) }.keyboardShortcut(.cancelAction)
+                Button("Done") { close(sid) }
             }
             .font(Typo.ui(12.5, .medium))
             .buttonStyle(.plain)
@@ -519,6 +519,7 @@ struct MorphFlight: View, @MainActor Animatable {
         let dest = crossfadeOnly ? v : (v / 0.35).clamped(to: 0...1)
         ZStack {
             DetailView(entry: entry)
+                .id(entry.id)
                 .frame(width: to.width, height: to.height)
                 .scaleEffect(min(w / to.width, h / to.height))
                 .opacity(dest)

@@ -71,7 +71,7 @@ struct NoticedView: View {
         if !p.quotes.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(p.quotes, id: \.index) { q in
-                    Button { model.openEntryID = q.entryId } label: {
+                    Button { if model.entry(q.entryId) != nil { model.openEntryID = q.entryId } } label: {
                         HStack(alignment: .top, spacing: 8) {
                             Rectangle().fill(Tok.sageSoft).frame(width: 2)
                             Text("“\(q.text)”").font(Typo.serif(14.5, italic: true)).foregroundStyle(Tok.ink2)
