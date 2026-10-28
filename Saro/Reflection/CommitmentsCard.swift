@@ -26,6 +26,7 @@ struct CommitmentsCard: View {
             } else {
                 list
             }
+            if r.commitmentHeld { HeldNote().padding(.top, 8) }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)

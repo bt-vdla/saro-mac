@@ -176,6 +176,8 @@ enum Snapshots {
                 }),
                 ("loaderror", { model.loadFailed = true }),
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
+                // A commitment that trips the phrase gate: nothing kept, the note and Talk to someone instead.
+                ("reflection-pieces-held", { Task { await model.reflection.addCommitment("Kill myself tomorrow") } }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
                 // Onboarding, each step hosted on its own flow (the demo journal itself skips onboarding).

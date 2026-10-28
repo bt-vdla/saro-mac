@@ -269,6 +269,7 @@ extension Ledger {
                 OR EXISTS (SELECT 1 FROM day_state d WHERE d.local_day = l.day AND d.mood_note_verdict = 'safety_hold')))
             ORDER BY c.created_at
             """).compactMap { r in r.str("text").map { OpenCommitment(text: $0, createdAt: r.date("created_at") ?? .distantPast) } }
+            .filter { !SafetyGate.phraseHit($0.text) }
     }
 
     /// How many live entries have cleared text, for the empty state's count (R-14).

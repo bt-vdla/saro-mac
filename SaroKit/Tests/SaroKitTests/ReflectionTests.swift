@@ -533,3 +533,20 @@ private let work = [
     #expect(await p.dayStatus(yesterday) == .held)
     #expect(await p.carryOvers(to: today, list: []).isEmpty)
 }
+
+@Test func whatSaroKnowsNeverVoicesAHeldDaysCommitmentOrWordsThatTripTheGate() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let (yesterday, today) = ("2026-10-25", "2026-10-26")
+    try await l.addCommitment("Call Ravi", day: yesterday)
+    try await l.addCommitment("Kill myself tomorrow", day: today)
+    try await l.addCommitment("Water the plants", day: today)
+    let open = { () async throws -> [String] in try await l.openCommitments().map { (c: OpenCommitment) in c.text } }
+    #expect(try await open() == ["Call Ravi", "Water the plants"])
+    let held = Entry(kind: .reflection, body: "Some nights I just want to die.", localDay: yesterday)
+    try await l.insertEntry(held)
+    await p.process(entryId: held.id) {}
+    #expect(try await open() == ["Water the plants"])
+    try await l.setUserMood(day: today, label: .tender, note: "x", verdict: "safety_hold")
+    #expect(try await open().isEmpty)
+}

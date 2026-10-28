@@ -29,6 +29,8 @@ final class ReflectionModel {
     var busy: Set<Busy> = []
     /// The sage check that says a new reading has landed, for 1.2 s.
     private(set) var updated = false
+    /// A commitment the phrase gate held: nothing was kept, and the card says so.
+    private(set) var commitmentHeld = false
     var adjustingMood = false
     /// ⌘K's 'Answer today's question' opens the question's editor.
     var answerRequested = false
@@ -89,7 +91,10 @@ final class ReflectionModel {
     /// Reads the day's own records, then the first week's note, the letter's notification and the evening arrival.
     func load(day: String, model: AppModel) {
         self.model = model
-        if self.day != day { adjustingMood = false }
+        if self.day != day {
+            adjustingMood = false
+            commitmentHeld = false
+        }
         loads += 1
         let ticket = loads
         Task {
@@ -369,10 +374,13 @@ final class ReflectionModel {
 
     // MARK: Commitments
 
+    /// The person's words pass the phrase gate before they're kept (§13: user text stored outside an entry is gated at
+    /// save); a hit keeps nothing.
     func addCommitment(_ text: String) async {
         guard let model, let day else { return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        guard !SafetyGate.phraseHit(text) else { commitmentHeld = true; return }
         guard commitments.count < Commitment.maxCount else { return listFull() }
         await change { try await model.ledger.addCommitment(text, day: day) }
     }
@@ -382,11 +390,12 @@ final class ReflectionModel {
         await change { try await model.ledger.setDone(c.id, !c.done) }
     }
 
-    /// ⌘Z puts the old words back.
+    /// ⌘Z puts the old words back. Gated as an added one is; a hit keeps the old words.
     func edit(_ c: Commitment, to text: String, undo: UndoManager?) async {
         guard let model else { return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text != c.text else { return }
+        guard !SafetyGate.phraseHit(text) else { commitmentHeld = true; return }
         await change { try await model.ledger.edit(c.id, text: text) }
         var now = c
         now.text = text
@@ -435,6 +444,7 @@ final class ReflectionModel {
             try await write()
             let list = try await model.ledger.commitments(day: day)
             commitments = list
+            commitmentHeld = false
             if isToday { carryOvers = await model.pipeline.carryOvers(to: day, list: list) }
         } catch {
             model.show(Toast("Couldn’t save that commitment. Try again in a moment.", style: .error))
