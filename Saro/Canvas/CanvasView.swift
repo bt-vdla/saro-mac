@@ -221,6 +221,8 @@ struct DayStage: View {
     @State private var flight: Double = 0
     @State private var scrim = false
     @State private var fanned = false
+    /// Each fanned turn's words, under its question.
+    @State private var answers: [String: String] = [:]
     @State private var userMoved = false
     /// Cards let go and still gliding, which keep their motion blur until they land.
     @State private var thrown: Set<String> = []
@@ -678,6 +680,10 @@ struct DayStage: View {
                         Text(q).font(Typo.serif(15, italic: true)).foregroundStyle(Tok.voice).lineLimit(2)
                             .multilineTextAlignment(.center).frame(width: tile.width)
                     }
+                    if let a = answers[e.id], model.verdicts[e.id]?.verdict != "safety_hold" {
+                        Text(a).font(Typo.ui(14)).foregroundStyle(Tok.ink2).lineLimit(2)
+                            .multilineTextAlignment(.center).frame(width: tile.width)
+                    }
                 }
                 .scaleEffect(fanned || reduceMotion ? 1 : 0.6)
                 .modifier(MotionBlurred(position: p, coverage: tile.width * tile.height / (size.width * size.height)))
@@ -706,6 +712,12 @@ struct DayStage: View {
             .padding(.bottom, 28)
         }
         .onAppear { fanned = true }
+        .task(id: members.map(\.id)) {
+            for e in members {
+                guard let id = e.mediaId, let words = try? await model.ledger.transcript(mediaId: id), !words.isEmpty else { continue }
+                answers[e.id] = words.map(\.text).joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            }
+        }
         .transition(.opacity)
     }
 
