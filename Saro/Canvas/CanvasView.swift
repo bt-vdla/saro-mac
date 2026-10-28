@@ -523,11 +523,13 @@ struct DayStage: View {
         }
         .onChange(of: model.camera) { _, cmd in
             guard isCurrent, let cmd else { return }
+            // ⌘0, ⌘= and ⌘- (and the refit after Esc closes the lens) move the camera at once: the frequency rule.
+            let key = Motion.byKey
             switch cmd {
-            case .fit: withAnimation(Motion.pick(Motion.surface, reduce: reduceMotion)) { camera = Camera.fit(cards, in: size) }
+            case .fit: withAnimation(key ? nil : Motion.pick(Motion.surface, reduce: reduceMotion)) { camera = Camera.fit(cards, in: size) }
             case .zoom(let f, _):
                 userMoved = true
-                withAnimation(Motion.pick(Motion.small, reduce: reduceMotion)) { zoom(by: f, at: CGPoint(x: size.width / 2, y: size.height / 2)) }
+                withAnimation(key ? nil : Motion.pick(Motion.small, reduce: reduceMotion)) { zoom(by: f, at: CGPoint(x: size.width / 2, y: size.height / 2)) }
             case .focus(let id, _):
                 guard let c = cards.first(where: { $0.id == id }) else { return }
                 userMoved = true
@@ -1137,11 +1139,18 @@ struct DayStage: View {
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
     }
 
+    /// A key opens and closes the detail at once (morph.ts: keyboard-initiated opens and closes don't fly).
     private func morph(to id: String?) {
+        let key = Motion.byKey
         if let id {
             flightFrom = model.reflection.flightSource.map { ($0, Radius.card) } ?? screenRect(entry: id)
             model.reflection.flightSource = nil
             shownID = id
+            if key {
+                flight = 1
+                scrim = true
+                return
+            }
             guard !reduceMotion else {
                 withAnimation(Motion.fade) { flight = 1; scrim = true }
                 return
@@ -1151,6 +1160,10 @@ struct DayStage: View {
                 withAnimation(Motion.surface) { flight = 1 }
                 withAnimation(Motion.easeOut(0.2)) { scrim = true }
             }
+        } else if key {
+            scrim = false
+            flight = 0
+            shownID = nil
         } else if let shown = shownID {
             flightFrom = screenRect(entry: shown)
             withAnimation(Motion.easeOut(0.2)) { scrim = false }
@@ -1422,10 +1435,10 @@ private struct SelectionToolbar: View {
     var body: some View {
         HStack(spacing: 2) {
             Text("\(model.selection.count) selected").monoCaps(10).foregroundStyle(Tok.ink3).padding(.horizontal, 12)
-            tool("Stack", "square.stack.3d.up", Shortcut.stack.keys) { withAnimation(Motion.small) { model.stack(model.selection) } }
+            tool("Stack", "square.stack.3d.up", Shortcut.stack.keys) { withAnimation(Motion.byKey ? nil : Motion.small) { model.stack(model.selection) } }
                 .keyboardShortcut(KeyboardShortcut(.stack)).disabled(model.selection.count < 2)
-            tool("Grid", "rectangle.grid.1x2", Shortcut.grid.keys) { withAnimation(Motion.small) { model.grid(model.selection) } }
-                .keyboardShortcut(KeyboardShortcut(.grid))
+            tool("Grid", "rectangle.grid.1x2", Shortcut.grid.keys) { withAnimation(Motion.byKey ? nil : Motion.small) { model.grid(model.selection) } }
+                .keyboardShortcut(KeyboardShortcut(.grid)).disabled(model.selection.count < 2)
             tool("Delete", "trash", "⌫") {
                 let flies = !Motion.byKey && !reduceMotion
                 Task { await model.trash(model.selection, undoManager: undoManager, flies: flies) }
