@@ -291,6 +291,7 @@ private struct TitleField: View {
             .font(Typo.ui(20, .semibold))
             .lineLimit(1...3)
             .foregroundStyle(Tok.ink)
+            .saroWritingTools()
             .onAppear { text = entry.titleUser ?? "" }
             .onSubmit { save() }
             .onDisappear { save() }
@@ -447,7 +448,7 @@ struct StillBelow: View {
                 .lineSpacing(3)
                 .foregroundStyle(Tok.ink)
                 .lineLimit(1...4)
-                .writingToolsBehavior(.disabled)
+                .saroWritingTools()
                 .focused($editing)
                 .onSubmit(save)
                 .onChange(of: editing) { _, now in if !now { save() } }
