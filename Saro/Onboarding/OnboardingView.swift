@@ -45,6 +45,8 @@ final class OnboardingFlow {
         d.removePersistentDomain(forName: "SaroDemo.onboarding")
         return d
     }()
+    /// Where a pass is, in `defaults`. Erase removes them, so the next pass opens on the welcome door.
+    static let keys = ["onboarding.step", "onboarding.furthest", "onboarding.aboutStep", "onboarding.starterID"]
 
     private(set) var step: Step = .welcome
     private(set) var furthest: Step = .welcome
@@ -195,9 +197,11 @@ final class OnboardingFlow {
 
     /// The gate first (SR-17), then the save; a later answer to the same question replaces this one's verdict.
     private func gate(_ q: Int, _ answer: String, _ model: AppModel) {
+        let journal = model.profile?.createdAt
         Task {
-            let result = await model.pipeline.gate(answer: answer)
-            guard starter.answers[q] == answer else { return }
+            let result = await model.exclusive { await model.pipeline.gate(answer: answer) }
+            // An erase or an import meanwhile started another journal (and another pass): this answer isn't its to save.
+            guard starter.answers[q] == answer, model.profile?.createdAt == journal else { return }
             verdicts[q] = AnswerVerdict(text: answer, verdict: result?.verdict)
             await save(model, profileFrom: q)
         }

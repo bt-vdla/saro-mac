@@ -10,7 +10,8 @@ struct RootView: View {
             if model.profile == nil {
                 LitGround().ignoresSafeArea().overlay { ToastHost() }
             } else if model.showsOnboarding {
-                OnboardingView().ignoresSafeArea(.container, edges: .top).overlay { ToastHost() }
+                // A new profile row (Erase, or an import into a blank journal) is a new pass, read from the ledger again.
+                OnboardingView().id(model.profile?.createdAt).ignoresSafeArea(.container, edges: .top).overlay { ToastHost() }
             } else {
                 NavigationSplitView(columnVisibility: Binding(get: { model.sidebarVisible ? .all : .detailOnly },
                                                               set: { model.sidebarVisible = $0 != .detailOnly })) {

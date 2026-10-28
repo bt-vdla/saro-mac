@@ -116,14 +116,19 @@ extension AppModel {
     /// Erase everything on this Mac (DR-16): every row, recording, photo and backup, every scheduled reminder, and
     /// every preference. The window goes back to the welcome door.
     func eraseEverything() async throws {
+        // A delete still in its Undo window is written now, so it can't land in the new journal after the erase.
+        await memory.commitPending()
         try await ledger.eraseAll()
         Reminders.shared.removeAll()
         reflection.reset()
         PrefsStore.shared.eraseAll()
         // The quick-capture panel's half-written note is journal text too.
         CapturePanelController.shared.draft = ""
-        for key in Self.erasedDefaults { UserDefaults.standard.removeObject(forKey: key) }
+        memory.query = ""
         Daylight.shared.mode = .clock
+        // After the light, whose setter writes its key back. Onboarding's place goes too, so the next pass opens on the door.
+        for key in Self.erasedDefaults { UserDefaults.standard.removeObject(forKey: key) }
+        for key in OnboardingFlow.keys { OnboardingFlow.defaults.removeObject(forKey: key) }
         profile = try await ledger.profile()
         starter = nil
         openEntryID = nil
@@ -134,8 +139,9 @@ extension AppModel {
         await reload()
     }
 
-    /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, and the capture devices.
-    static let erasedDefaults = ["captureDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID"]
+    /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, the capture devices, What Saro
+    /// knows' graph or list, and the tour (dogfood).
+    static let erasedDefaults = ["captureDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID", "saro.knows.mode", "tourSeen"]
 
     /// The Book of `year`, as HTML or PDF, saved where the person picks.
     func exportBook(year: Int, pdf: Bool) async throws -> Bool {
