@@ -64,6 +64,8 @@ extension AppModel {
             if all, profile?.onboardingDoneAt != nil, let old = try? await ledger.latestStarter() {
                 let s = await pipeline.regate(starter: old, knownName: profile?.address ?? "")
                 if let s, s != old, await saveStarter(s) {
+                    // Pages that kept the old first prompt lose it too: it quotes an answer no longer clear.
+                    if let gone = old.firstPrompt, gone != starter?.firstPrompt { try? await ledger.dropPrompts(question: gone) }
                     await saveProfile { $0.follow(picks: old.storable.picks, to: s.storable.picks) }
                 } else if s != old {
                     done = false

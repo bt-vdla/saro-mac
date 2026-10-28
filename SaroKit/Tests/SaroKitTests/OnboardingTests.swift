@@ -312,6 +312,23 @@ private let answers: [Int: String] = [
     #expect(chosen.tone == .gentle)
 }
 
+/// A first prompt a re-gate took back leaves no page header quoting the held answer; other prompts and pages stay.
+@Test func aFirstPromptTakenBackLeavesNoPromptRows() async throws {
+    let ledger = try Ledger(rootURL: URL.temporaryDirectory.appending(path: "onb-\(UUID().uuidString)"))
+    let gone = "You’ve been feeling worn thin. Where did it show up today?"
+    let page = Entry(kind: .reflection, body: "Long walk by the canal.")
+    let other = Entry(kind: .reflection, body: "Tea with Ravi.")
+    try await ledger.insertEntry(page)
+    try await ledger.insertEntry(other)
+    try await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: gone, generator: "heuristic", localDay: page.localDay, entryId: page.id))
+    try await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: "What moment still lingers?", generator: "curated",
+                                               localDay: other.localDay, entryId: other.id))
+    try await ledger.dropPrompts(question: gone)
+    #expect(try await ledger.turns(entryId: page.id).isEmpty)
+    #expect(try await ledger.turns(entryId: other.id).map(\.question) == ["What moment still lingers?"])
+    #expect(try await ledger.entry(page.id)?.body == "Long walk by the canal.")
+}
+
 @Test func anEmptyFirstPageWithItsPromptStillDiscards() async throws {
     let ledger = try Ledger(rootURL: URL.temporaryDirectory.appending(path: "onb-\(UUID().uuidString)"))
     let page = Entry(kind: .reflection, body: "")

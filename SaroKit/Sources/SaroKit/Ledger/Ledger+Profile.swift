@@ -91,6 +91,11 @@ extension Ledger {
         try db.run("SELECT * FROM reflection_turn WHERE entry_id=? ORDER BY created_at, rowid", [.text(entryId)]).map(ReflectionTurn.init)
     }
 
+    /// Drops the prompt rows that quote a first prompt a re-gate took back: Saro's sentence around an answer since held.
+    public func dropPrompts(question: String) throws {
+        try db.run("DELETE FROM reflection_turn WHERE kind='prompt' AND answer IS NULL AND question=?", [.text(question)])
+    }
+
     // MARK: Memory pauses
 
     /// Opens a pause window unless one is open.
