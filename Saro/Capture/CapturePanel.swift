@@ -12,8 +12,10 @@ final class CapturePanelController {
     static let shared = CapturePanelController()
 
     var tab: CaptureTab = .video
-    /// Survives closing the panel, so a half-written note is never lost to Esc.
-    var draft = ""
+    /// Survives Esc, a quit and a crash, so a half-written note is never lost. Saving clears it.
+    var draft = UserDefaults.standard.string(forKey: "captureDraft") ?? "" {
+        didSet { UserDefaults.standard.set(draft, forKey: "captureDraft") }
+    }
     private(set) var saved = false
     @ObservationIgnored private var panel: CapturePanel?
     @ObservationIgnored private var model: AppModel?
