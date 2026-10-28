@@ -420,3 +420,19 @@ private let work = [
     _ = try await l.trash([b.id])
     #expect(await p.weekNoteStatus(WeekNote(kind: .pattern, title: "", lines: [], sources: [b.id])) == .held)
 }
+
+@Test func anAnswerAloneLeavesNothingToRead() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    var still = Entry(kind: .still)
+    still.processingStatus = ProcessingStatus.done
+    try await l.insertEntry(still)
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: "What helped?", generator: "heuristic", localDay: still.localDay)
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: "A walk.", verdict: "clear")
+    try await l.setUserMood(day: still.localDay, label: .calm, note: "Fine.", verdict: "clear")
+    // A bare still with a clear answer and note: nothing to read, so not ready (no panel or letter left loading).
+    #expect(await p.dayStatus(still.localDay) == .empty)
+    try await l.setTurnAnswer(id: turn.id, answer: "A walk.", verdict: "safety_hold")
+    #expect(await p.dayStatus(still.localDay) == .held)
+}

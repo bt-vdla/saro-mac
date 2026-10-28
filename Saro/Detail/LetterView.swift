@@ -53,6 +53,8 @@ struct LetterView: View {
         .onAppear {
             if base == nil { shown = true; focus = .letter } else { withAnimation { shown = true } }
         }
+        // Read on open, so a reading that's coming shows as being written, never as one that failed.
+        .onChange(of: "\(model.day)\(model.dayStatus)", initial: true) { if model.dayStatus == .ready { model.rereadDay() } }
     }
 
     private var header: some View {
@@ -99,7 +101,7 @@ struct LetterView: View {
         case .working:
             writingShimmer
         case .ready:
-            if let letter { page(letter) } else if model.dayReading == nil { writingShimmer } else { unavailable }
+            if let letter { page(letter) } else if model.dayReading == nil && model.working { writingShimmer } else { unavailable }
         }
     }
 
@@ -111,12 +113,15 @@ struct LetterView: View {
             .rise(1, shown, base: base)
     }
 
+    /// No reading came, or one came that no letter can be set from: Retry reads the day again, or writes a new reading.
     private var unavailable: some View {
         VStack(alignment: .leading, spacing: 18) {
             prose("Saro couldn’t write your letter just now. Your entries are safe.")
-            Button(r.busy.contains(.insights) ? "Trying again…" : "Retry") { Task { await r.refreshInsights() } }
-                .buttonStyle(Pill(primary: true))
-                .disabled(r.busy.contains(.insights))
+            Button(r.busy.contains(.insights) ? "Trying again…" : "Retry") {
+                if model.dayReading == nil { r.retryReading() } else { Task { await r.refreshInsights() } }
+            }
+            .buttonStyle(Pill(primary: true))
+            .disabled(r.busy.contains(.insights))
         }
         .padding(.top, 18)
         .rise(1, shown, base: base)

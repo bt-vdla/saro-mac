@@ -222,12 +222,13 @@ public actor Pipeline {
             default: return .working
             }
         }
-        // The person's answers and mood note are their words too: a hold on one holds the day (SR-13).
-        states += await reflectionVerdicts(day).map(EntryState.init(verdict:))
-        switch SafetyGate.dayGate(states) {
+        // The person's answers and mood note are their words too: a hold on one holds the day (SR-13). Only entries
+        // make it ready, though: an answer alone leaves nothing to read.
+        let readable = states.contains(.clear) || states.contains(.modelUnavailable)
+        switch SafetyGate.dayGate(states + (await reflectionVerdicts(day)).map(EntryState.init(verdict:))) {
         case .safetyHeld: return .held
         case .awaitingCheck: return .awaitingCheck
-        case .allowed: return states.contains(.clear) || states.contains(.modelUnavailable) ? .ready : .empty
+        case .allowed: return readable ? .ready : .empty
         }
     }
 

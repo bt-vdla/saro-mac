@@ -102,6 +102,7 @@ final class AppModel {
     private var jobs: [@MainActor () async -> Void] = []
     /// Days to read once the queued entries are done (a trash, a restore, the inspector opening).
     private var unreadDays: Set<String> = []
+    /// True while the queue is being worked, so a day that can be read but has no reading is still coming.
     private(set) var working = false
     private var current: String?
     private var navigation = 0
@@ -471,9 +472,10 @@ final class AppModel {
                 current = nil
                 for d in days { await pipeline.readDay(d) }
                 while !jobs.isEmpty { await jobs.removeFirst()() }
+                // Read back while still working, so a reading never shows as missing between landing and the reload.
+                if queue.isEmpty, unreadDays.isEmpty, jobs.isEmpty { await reload() }
             } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty
             working = false
-            await reload()
         }
     }
 

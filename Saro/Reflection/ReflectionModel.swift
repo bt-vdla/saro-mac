@@ -265,6 +265,14 @@ final class ReflectionModel {
         return payload != nil
     }
 
+    /// Try again on a day whose reading didn't come: its entries go back through the queue (finished steps are skipped),
+    /// then the day is read.
+    func retryReading() {
+        guard let model else { return }
+        for e in model.entries { model.process(e.id) }
+        model.rereadDay()
+    }
+
     /// Refresh question: the answered pair is archived and a question not asked in the last week takes its place.
     func refreshQuestion() async {
         guard let model, let day, !busy.contains(.question) else { return }

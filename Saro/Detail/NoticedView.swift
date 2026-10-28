@@ -32,7 +32,8 @@ struct NoticedView: View {
             Task { await model.ai.prewarm() }
             if model.reflection.how == .instant { collapseFocused = true }
         }
-        .task(id: "\(model.day)\(model.dayStatus)") { await model.refreshDayReading() }
+        // Read on open, before the first frame, so a reading that's coming never flashes as one that failed.
+        .onChange(of: "\(model.day)\(model.dayStatus)", initial: true) { if model.dayStatus == .ready { model.rereadDay() } }
         .onDisappear { model.reflection.answerRequested = false }
         .onChange(of: model.day) {
             open = .narrative
@@ -88,10 +89,25 @@ struct NoticedView: View {
         case .ready:
             if let r = model.dayReading, let narrative = r.payload.narrative {
                 reading(r.payload, narrative: narrative)
-            } else {
+            } else if model.working {
                 loading
+            } else {
+                unavailable
             }
         }
+    }
+
+    /// The day can be read but no reading came (InsightBar's 'unavailable'): say so, and offer to try again.
+    private var unavailable: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Insights aren’t ready yet").font(Typo.serif(22, .medium)).foregroundStyle(Tok.momentInk)
+            Text(model.isToday ? "Saro couldn’t read today’s entries just now." : "Saro couldn’t read this day’s entries just now.")
+                .font(Typo.ui(13.5)).foregroundStyle(Tok.momentInk)
+            Button("Try again") { model.reflection.retryReading() }
+                .buttonStyle(Pill(primary: true))
+                .padding(.top, 10)
+        }
+        .padding(.top, 6)
     }
 
     /// Nothing to read yet: on the day itself, what to add; on another, that nothing was saved; and when there are
