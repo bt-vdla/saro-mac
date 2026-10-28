@@ -157,6 +157,24 @@ let vanishing = "Lately I keep picturing myself just vanishing and nobody notici
     #expect(await p.latestDayReading(e.localDay) == nil)
 }
 
+@Test func aVerdictFromAnOlderGateIsGatedAgain() async throws {
+    let l = try tempLedger()
+    let log = Prompts()
+    let p = Pipeline(ledger: l, ai: logged(log))
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    try await l.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(chai), safetyVersion: "safety-0", layer: 2,
+                                               verdict: "safety_hold", reasonCode: "classifier_uncertain"))
+    #expect(try await l.entryIDs(withLatestVerdictNotAt: SafetyGate.version) == [e.id])
+    // SR-18: the launch sweep queues it, and this gate's verdict replaces the old one (here lifting the hold).
+    await p.process(entryId: e.id) {}
+    #expect(await log.count(.classify) == 1)
+    let v = try await l.verdicts(day: e.localDay)[e.id]
+    #expect(v?.verdict == "clear" && v?.safetyVersion == SafetyGate.version)
+    #expect(try await l.entryIDs(withLatestVerdictNotAt: SafetyGate.version).isEmpty)
+    #expect(await p.dayStatus(e.localDay) == .ready)
+}
+
 @Test func aHeldEntryHoldsItsDayAndNothingIsGeneratedFromIt() async throws {
     let l = try tempLedger()
     let log = Prompts()

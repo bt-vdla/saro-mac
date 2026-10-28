@@ -123,8 +123,10 @@ final class AppModel {
         today = now
     }
 
-    /// Entries gated while Apple Intelligence was off go back through the gate once it can run (SR-17).
+    /// Entries an older gate checked go back through this one (SR-18), and entries gated while Apple Intelligence was off
+    /// go back once it can run (SR-17).
     private func regateWaiting() async {
+        for id in (try? await ledger.entryIDs(withLatestVerdictNotAt: SafetyGate.version)) ?? [] { process(id) }
         guard ai.status == .available else { return }
         for id in (try? await ledger.entryIDs(withLatestVerdictIn: ["unavailable_clear", "unavailable_caution"])) ?? [] { process(id) }
     }

@@ -131,6 +131,14 @@ public actor Ledger {
             """, verdicts.map { .text($0) }).compactMap { $0.str("entry_id") }
     }
 
+    /// Live entries whose newest verdict another gate version made: a SAFETY_VERSION bump re-gates them (SR-18).
+    public func entryIDs(withLatestVerdictNotAt safetyVersion: String) throws -> [String] {
+        try db.run("""
+            SELECT v.entry_id FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
+            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.safety_version != ?
+            """, [.text(safetyVersion)]).compactMap { $0.str("entry_id") }
+    }
+
     /// Drops a media file's transcript so the next pass transcribes it again (Try again on a technical hold).
     public func clearTranscript(mediaId: String) throws {
         try db.run("DELETE FROM transcript_word WHERE media_id=?", [.text(mediaId)])
