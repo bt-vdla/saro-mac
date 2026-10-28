@@ -323,3 +323,16 @@ extension FollowUp {
     let kept = try await l.turns(entryId: source.id)
     #expect(kept.map(\.question) == [""] && kept.map(\.answer) == ["The quiet."])
 }
+
+// MARK: A song is never read
+
+@Test func aSongIsNeverGatedOrRead() async throws {
+    let l = try tempLedger()
+    let song = Entry(kind: .music, body: "https://soundcloud.com/some-artist/midnight-city-remix", processingStatus: ProcessingStatus.done)
+    try await l.insertEntry(song)
+    let p = Pipeline(ledger: l, ai: SaroAI(stub: { _ in "NONE" }))
+    await p.process(entryId: song.id) {}
+    #expect(try await l.verdicts(day: song.localDay)[song.id] == nil)
+    #expect(try await l.annotations(day: song.localDay)[song.id] == nil)
+    #expect(await p.dayStatus(song.localDay) == .empty)
+}

@@ -65,7 +65,9 @@ public actor Pipeline {
 
     /// Runs every step that hasn't run for this entry yet. `onStatus` is called after each status change.
     public func process(entryId: String, onStatus: @Sendable () async -> Void) async {
-        guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil else { return }
+        // A song is a link the person kept, read offline from its URL: nothing gates or reads it, so no part of a link is
+        // ever quoted back (a restore from Trash queues it like any entry).
+        guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil, entry.kind != .music else { return }
         func status(_ s: String) async {
             try? await ledger.setProcessingStatus(s, startedFrom: entry)
             await onStatus()
