@@ -76,11 +76,12 @@ let notFlagged = [
 
 @Test func phraseGateRunsUnderOneMillisecond() {
     let entry = String(repeating: "Long day at work. Shipped the onboarding flow finally. Had chai with Ravi and we talked about his move to Pune. ", count: 18)
-    // Best of 5 batches, so a busy test runner doesn't decide it.
+    // This thread's CPU time (see threadCPUTime), best of 5 batches, so suites running in parallel don't decide it.
+    onPerformanceCore()
     let perEntry = (0..<5).map { _ in
-        let start = ContinuousClock.now
+        let start = threadCPUTime()
         for _ in 0..<10 { _ = SafetyGate.phraseHit(entry) }
-        return (ContinuousClock.now - start) / 10
+        return (threadCPUTime() - start) / 10
     }.min()!
     #expect(perEntry < .milliseconds(1), "\(perEntry) for \(entry.count) chars")
 }
