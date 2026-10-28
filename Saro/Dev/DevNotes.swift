@@ -186,7 +186,9 @@ struct DevNotes {
                         "07 Intelligence: readiness per reason, speech per language, details", "08 Your data: NFR-02 with proofs, storage by kind, recording quality, Export with progress and an iCloud warning, Import (idempotent), Book of the year as HTML or PDF, What Saro read, Erase everything",
                         "On-device tone rewrite and Say it fallback: one call each, output gate and drift check, logged as tone-preview and settings-parse"],
                 stubbed: ["06 What Saro knows: pause works; the list arrives with memory", "Touch ID lock and Hide from screen sharing: saved, applied by shell (FR-SET-04)",
-                          "About Saro opens the standard About panel until shell's About window lands"],
+                          "About Saro opens the standard About panel until shell's About window lands",
+                          "Captions always on: saved, read by capture's live captions (the caption language already steers transcripts)",
+                          "Settings… and Profile… in the avatar menu arrive with shell's AvatarButton (menu bar and ⌘K have them)"],
                 issues: ["The tone preview's on-device rewrite and Say it's model fallback are untested against the real model: their checks are unit-tested with canned replies"],
                 brd: ["FR-SET-01", "FR-SET-02", "FR-SET-03", "FR-SET-04", "FR-SET-05"])
         case .onboardingWelcome:

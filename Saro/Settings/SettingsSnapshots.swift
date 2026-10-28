@@ -32,6 +32,11 @@ enum SettingsSnapshots {
                 SayItBar.propose = "remind me at half past nine and bigger text, be more direct"
                 host(nil)
             }),
+            // Words that match no setting: the example chips, once the on-device model, where ready, finds nothing either.
+            ("settings-sayit-none", {
+                SayItBar.propose = "zqxv"
+                host(nil)
+            }),
             ("settings-talk", { host(.talk) }),
             ("settings-rhythm", {
                 RhythmSection.sampleFirst = true
@@ -68,6 +73,12 @@ enum SettingsSnapshots {
                 model.showNoticed = true
             }),
             ("text150-letter", { model.showLetter = true }),
+            // Saro's own Reduce transparency: the search pill, the spine and the scrims go solid.
+            ("solid-canvas", {
+                model.showLetter = false
+                prefs.textScale = 1
+                prefs.reduceTransparency = true
+            }),
         ]
     }
 
