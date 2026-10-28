@@ -77,7 +77,9 @@ public actor SaroAI {
     }
 
     public nonisolated var variant: String { base.variant.displayName }
-    public nonisolated var contextSize: Int { base.contextSize }
+    /// The model can report 0 while it is busy or still loading; budgeting against 0 would mark every entry too long,
+    /// and that is never retried (§11.5). 4096 is the smallest context the on-device model has shipped with.
+    public nonisolated var contextSize: Int { base.contextSize > 0 ? base.contextSize : 4096 }
 
     /// Loads the model ahead of a call (recorder open, inspector shown). The session is kept so it isn't torn down mid-warm.
     public func prewarm() {
