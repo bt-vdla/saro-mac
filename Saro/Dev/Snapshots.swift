@@ -78,6 +78,14 @@ enum Snapshots {
                     paletteActions = true
                     model.searchOpen = true
                 }),
+                // A day not yet loaded as it loads, then as it couldn't be read, on its own ground: the canvas's own load
+                // is too quick to catch.
+                ("loading", {
+                    model.day = LocalDay.adding(-2, to: LocalDay.today())
+                    p.contentView = NSHostingView(rootView: DayState(day: model.day, empty: true, width: 1320)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Tok.bg).environment(model))
+                }),
+                ("loaderror", { model.loadFailed = true }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
             ]
