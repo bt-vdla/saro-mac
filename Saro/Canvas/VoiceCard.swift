@@ -16,6 +16,8 @@ struct VoiceFace: View {
     var selected = false
     var open = false
     @State private var player: PlayerModel?
+    /// Loaded with the card, so the panel opens with its transcript and the summary test sees it.
+    @State private var sentences: [TimedSentence] = []
 
     private static let settle = AnyTransition.asymmetric(
         insertion: .modifier(active: Fade(opacity: 0.6), identity: Fade(opacity: 1)),
@@ -24,7 +26,7 @@ struct VoiceFace: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if open {
-                VoicePanel(entry: entry, player: player, selected: selected).transition(Self.settle)
+                VoicePanel(entry: entry, player: player, sentences: sentences, selected: selected).transition(Self.settle)
             } else {
                 collapsed.transition(Self.settle)
             }
@@ -42,6 +44,10 @@ struct VoiceFace: View {
             player?.player.play()
         }
         .onDisappear { player?.stop() }
+        .task(id: entry.processingStatus) {
+            guard let id = entry.mediaId, let words = try? await model.ledger.transcript(mediaId: id) else { return }
+            sentences = timedSentences(words)
+        }
     }
 
     /// The orb's spot and a "title · time · duration" pill that hugs its words; the selection ring hugs both.
@@ -83,8 +89,8 @@ private struct VoicePanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let entry: Entry
     let player: PlayerModel?
+    let sentences: [TimedSentence]
     let selected: Bool
-    @State private var sentences: [TimedSentence] = []
     @State private var contentHeight: CGFloat = 0
     @State private var closeHover = false
 
@@ -114,10 +120,6 @@ private struct VoicePanel: View {
         .overlay(alignment: .topTrailing) { close.padding(16) }
         .overlay {
             if selected { RoundedRectangle(cornerRadius: Radius.sheet + 4).strokeBorder(Tok.sage.opacity(0.6), lineWidth: 2).padding(-4) }
-        }
-        .task(id: entry.processingStatus) {
-            guard let id = entry.mediaId, let words = try? await model.ledger.transcript(mediaId: id) else { return }
-            sentences = timedSentences(words)
         }
     }
 
