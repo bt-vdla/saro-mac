@@ -83,7 +83,7 @@ private extension EntryKind {
     }
 }
 
-/// ⌘K: search every entry and run commands. Keyboard all the way: ↑↓ move, ↵ runs, ⌘↵ goes to the row's day,
+/// ⌘K: search every entry and run commands. Keyboard all the way: ↑↓ move, ↵ runs, ⌘↵ replays the row's day,
 /// ⌘P (or "moments ", or a type and Tab) scopes, Esc steps back through the query and scope, then closes.
 struct SearchPalette: View {
     @Binding var isPresented: Bool
@@ -105,6 +105,9 @@ struct SearchPalette: View {
     private static let commands: [PaletteCommand] = {
         var all = [
             PaletteCommand(id: "today", title: "Today", symbol: "sun.max", keywords: "go now day home", shortcut: "⌘T") { $0.goToday() },
+            PaletteCommand(id: "replay", title: "Replay today", symbol: "clock.arrow.circlepath", keywords: "play timelapse rewind history") {
+                $0.requestReplay(LocalDay.today())
+            },
             PaletteCommand(id: "moment", title: "Record a moment", symbol: "video", keywords: "video camera capture new", shortcut: "⌘N") {
                 $0.pane = .day
                 $0.recorderKind = .moment
@@ -345,9 +348,9 @@ struct SearchPalette: View {
             Spacer()
             if let current {
                 hint(primary(current), "↵")
-                if case .entry = current {
+                if replays(current) {
                     Tok.border.frame(width: 1, height: 16)
-                    hint("Go to day", "⌘↵")
+                    hint("Replay", "⌘↵")
                 }
             }
         }
@@ -485,11 +488,21 @@ struct SearchPalette: View {
         }
     }
 
-    /// ⌘↵: an entry's day, or what ↵ does for anything else.
-    private func goToDay(_ row: Row) {
-        guard case .entry(let h) = row else { return run(row) }
+    /// ⌘↵ replays an entry's day or a day; anything else runs as ↵ would.
+    private func replay(_ row: Row) {
+        switch row {
+        case .entry(let h): model.requestReplay(h.localDay)
+        case .day(let d): model.requestReplay(d)
+        default: return run(row)
+        }
         isPresented = false
-        model.go(to: h.localDay)
+    }
+
+    private func replays(_ row: Row) -> Bool {
+        switch row {
+        case .entry, .day: true
+        default: false
+        }
     }
 
     /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to load.
@@ -526,7 +539,7 @@ struct SearchPalette: View {
         case 125: move(1)
         case 126: move(-1)
         case 36, 76:
-            if !e.isARepeat, let current { mods.contains(.command) ? goToDay(current) : run(current) }
+            if !e.isARepeat, let current { mods.contains(.command) ? replay(current) : run(current) }
         case 53:
             if !query.isEmpty { query = "" } else if scope != nil { scope = nil } else { isPresented = false }
         case 48:
