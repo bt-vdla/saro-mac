@@ -544,6 +544,7 @@ private struct ReflectFurther: View {
     @State private var ask = Ask.idle
     @State private var drafts: [String: String] = [:]
     @State private var instant = false
+    @FocusState private var answering: String?
 
     private var open: ReflectionTurn? { turns.last { $0.answer == nil } }
     private var heldPage: Bool { model.verdicts[entry.id]?.verdict == "safety_hold" }
@@ -614,6 +615,7 @@ private struct ReflectFurther: View {
                     .font(Typo.ui(16)).lineSpacing(6)
                     .lineLimit(1...8)
                     .saroWritingTools()
+                    .focused($answering, equals: turn.id)
                     .onSubmit { Task { await answer(turn, drafts[turn.id] ?? "") } }
             }
         }
@@ -654,6 +656,7 @@ private struct ReflectFurther: View {
                 turns.append(turn)
                 ask = .idle
             }
+            answering = turn.id
         } catch {
             withAnimation(Motion.fade) { ask = .failed }
         }
