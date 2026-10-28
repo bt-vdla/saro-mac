@@ -39,13 +39,21 @@ extension AppModel {
     /// User words outrank AI (DR-04). A held or unchecked entry never shows an AI title.
     func title(for e: Entry) -> String {
         if let t = e.titleUser, !t.isEmpty { return t }
+        if e.kind == .still { return caption(for: e) ?? e.kind.noun }
         if e.kind == .reflection, let first = e.body?.split(separator: "\n").first, !first.isEmpty, (e.body?.contains("\n") ?? false) {
             return String(first.prefix(80))
         }
         // A held day shows no AI text at all (SR-13), titles included.
         if verdicts[e.id]?.verdict == "clear", !isDayHeld, let t = annotations[e.id]?.title, let first = t.first { return first.uppercased() + t.dropFirst() }
-        if e.kind == .still, let c = e.captionUser, !c.isEmpty { return c }
         return e.kind.noun
+    }
+
+    /// A still's caption (ImageStillCard.tsx): the user's, else Saro's description once checked; a held or unchecked
+    /// still, or any still on a held day (SR-13), shows only the user's.
+    func caption(for e: Entry) -> String? {
+        if let c = e.captionUser?.trimmingCharacters(in: .whitespacesAndNewlines), !c.isEmpty { return c }
+        guard !isDayHeld, let v = verdicts[e.id]?.verdict, v == "clear" || v == "unavailable_clear" else { return nil }
+        return annotations[e.id]?.caption
     }
 
     /// A short, honest status for the card footer, or nil when there's nothing to say.
@@ -165,6 +173,7 @@ struct CardFace: View {
                 .frame(width: size.width, height: CanvasMath.stillMediaHeight)
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: radius - 1, topTrailingRadius: radius - 1))
             CardMeta(entry: entry).padding(.horizontal, 14).frame(maxHeight: .infinity)
+                .animation(Motion.fade, value: model.caption(for: entry))
         }
         .frame(width: size.width, height: size.height)
         .cardSurface(radius: radius, tint: nil, hover: hover)
