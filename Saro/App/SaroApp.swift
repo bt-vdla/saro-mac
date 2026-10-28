@@ -99,6 +99,18 @@ struct SaroCommands: Commands {
             Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
             Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
             Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
+            Divider()
+            Button("What Saro Noticed") {
+                model.pane = .day
+                model.insight = model.insight == .panel ? .spine : .panel
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            Button("Evening Letter") {
+                model.pane = .day
+                model.insight = model.insight == .letter ? .spine : .letter
+            }
+            .keyboardShortcut("l", modifiers: [.command, .option])
+            Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") {

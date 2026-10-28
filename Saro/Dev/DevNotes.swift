@@ -125,22 +125,28 @@ struct DevNotes {
             DevNotes(
                 name: "What Saro noticed",
                 does: "Saro's reading of the day, made on this Mac from per-entry readings (title, summary, mood, quotes by index), only for entries the safety gate cleared.",
-                built: ["The 64 pt spine on the right (mood dot, letter mark); click or ⌥⌘I opens the 360 pt panel; Esc folds it",
-                        "Per-entry reading on the guardrail ladder (permissive JSON, then guided, then heuristic)",
-                        "Day reading by map-reduce over stored readings", "Four states: clear, technical hold, safety hold, model unavailable"],
-                stubbed: ["Adjust the day's mood and answer the daily question (FR-REF-05)", "Refresh narrative or mood (FR-REF-11)"],
-                issues: ["The narrative eval gate (D-13) isn't built: a model narrative shows if it passes the drift check",
-                         "The day re-reads only when its inputs change (input hash); a ready day without a reading reads when this panel opens",
-                         "No re-gate yet when Apple Intelligence becomes available after being off"],
+                built: ["The spine: glyphs, up to three commitment marks and +N, the dashed carry ring, a loading shimmer, the empty-day tip, a 44 pt fold",
+                        "⌥⌘I, Esc and ⌘K are instant, the pointer springs; the evening arrival eases in (0.7 s)",
+                        "Last-inferred line, the D-13 template narrative (titles, counts, 14-day recurrence), single-open sections",
+                        "Adjust emotion (locked, gated note), the daily question with a gated answer and a lock, refresh insights / narrative / question",
+                        "Copy summary, narrative, emotion tag and question as Markdown", "My commitments with carry-over, let go, undo (FR-REF-12)",
+                        "First week: a first pattern, the day 4–5 check-in, the day-6 weekly letter (FR-REF-10)",
+                        "Tone, name and focus in the model's instructions (entry-2, day-2)"],
+                stubbed: ["Add commitments to the canvas (needs a non-entry canvas item)"],
+                issues: ["The narrative eval gate (D-13) isn't built: a model narrative stands in for the subtitle if it passes the drift check",
+                         "The 14-day recurrence is read with the day; an older day's change shows at the next re-read"],
                 brd: ["FR-REF-01", "FR-REF-02", "FR-REF-03", "FR-REF-04", "FR-SAF-06", "SR-13", "DR-07"])
         case .letter:
             DevNotes(
                 name: "Evening letter",
                 does: "The day's letter, typeset from the verified day reading with links back to the quotes. No model-written prose (B-11).",
-                built: ["The insight surface grows from the spine to the panel to the letter on the surface spring", "Typeset in Newsreader from the day reading",
-                        "Quotes link back to their entry", "Keep (stored as a 'letter' snapshot)"],
-                stubbed: ["Rewrite and Write back (FR-REF-08)", "Close the day early and the letter notification (FR-REF-09)"],
-                issues: [],
+                built: ["Header with the eyebrow, date and close; 'Dear {name},' isolated, or 'Hello,'",
+                        "Up to three paragraphs from the narrative; quotes fly into their entry; 'In your words' lists only unplaced quotes",
+                        "Write back (the daily question's answer), Keep (the kept copy reads on return), Write a new letter",
+                        "Available after the letter time (Close the day opens it early), unread dot, opened record in the ledger",
+                        "Evening arrival when the window is key and the canvas idle; a content-free notification at the letter time"],
+                stubbed: [],
+                issues: ["The quote's flight starts from its paragraph's frame, not the quote's own run"],
                 brd: ["FR-REF-08", "FR-REF-09", "SR-13"])
         case .safetyCard:
             DevNotes(

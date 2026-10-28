@@ -160,6 +160,15 @@ struct SearchPalette: View {
                 $0.pane = .day
                 $0.showLetter = true
             },
+            PaletteCommand(id: "reread", title: "Read the day again", symbol: "arrow.clockwise", keywords: "refresh insights update reading noticed") { m in
+                m.pane = .day
+                Task { await m.reflection.refreshInsights() }
+            },
+            PaletteCommand(id: "answer", title: "Answer today's question", symbol: "book", keywords: "question wonder reply write back thought") { m in
+                if !m.isToday { m.goToday() }
+                m.insight = .panel
+                m.reflection.answerRequested = true
+            },
         ]
         #if DOGFOOD
         all.append(PaletteCommand(id: "decisions", title: "Decisions", symbol: "checklist", keywords: "dev log choices") { $0.pane = .decisions })
