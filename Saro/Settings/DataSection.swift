@@ -182,7 +182,7 @@ struct DataSection: View {
     }
 }
 
-func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
+private func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
 
 /// One segmented bar by kind, each segment at least 3 pt so a small kind still shows.
 private struct StorageBar: View {

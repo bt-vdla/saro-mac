@@ -37,6 +37,15 @@ struct SettingsWindow: View {
     @AccessibilityFocusState private var heading: SettingsSection?
     @Namespace private var rail
 
+    private static let sayItRequest = Notification.Name("SaroSettingsSayIt")
+
+    /// ⌘K → Change a setting in words: Settings, with the cursor in Say it.
+    static func askInWords() {
+        WindowActions.openSettings()
+        // ponytail: a window opened just now isn't listening yet; a beat later it is.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NotificationCenter.default.post(name: sayItRequest, object: nil) }
+    }
+
     /// Where a jump lands a section's top, below the window's top edge.
     private static let mark: CGFloat = 24
     private var wide: Bool { width >= 780 }
@@ -83,6 +92,7 @@ struct SettingsWindow: View {
         .background(WindowReader(window: $window))
         .onExitCommand { window?.performClose(nil) }
         .onAppear(perform: watchSlash)
+        .onReceive(NotificationCenter.default.publisher(for: Self.sayItRequest)) { _ in sayIt = true }
         .onDisappear {
             if let keys { NSEvent.removeMonitor(keys) }
             keys = nil
@@ -98,21 +108,21 @@ struct SettingsWindow: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 SayItBar(focused: $sayIt) { section, instant in jump(to: section, proxy, instant: instant) }
-                    .padding(.bottom, 8)
-                ForEach(SettingsSection.allCases) { s in
-                    section(s)
-                        .accessibilityFocused($heading, equals: s)
-                        // The jump target sits a mark above the card, so a jump leaves room above it.
-                        .overlay(alignment: .top) {
-                            Color.clear.frame(height: 1).alignmentGuide(.top) { _ in Self.mark }.id(s).accessibilityHidden(true)
-                        }
-                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("settings")).minY } action: {
-                            tops.y[s] = $0
-                            if tops.pinned == s, Date.now < tops.holdUntil, abs($0 - Self.mark) > 2 { proxy.scrollTo(s, anchor: .top) }
-                            spy()
-                        }
-                        // The last section is tall enough to scroll up to the mark, as every other one can.
-                        .frame(minHeight: s == .data ? max(0, viewport - Self.mark - 72) : nil, alignment: .top)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(SettingsSection.allCases) { s in
+                        section(s)
+                            .accessibilityFocused($heading, equals: s)
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("settings")).minY } action: {
+                                tops.y[s] = $0
+                                if tops.pinned == s, Date.now < tops.holdUntil, abs($0 - Self.mark) > 2 { proxy.scrollTo(s, anchor: .top) }
+                                spy()
+                            }
+                            // The last section is tall enough to scroll up to the mark, as every other one can.
+                            .frame(minHeight: s == .data ? max(0, viewport - Self.mark - 72) : nil, alignment: .top)
+                            // The jump target includes the gap above the card, so a jump lands the card at the mark.
+                            .padding(.top, Self.mark)
+                            .id(s)
+                    }
                 }
             }
             .frame(maxWidth: 680, alignment: .leading)

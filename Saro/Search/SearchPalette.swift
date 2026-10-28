@@ -180,6 +180,9 @@ struct SearchPalette: View {
             PaletteCommand(id: "trash", title: "Trash", symbol: "trash", keywords: "deleted bin restore") { $0.pane = .trash },
             PaletteCommand(id: "settings", title: "Settings…", symbol: "gearshape", keywords: "preferences tone reminder privacy text size say it",
                            shortcut: "⌘,") { _ in WindowActions.openSettings() },
+            PaletteCommand(id: "sayit", title: "Change a setting in words…", symbol: "text.bubble", keywords: "say it settings remind bigger text tone") { _ in
+                SettingsWindow.askInWords()
+            },
             PaletteCommand(id: "profile", title: "Profile…", symbol: "person.crop.circle", keywords: "name called you account") { _ in
                 PrefsStore.shared.settingsSection = .you
                 WindowActions.openSettings()

@@ -78,13 +78,15 @@ extension TonePreview {
     }
 
     /// A model reply's four tones, each kept only when it's there, passes the output gate and the drift check against
-    /// the sentence, and (contemplative) ends on a question; otherwise the rules' version.
+    /// the sentence, actually changes it (but neutral), and (contemplative) ends on a question; otherwise the rules'.
     static func accept(_ reply: String, sentence: String) -> [Tone: String] {
         var out = ruled(sentence)
         guard !SafetyGate.phraseHit(reply), let json = Ladder.jsonObject(in: reply),
               let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { return out }
+        func letters(_ s: String) -> String { s.lowercased().filter(\.isLetter) }
         for tone in Tone.allCases {
             guard let line = (object[tone.rawValue] as? String)?.jsTrim, !line.isEmpty, line.count <= 240,
+                  tone == .neutral || letters(line) != letters(sentence),
                   Heuristics.driftOK(generated: line, source: sentence), tone != .contemplative || line.hasSuffix("?") else { continue }
             out[tone] = line
         }

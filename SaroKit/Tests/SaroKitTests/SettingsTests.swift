@@ -610,6 +610,9 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(tones[.direct] == TonePreview.rewrite(sentence, tone: .direct))
         #expect(tones[.contemplative] == TonePreview.rewrite(sentence, tone: .contemplative))
         #expect(TonePreview.accept("not json", sentence: sentence) == TonePreview.ruled(sentence))
+        // A tone that comes back as the sentence unchanged isn't that tone.
+        #expect(TonePreview.accept(#"{"gentle": "You slept better on the nights you ran"}"#, sentence: sentence)[.gentle]
+            == TonePreview.rewrite(sentence, tone: .gentle))
         #expect(TonePreview.accept(#"{"gentle": "I want to kill myself"}"#, sentence: sentence) == TonePreview.ruled(sentence))
     }
 
