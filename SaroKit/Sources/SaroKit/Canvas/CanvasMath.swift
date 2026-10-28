@@ -182,6 +182,9 @@ public enum CanvasMath {
         (1 - min(max((v - 0.05) / 0.5, 0), 1), min(max(v / 0.35, 0), 1))
     }
 
+    /// A flight into something that stays as it is (a card into the Undo toast) is absorbed from 30% to 90% of the way.
+    public static func absorbed(_ v: Double) -> Double { 1 - min(max((v - 0.3) / 0.6, 0), 1) }
+
     /// Deterministic ±12 pt jitter from an id.
     static func jitter(_ id: String) -> CGPoint {
         let h = id.utf8.reduce(UInt64(1469598103934665603)) { ($0 ^ UInt64($1)) &* 1099511628211 }

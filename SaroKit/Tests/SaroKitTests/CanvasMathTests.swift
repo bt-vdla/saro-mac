@@ -89,3 +89,11 @@ import Testing
     #expect(CanvasMath.flightFades(0.55).leaving == 0)
     #expect(CanvasMath.flightFades(1) == (0, 1))
 }
+
+@Test func trashedCardIsAbsorbedByTheToast() {
+    #expect(CanvasMath.absorbed(0) == 1)
+    #expect(CanvasMath.absorbed(0.3) == 1)
+    #expect(abs(CanvasMath.absorbed(0.6) - 0.5) < 1e-12)
+    #expect(CanvasMath.absorbed(0.9) == 0)
+    #expect(CanvasMath.absorbed(1) == 0)
+}
