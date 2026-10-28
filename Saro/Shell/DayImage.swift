@@ -59,12 +59,12 @@ enum DayImage {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let ctx = CGContext(data: nil, width: px.width, height: px.height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        /// Draws a view with its top-left at `origin`, in the stage's points.
-        func draw(_ view: some View, at origin: CGPoint) {
-            let r = ImageRenderer(content: view.environment(model).environment(\.colorScheme, dark ? .dark : .light))
+        /// Draws a view with its top-left at `origin`, in the stage's points, with `reach` around it for its shadow.
+        func draw(_ view: some View, at origin: CGPoint, reach: CGFloat = 0) {
+            let r = ImageRenderer(content: view.padding(reach).environment(model).environment(\.colorScheme, dark ? .dark : .light))
             r.scale = scale
             guard let image = r.cgImage else { return }
-            ctx.draw(image, in: CGRect(x: origin.x * scale, y: CGFloat(px.height) - origin.y * scale - CGFloat(image.height),
+            ctx.draw(image, in: CGRect(x: (origin.x - reach) * scale, y: CGFloat(px.height) - (origin.y - reach) * scale - CGFloat(image.height),
                                        width: CGFloat(image.width), height: CGFloat(image.height)))
         }
         let hour = model.isToday ? Daylight.shared.hour(at: .now) : 13
@@ -76,7 +76,9 @@ enum DayImage {
             }
             .frame(width: c.size.width, height: c.size.height, alignment: .topLeading)
             .allowsHitTesting(false),
-                 at: CGPoint(x: c.center.x - c.size.width / 2 - b.minX + pad, y: c.center.y - c.size.height / 2 - b.minY + pad))
+                 at: CGPoint(x: c.center.x - c.size.width / 2 - b.minX + pad, y: c.center.y - c.size.height / 2 - b.minY + pad),
+                 // The panel shadow (28 blur, 20 down), a stack's ghost layers and the orb's 30 + 18 all fall inside this.
+                 reach: 64)
             // The main actor breathes between cards, so the 150 ms HUD can come up while a big day draws.
             try? await Task.sleep(for: .milliseconds(1))
         }
