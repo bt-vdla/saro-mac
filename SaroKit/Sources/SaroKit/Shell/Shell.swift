@@ -223,6 +223,8 @@ public struct Shortcut: Sendable, Hashable, Identifiable {
     public static let today = Shortcut(.days, "Today", "⌘T")
     public static let previousDay = Shortcut(.days, "Previous day", "⌘[")
     public static let nextDay = Shortcut(.days, "Next day", "⌘]")
+    public static let goToDate = Shortcut(.days, "Go to a date", "⌥⌘G")
+    public static let timeLens = Shortcut(.days, "Time lens", "⌥⌘T")
     public static let showDays = Shortcut(.days, "Show days", "⌃⌘S")
     public static let noticed = Shortcut(.days, "What Saro noticed", "⌥⌘I")
     public static let letter = Shortcut(.days, "Evening letter", "⌥⌘L")
@@ -244,7 +246,7 @@ public struct Shortcut: Sendable, Hashable, Identifiable {
 
     public static let all: [Shortcut] = [
         recordMoment, voiceNote, write, captureAnywhere, pasteStill,
-        today, previousDay, nextDay, showDays, noticed, letter,
+        today, previousDay, nextDay, goToDate, timeLens, showDays, noticed, letter,
         Shortcut(.days, "Step through a replay", "← →", scope: "replay"),
         Shortcut(.days, "Play or pause a replay", "Space", scope: "replay"),
         fitDay, zoomIn, zoomOut,

@@ -17,6 +17,9 @@ struct RootView: View {
                                                               set: { model.sidebarVisible = $0 != .detailOnly })) {
                     Sidebar()
                         .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
+                        // The time lens is modal: nothing outside it takes a click or the focus, so Tab stays inside it.
+                        .disabled(model.lens != nil)
+                        .toolbar(removing: model.lens != nil ? .sidebarToggle : nil)
                 } detail: {
                     Group {
                         switch model.pane {

@@ -31,6 +31,7 @@ enum Snapshots {
         p.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
             await seedReflection(model)
+            await seedHistory(model)
             try? await Task.sleep(for: .seconds(UserDefaults.standard.double(forKey: "SaroSnapshotDelay").clamped(to: 5...120)))
             let steps: [(String, @MainActor () -> Void)] = [
                 ("canvas", { model.selection = [] }),
@@ -149,6 +150,45 @@ enum Snapshots {
                     model.memory.query = ""
                     if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
                 }),
+                // Navigation: the time lens at each level, the date picker, the palette's start and an empty past day.
+                ("nav-lens-week", {
+                    model.pane = .day
+                    (model.openEntryID, model.insight) = (nil, .spine)
+                    model.openLens(level: .week, opener: .key)
+                }),
+                ("nav-lens-month", { model.lens?.go(to: .month, how: .instant) }),
+                ("nav-lens-year", { model.lens?.go(to: .year, how: .instant) }),
+                ("nav-lens-focus", {
+                    model.lens?.go(to: .month, how: .instant)
+                    model.lens?.move(.pageUp)
+                }),
+                ("nav-datepicker", {
+                    model.lens?.close(how: .instant)
+                    model.datePickerOpen = true
+                }),
+                ("nav-palette", {
+                    model.datePickerOpen = false
+                    model.searchOpen = true
+                }),
+                ("nav-empty-past", {
+                    model.searchOpen = false
+                    model.go(to: LocalDay.adding(-200, to: LocalDay.today()))
+                }),
+                ("nav-today", { model.goToday() }),
+                // Opened by a pinch: the day has flown into its tile; then the X flies back out and the day is refitted.
+                ("nav-lens-pinch", { model.openLens(level: .week, opener: .pinch) }),
+                ("nav-lens-back", { model.lens?.close(how: .animated) }),
+                // The day as narrow as the smallest window leaves it beside the sidebar: the bar takes two rows, and a toast
+                // still sits 8 pt above it.
+                ("nav-bar-narrow", {
+                    p.setContentSize(NSSize(width: 570, height: 860))
+                    // Set, not shown: a shown toast can time out before a loaded machine captures it.
+                    model.toasts = [Toast("Saved Yesterday as an image")]
+                }),
+                ("nav-bar-wide", {
+                    p.setContentSize(NSSize(width: 1320, height: 860))
+                    model.toasts = []
+                }),
                 // ⌘K's Recent list on today.
                 ("search", {
                     model.goToday()
@@ -249,6 +289,30 @@ enum Snapshots {
             NSApp.terminate(nil)
         }
     }
+}
+
+/// Synthetic writings on a scatter of earlier days (none in the last four, which other states show), so the time lens has a
+/// history to draw (SR-28: synthetic text only). The on-device model can't gate this many inside the snapshot delay, so
+/// each carries a clear verdict for its own text and its day the person's own locked mood, which makes the day ready and
+/// lets the tiles show their mood fills.
+@MainActor private func seedHistory(_ model: AppModel) async {
+    let lines = ["Walked by the river after work.", "Slow morning, good coffee.", "Long call with an old friend.",
+                 "The team shipped the release.", "Rain all day; read on the sofa.", "Cooked dinner for everyone."]
+    let moods: [Mood] = [.calm, .grateful, .reflective, .energised, .tender, .anxious, .inspired]
+    for (i, back) in [5, 6, 8, 9, 12, 15, 16, 20, 23, 27, 31, 34, 40, 47, 55, 62, 70, 88, 120, 160].enumerated() {
+        let day = LocalDay.adding(-back, to: LocalDay.today())
+        let at = (LocalDay.date(day) ?? .now).addingTimeInterval(Double(i % 5) * 3600 + 9 * 3600)
+        let writing = { (line: String, at: Date) in Entry(kind: .reflection, body: line, capturedAt: at, localDay: day, processingStatus: ProcessingStatus.done) }
+        var entries = [writing(lines[i % lines.count], at)]
+        if i % 3 == 0 { entries.append(writing(lines[(i + 2) % lines.count], at.addingTimeInterval(5400))) }
+        for e in entries {
+            try? await model.ledger.insertEntry(e)
+            try? await model.ledger.insertVerdict(SafetyVerdictRow(entryId: e.id, textSha256: sha256(e.body ?? ""), safetyVersion: SafetyGate.version,
+                                                                  layer: 1, verdict: "clear", reasonCode: "snapshot"))
+        }
+        try? await model.ledger.setUserMood(day: day, label: moods[i % moods.count], note: nil, verdict: nil)
+    }
+    await model.reload()
 }
 
 /// The letter is due at once and the first week started two days ago; yesterday left two commitments open, and the day

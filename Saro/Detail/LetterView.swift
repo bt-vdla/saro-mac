@@ -43,8 +43,7 @@ struct LetterView: View {
                 .padding(.horizontal, 36).padding(.top, 10).padding(.bottom, 32)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .focusable()
-            .focusEffectDisabled()
+            .keyScrolls()
             .focused($focus, equals: .letter)
             if let letter { footer(letter) }
         }

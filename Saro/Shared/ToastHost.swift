@@ -25,9 +25,9 @@ struct ToastHost: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 8 pt above the bar (20 pt off the bottom, 64 tall), and above the voice pill while it's up.
+        // 8 pt above the bar, one row or two, and above the voice pill while it's up.
         // ponytail: the pill's resting height (98) as a constant; a preference from the recorder if it starts to vary.
-        .padding(.leading, 24).padding(.bottom, 92 + (model.recorderKind == .voice ? 106 : 0))
+        .padding(.leading, 24).padding(.bottom, model.barClear + 8 + (model.recorderKind == .voice ? 106 : 0))
         .animation(Motion.pick(Motion.easeOut(0.24), reduce: reduceMotion), value: model.toasts.map(\.id))
         .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.recorderKind == .voice)
         .onChange(of: model.toasts.map(\.id)) { _, ids in frames = frames.filter { ids.contains($0.key) } }

@@ -29,7 +29,8 @@ final class AppModel {
     let pipeline: Pipeline
     /// What Saro knows (Saro/Memory).
     let memory: MemoryModel
-    var pane: Pane = .day
+    /// Leaving the day closes what sits over it: the lens and the date picker are the day's own.
+    var pane: Pane = .day { didSet { if pane != .day { (lens, datePickerOpen) = (nil, false) } } }
     /// Another day ends a replay where it is.
     var day: String = LocalDay.today() { didSet { if replay.day.map({ $0 != day }) ?? false { replay.exit(animated: false) } } }
     let replay = DayReplay()
@@ -75,6 +76,24 @@ final class AppModel {
     enum CameraCommand: Equatable { case fit(UUID), zoom(CGFloat, UUID), focus(String, UUID) }
     var camera: CameraCommand?
     var devNotesVisible = false
+    /// The time lens, while it is open (Saro/TimeLens).
+    var lens: LensState?
+    /// The date picker above the bar.
+    var datePickerOpen = false
+    /// The world rect the day's camera shows inside the chrome, published by the stage; new cards land in it.
+    var visibleWorld: CGRect?
+    var stageSize = CGSize(width: 1320, height: 860)
+    /// Where the day view sits in the window, published by it, so ⌘K over the whole window can fly a row into it.
+    var dayOrigin: CGPoint = .zero
+    /// How far the bottom bar reaches up from the window's bottom (one row or two), published by the day view; the
+    /// voice pill, toasts and the spine keep clear of it.
+    var barClear: CGFloat = 84
+    /// Days loaded ahead of a click (a hovered chevron, a picker day, the days either side), newest last.
+    private var neighbours: [(day: String, data: DayData)] = []
+    /// The day a change is heading for while its rows load, so quick presses count on from it instead of repeating it.
+    private var heading: String?
+    /// Bumped by every reload, so a day read ahead before a write can't land in the cache after it.
+    private var neighboursVersion = 0
     var screen: ScreenID = .canvas
     /// Non-nil while the in-window recorder is up.
     var recorderKind: EntryKind? {
@@ -142,12 +161,15 @@ final class AppModel {
         }
         for (c, name) in [(center, Notification.Name.NSCalendarDayChanged), (center, NSApplication.didBecomeActiveNotification),
                           (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)] {
-            c.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.catchUp() } }
+            let gently = name == .NSCalendarDayChanged
+            c.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.catchUp(gently: gently) }
+            }
         }
     }
 
     /// Midnight, wake or activation: the day on screen follows today, and entries that waited for the model re-gate.
-    private func catchUp() {
+    private func catchUp(gently: Bool = false) {
         // The day changed under a running Saro: Trash's 30 days and the daily snapshot follow it.
         if LocalDay.today() != today {
             Task {
@@ -155,19 +177,40 @@ final class AppModel {
                 _ = try? await ledger.dailySnapshot(now: .now)
             }
         }
-        rollOver()
+        if gently { followMidnight() } else { rollOver() }
         Task { await regateWaiting() }
     }
 
     /// When the day on screen was today, it moves on to the new today, so a morning capture isn't filed (as backdated)
     /// under yesterday. An open entry stays open; the day moves on when it closes.
-    private func rollOver() {
+    private func rollOver(animated: Bool = false) {
         let now = LocalDay.today()
         guard now != today, openEntryID == nil else { return }
         if day == today {
-            if pane == .day { goToday() } else { day = now; Task { await reload() } }
+            if pane == .day { go(to: now, animation: animated ? Motion.pick(Motion.surface, reduce: PrefsStore.shared.reduceMotionEffective) : nil) }
+            else { day = now; Task { await reload() } }
         }
         today = now
+    }
+
+    /// At midnight today follows the clock with a gentle slide, once the person has left the pointer and keys alone for
+    /// 2 s with the window on screen (DateContext.tsx); coming back to the window switches at once.
+    private func followMidnight() {
+        Task {
+            while LocalDay.today() != today {
+                let idle = [CGEventType.mouseMoved, .keyDown, .leftMouseDown, .scrollWheel]
+                    .map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 0
+                let visible = NSApp.windows.contains { $0.isVisible && $0.occlusionState.contains(.visible) && $0.canBecomeMain }
+                if idle >= 2, visible { return rollOver(animated: true) }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    /// Opens the time lens on the day on screen (FR: the lens). A key or the menu opens it in place; a pinch flies.
+    func openLens(level: LensMath.Level = .week, opener: LensState.Opener = .key) {
+        guard lens == nil, pane == .day else { return }
+        lens = LensState(model: self, level: level, opener: opener)
     }
 
     /// Entries an older gate checked go back through this one (SR-18), entries gated while Apple Intelligence was off
@@ -287,6 +330,9 @@ final class AppModel {
     func reload() async {
         let target = day
         let edits = layoutEdits
+        // Something was written: a day read ahead may no longer be what the ledger says (a new hold hides its readings).
+        neighbours = []
+        neighboursVersion += 1
         do {
             days = try await ledger.days()
             var data = try await load(target)
@@ -319,35 +365,68 @@ final class AppModel {
         return out
     }
 
-    /// Switches day. Pointer-driven changes slide (the caller animates); keys switch instantly (the frequency rule).
+    /// Switches day. Pointer-driven changes slide (the caller animates); keys switch instantly (the frequency rule). A
+    /// day loaded ahead (armed) lands at once; the others land when their rows are read.
     func go(to day: String, animation: Animation? = nil) {
         // Counted even when it stays put: ⌘[ then ⌘T must cancel the ⌘[ still loading.
         navigation += 1
+        heading = nil
         guard day != self.day || pane != .day else { return }
         let target = day
         let ticket = navigation
+        heading = target
+        if let armed = neighbours.last(where: { $0.day == target })?.data { return land(target, armed, animation: animation) }
         Task {
             let data = try? await load(target)
             // A later day change won: drop this one so quick ⌘[ ⌘T can't land on the wrong day.
             guard ticket == navigation else { return }
-            withAnimation(animation) {
-                slideDirection = target > self.day ? 1 : -1
-                self.day = target
-                pane = .day
-                // The letter belongs to the day it was opened on.
-                if insight == .letter { insight = .spine }
-                openEntryID = nil
-                openStackID = nil
-                openVoiceID = nil
-                selection = []
-                // A day that couldn't be read mustn't show the day before's cards; the reload below says why.
-                apply(data ?? DayData())
-            }
-            await reload()
+            // A day that couldn't be read mustn't show the day before's cards; the reload below says why.
+            land(target, data ?? DayData(), animation: animation)
         }
     }
 
-    func slide(_ by: Int) { slide(to: LocalDay.adding(by, to: day)) }
+    private func land(_ target: String, _ data: DayData, animation: Animation?) {
+        heading = nil
+        withAnimation(animation) {
+            slideDirection = target > self.day ? 1 : -1
+            self.day = target
+            pane = .day
+            // The letter belongs to the day it was opened on.
+            if insight == .letter { insight = .spine }
+            openEntryID = nil
+            openStackID = nil
+            openVoiceID = nil
+            selection = []
+            apply(data)
+        }
+        let landed = target
+        Task {
+            await reload()
+            // Once a day lands and the app is idle, the days either side (and two back) are read and their pictures decoded.
+            try? await Task.sleep(for: .milliseconds(600))
+            guard self.day == landed else { return }
+            for d in [-1, 1, -2] { arm(LocalDay.adding(d, to: landed)) }
+        }
+    }
+
+    /// Reads a day ahead of a click and decodes its pictures, so the slide only has to move: a hovered chevron, a day in
+    /// the picker, the days either side of one that landed (daySlide.ts's armDay).
+    // ponytail: a small LRU instead of the web's 800 ms disarm; local rows are cheap to keep, and a reload drops them all.
+    func arm(_ target: String) {
+        guard target <= LocalDay.today(), target != day, !neighbours.contains(where: { $0.day == target }) else { return }
+        let version = neighboursVersion
+        Task {
+            guard let data = try? await load(target), version == neighboursVersion, !neighbours.contains(where: { $0.day == target }) else { return }
+            neighbours.append((target, data))
+            if neighbours.count > 6 { neighbours.removeFirst() }
+            for e in data.entries where e.kind == .moment || e.kind == .still {
+                guard let id = e.mediaId, let m = data.media[id], m.state == "ready" else { continue }
+                _ = await ThumbCache.image(for: ledger.url(for: m), kind: e.kind)
+            }
+        }
+    }
+
+    func slide(_ by: Int) { slide(to: LocalDay.adding(by, to: heading ?? day)) }
 
     func slide(to day: String) {
         guard day <= LocalDay.today() else {
@@ -379,9 +458,9 @@ final class AppModel {
     }
 
     func goToday() { go(to: LocalDay.today()) }
-    func goPrevious() { go(to: LocalDay.adding(-1, to: day)) }
+    func goPrevious() { go(to: LocalDay.adding(-1, to: heading ?? day)) }
     func goNext() {
-        let next = LocalDay.adding(1, to: day)
+        let next = LocalDay.adding(1, to: heading ?? day)
         if next <= LocalDay.today() { go(to: next) }
     }
 
@@ -421,6 +500,7 @@ final class AppModel {
         if let error, !exists { show(.failed("That recording couldn't be saved", error)) }
         await reload()
         guard exists else { return }
+        Task { if let m = try? await ledger.media(ticket.mediaId) { await Posters.ensure(m, in: ledger) } }
         // Don't hold the recorder (and the camera) open while the Speech prompt waits for an answer.
         Task {
             await Self.askForSpeechOnce()
@@ -625,7 +705,9 @@ final class AppModel {
 
     private func z(of item: CanvasItem) -> Int { item.entries.compactMap { layouts[$0.id]?.z }.max() ?? 0 }
 
-    /// Gives every entry without a layout row a free spot; turns of one recording session join one stack.
+    /// Gives every entry without a layout row a place; turns of one recording session join one stack. A day with none
+    /// yet is laid out as if by hand (dayLayout.ts); new cards on a laid-out day land in the visible area, a burst as one
+    /// block, else card by card at the free spot nearest the middle, else the first free spot in reading order.
     private func placeNewCards() async throws {
         let missing = entries.filter { layouts[$0.id] == nil }
         guard !missing.isEmpty else { return }
@@ -635,18 +717,70 @@ final class AppModel {
         }
         var top = layouts.values.map(\.z).max() ?? 0
         var added: [CardLayout] = []
+        var loose: [Entry] = []
         for e in missing {
             top += 1
             if let sid = e.sessionId, let mate = (Array(layouts.values) + added).first(where: { $0.stackId == sid }) {
-                added.append(CardLayout(entryId: e.id, x: mate.x, y: mate.y, z: top, stackId: sid))
-                continue
+                added.append(CardLayout(entryId: e.id, x: mate.x, y: mate.y, z: top, stackId: sid, userPlaced: mate.userPlaced))
+            } else {
+                added.append(CardLayout(entryId: e.id, x: 0, y: 0, z: top, stackId: e.sessionId))
+                loose.append(e)
             }
-            let c = CanvasMath.place(e.kind, id: e.id, avoiding: occupied)
-            occupied.append(CGRect(center: c, size: CanvasMath.size(e.kind)))
-            added.append(CardLayout(entryId: e.id, x: c.x, y: c.y, z: top, stackId: e.sessionId))
+        }
+        // A day with no cards yet opens at 100%: its visible area is the canvas inside the chrome (Camera.fit's frame).
+        let frame = Camera.frame(stageSize)
+        let visible = layouts.isEmpty ? frame : visibleWorld ?? frame
+        let sizes = loose.map { CanvasMath.size($0.kind) }
+        let centre = { (corner: CGPoint, size: CGSize) in CGPoint(x: corner.x + size.width / 2, y: corner.y + size.height / 2) }
+        var spots: [CGPoint]?
+        if layouts.isEmpty {
+            let items = zip(loose, sizes).map { DayLayout.Item(id: $0.id, kind: $0.kind, size: $1) }
+            let at = DayLayout.layoutDay(items, center: CGPoint(x: visible.midX, y: visible.midY), visible: visible.size)
+            spots = loose.map { at[$0.id] ?? .zero }
+        } else if loose.count > 1, let block = DayLayout.packBurst(sizes, in: visible, avoiding: occupied) {
+            spots = zip(block, sizes).map(centre)
+        }
+        for (i, e) in loose.enumerated() {
+            let size = sizes[i]
+            let free = DayLayout.freeSpot(size, in: visible, avoiding: occupied).map { centre($0, size) }
+            let c = spots?[i] ?? free ?? CanvasMath.place(e.kind, id: e.id, avoiding: occupied)
+            occupied.append(CGRect(center: c, size: size))
+            if let j = added.firstIndex(where: { $0.entryId == e.id }) { (added[j].x, added[j].y) = (c.x, c.y) }
+        }
+        // A recording's later turns sit on their first's place.
+        let placed = Set(loose.map(\.id))
+        for (j, l) in added.enumerated() where !placed.contains(l.entryId) {
+            if let first = added.first(where: { $0.stackId == l.stackId && placed.contains($0.entryId) }) { (added[j].x, added[j].y) = (first.x, first.y) }
         }
         try await ledger.setLayouts(added)
         for l in added { layouts[l.entryId] = l }
+    }
+
+    /// The window's width changed: the cards nobody moved follow the day's layout for the new visible area (B-002); the
+    /// ones moved by hand stay where they were put. Height alone changes nothing. A stack moves as one card.
+    func relayout(for visible: CGRect) {
+        let key = { (e: Entry) in self.layouts[e.id]?.stackId ?? e.id }
+        // A stack is hand-placed if any of its turns is: it is drawn where its top turn sits.
+        let moved = Set(entries.filter { layouts[$0.id]?.userPlaced ?? true }.map(key))
+        let auto = entries.filter { !moved.contains(key($0)) }
+        var cards: [String: [Entry]] = [:], order: [String] = []
+        for e in auto {
+            if cards[key(e)] == nil { order.append(key(e)) }
+            cards[key(e), default: []].append(e)
+        }
+        guard order.count > 1 else { return }
+        let items = order.compactMap { k in
+            cards[k].map { m in DayLayout.Item(id: k, kind: m[0].kind, size: m.count > 1 ? CanvasMath.stackSize : size(of: m[0])) }
+        }
+        let at = DayLayout.layoutDay(items, center: CGPoint(x: visible.midX, y: visible.midY), visible: visible.size)
+        var changed: [CardLayout] = []
+        for e in auto {
+            guard var l = layouts[e.id], let p = at[key(e)] else { continue }
+            (l.x, l.y) = (p.x, p.y)
+            layouts[e.id] = l
+            changed.append(l)
+        }
+        persist(changed)
     }
 
     /// Moves cards by a world-space delta and brings them to the front.
@@ -849,6 +983,7 @@ final class AppModel {
             try await saves.track(id) { [weak self, ledger, entry] in
                 if try await ledger.media(asset.id) == nil { try await ledger.insertMedia(asset) }
                 if try await ledger.entry(id) == nil { try await ledger.insertEntry(entry) }
+                Task { await Posters.ensure(asset, in: ledger) }
                 if let world {
                     try await ledger.setLayouts([CardLayout(entryId: id, x: world.x, y: world.y, z: z, userPlaced: true)])
                 }
