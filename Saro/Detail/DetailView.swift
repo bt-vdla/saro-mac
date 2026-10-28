@@ -9,35 +9,41 @@ struct DetailView: View {
     let entry: Entry
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider().overlay(Tok.border)
+        Group {
             switch entry.kind {
             case .moment, .voice: MediaDetail(entry: entry)
             case .reflection, .music: WritingEditor(entry: entry)
             case .still: StillDetail(entry: entry)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Tok.surface)
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Circle().fill(entry.kind.tint).frame(width: 8, height: 8)
-            Text(entry.kind.noun.uppercased()).font(Typo.mono(10.5)).foregroundStyle(Tok.ink2)
-            Text(entry.capturedAt.formatted(.dateTime.weekday(.wide).day().month().hour().minute()).uppercased())
-                .font(Typo.mono(10.5)).foregroundStyle(Tok.ink3)
-            if let n = entry.turnNumber, entry.sessionId != nil { Text("TURN \(n)").font(Typo.mono(10.5)).foregroundStyle(Tok.ink3) }
-            Spacer()
+        .overlay(alignment: .topTrailing) {
             Button { model.openEntryID = nil } label: {
-                Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 26, height: 26)
-                    .background(Tok.bg, in: .circle)
+                Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Tok.ink2)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: .circle)
+                    .background(Tok.surface.opacity(0.8), in: .circle)
             }
-            .buttonStyle(.plain).foregroundStyle(Tok.ink2)
+            .buttonStyle(PressStyle())
             .keyboardShortcut(.cancelAction)
             .help("Close  esc")
+            .padding(16)
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+}
+
+/// The mono eyebrow over a detail: "TODAY · 4:16 PM · 0:42 · TURN 2".
+struct Eyebrow: View {
+    @Environment(AppModel.self) private var model
+    let entry: Entry
+
+    var body: some View {
+        let day = entry.localDay == LocalDay.today() ? "Today" : DayFormat.sidebar(entry.localDay)
+        let parts = [day, entry.capturedAt.formatted(date: .omitted, time: .shortened),
+                     model.media[entry.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) },
+                     entry.sessionId != nil ? entry.turnNumber.map { "Turn \($0)" } : nil, entry.kind.noun]
+        Text(parts.compactMap { $0 }.joined(separator: " · ")).monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
     }
 }
 
@@ -109,18 +115,24 @@ private struct MediaDetail: View {
     @State private var sentences: [TimedSentence] = []
 
     var body: some View {
-        Group {
+        GeometryReader { geo in
             if entry.kind == .moment {
-                HStack(spacing: 0) {
-                    playerArea.frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
-                    Divider().overlay(Tok.border)
-                    side.frame(width: 360)
+                // Two columns from the web's VideoPlayerModal: [1fr, min(420, 40%)].
+                HStack(alignment: .top, spacing: 28) {
+                    playerArea
+                        .aspectRatio(16 / 9, contentMode: .fit)
+                        .background(.black, in: .rect(cornerRadius: Radius.card))
+                        .clipShape(.rect(cornerRadius: Radius.card))
+                        .elevation(.float)
+                        .frame(maxHeight: .infinity, alignment: .center)
+                    side.frame(width: min(420, geo.size.width * 0.4))
                 }
+                .padding(.leading, 32).padding(.trailing, 20).padding(.vertical, 28)
             } else {
-                VStack(spacing: 0) {
-                    playerArea.frame(height: 64).padding(.horizontal, 20).padding(.top, 12)
-                    side
+                VStack(alignment: .leading, spacing: 0) {
+                    side(player: true)
                 }
+                .padding(.horizontal, 36).padding(.top, 32)
             }
         }
         .task(id: entry.id) {
@@ -145,22 +157,42 @@ private struct MediaDetail: View {
         }
     }
 
-    private var side: some View {
+    private var side: some View { side(player: false) }
+
+    private func side(player showPlayer: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                TitleField(entry: entry)
+                VStack(alignment: .leading, spacing: 6) {
+                    Eyebrow(entry: entry)
+                    TitleField(entry: entry)
+                }
+                .padding(.trailing, 44)
+                if showPlayer { playerArea.frame(height: 56).clipShape(.rect(cornerRadius: Radius.field)) }
                 ReadingSection(entry: entry, onQuote: { q in
                     if let s = sentences.first(where: { $0.text.contains(q) || q.contains($0.text) }) { player?.seek(ms: s.startMs) }
                 })
                 transcript
             }
-            .padding(20)
+            .padding(.vertical, 4)
         }
+        .scrollIndicators(.never)
     }
 
     private var transcript: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("TRANSCRIPT").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
+            HStack {
+                Text("Transcript").monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+                Spacer()
+                if !sentences.isEmpty {
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(sentences.map(\.text).joined(separator: " "), forType: .string)
+                        model.show(Toast("Transcript copied"))
+                    }
+                    .font(Typo.ui(12, .medium)).buttonStyle(.plain).foregroundStyle(Tok.ink2)
+                    .padding(.horizontal, 12).frame(height: 28).background(Tok.ink.opacity(0.06), in: .capsule)
+                }
+            }
             if sentences.isEmpty {
                 Text(transcriptState).font(Typo.ui(13)).foregroundStyle(Tok.ink3)
             } else {
@@ -170,7 +202,7 @@ private struct MediaDetail: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(Duration.milliseconds(s.startMs).formatted(.time(pattern: .minuteSecond)))
                                 .font(Typo.mono(10)).foregroundStyle(Tok.ink4).frame(width: 34, alignment: .leading)
-                            Text(s.text).font(Typo.ui(13.5)).foregroundStyle(current ? Tok.ink : Tok.ink2)
+                            Text(s.text).font(Typo.ui(15)).lineSpacing(6).foregroundStyle(current ? Tok.ink : Tok.ink2)
                                 .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.vertical, 4).padding(.horizontal, 6)
@@ -201,9 +233,10 @@ private struct TitleField: View {
     @State private var text = ""
 
     var body: some View {
-        TextField(model.title(for: entry), text: $text)
+        TextField(model.title(for: entry), text: $text, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(Typo.serif(22, .medium))
+            .font(Typo.ui(20, .semibold))
+            .lineLimit(1...3)
             .foregroundStyle(Tok.ink)
             .onAppear { text = entry.titleUser ?? "" }
             .onSubmit { save() }
@@ -229,24 +262,31 @@ private struct WritingEditor: View {
     @State private var loaded = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            ZStack(alignment: .topLeading) {
-                if text.isEmpty {
-                    Text("Write what's on your mind. The first line becomes the title.")
-                        .font(Typo.serif(19)).foregroundStyle(Tok.ink4).padding(.top, 1).padding(.leading, 5)
-                        .allowsHitTesting(false)
+        // The web's reading page: the user's words in Geist 17/1.7, at most ~62 characters a line.
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                Eyebrow(entry: entry)
+                ZStack(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("Write what's on your mind. The first line becomes the title.")
+                            .font(Typo.ui(17)).foregroundStyle(Tok.ink4).padding(.top, 1).padding(.leading, 5)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: $text)
+                        .font(Typo.ui(17))
+                        .lineSpacing(8)
+                        .foregroundStyle(Tok.ink)
+                        .scrollContentBackground(.hidden)
+                        .scrollIndicators(.never)
+                        .writingToolsBehavior(.disabled)
                 }
-                TextEditor(text: $text)
-                    .font(Typo.serif(19))
-                    .lineSpacing(5)
-                    .foregroundStyle(Tok.ink)
-                    .scrollContentBackground(.hidden)
-                    .writingToolsBehavior(.disabled)
             }
-            .padding(.horizontal, 56).padding(.vertical, 36)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider().overlay(Tok.border)
-            ScrollView { ReadingSection(entry: entry, onQuote: nil).padding(20) }.frame(width: 320)
+            .frame(maxWidth: 600, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.leading, 48).padding(.top, 40).padding(.bottom, 24)
+            Spacer(minLength: 24)
+            ScrollView { ReadingSection(entry: entry, onQuote: nil).padding(.top, 72).padding(.trailing, 24) }
+                .scrollIndicators(.never)
+                .frame(width: 260)
         }
         .onAppear {
             text = entry.body ?? ""
@@ -381,11 +421,9 @@ struct ReadingSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("WHAT SARO HEARD").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
+            Text("What Saro heard").monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
             content
         }
-        .padding(14)
-        .background(Tok.bg.opacity(0.6), in: .rect(cornerRadius: 12))
         .task(id: model.annotations[entry.id]?.aiRunId) { await loadProvenance() }
     }
 
@@ -412,7 +450,7 @@ struct ReadingSection: View {
         if a.generator == "heuristic" {
             Text("IN YOUR WORDS").font(Typo.mono(9.5)).foregroundStyle(Tok.voice)
         }
-        if let s = a.summary { Text(s).font(Typo.serif(16)).foregroundStyle(Tok.voice).fixedSize(horizontal: false, vertical: true) }
+        if let s = a.summary { Text(Letter.typeset(s)).font(Typo.serif(17, italic: true)).foregroundStyle(Tok.voice).fixedSize(horizontal: false, vertical: true) }
         if let q = a.quote {
             Button { onQuote?(q) } label: {
                 HStack(alignment: .top, spacing: 8) {
