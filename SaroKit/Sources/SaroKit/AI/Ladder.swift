@@ -41,12 +41,12 @@ enum Ladder {
     }
 
     /// Errors where another call can't help or must not happen: guardrail and refusal (SR-09), an over-long input
-    /// (never retried, §11.5), an unsupported language, missing assets.
+    /// (never retried, §11.5), an unsupported language, missing assets, a rate limit (deferred, §11.7).
     static func isStop(_ error: any Error) -> Bool {
         if error is SystemLanguageModel.Error { return true }
         guard let error = error as? LanguageModelError else { return false }
         switch error {
-        case .guardrailViolation, .refusal, .contextSizeExceeded, .unsupportedLanguageOrLocale: return true
+        case .guardrailViolation, .refusal, .contextSizeExceeded, .unsupportedLanguageOrLocale, .rateLimited: return true
         default: return false
         }
     }

@@ -86,7 +86,8 @@ public actor SaroAI {
     // MARK: Layer-2 classifier
 
     /// Permissive, greedy, 8 output tokens, 6 s timeout. `prompt` holds `{text}` where the entry goes (else the
-    /// text is appended). Errors and timeouts are `.uncertain` (a safety hold); a missing model is `.unavailable`.
+    /// text is appended). Errors and timeouts are `.uncertain` (a safety hold); a missing model is `.unavailable`;
+    /// a rate limit is `.deferred` (§11.7).
     public func classify(_ text: String, instructions: String, prompt: String) async -> ClassifierOutcome {
         if case .unavailable(let reason) = status { return .unavailable(reason: reason) }
         let full = prompt.contains("{text}") ? prompt.replacingOccurrences(of: "{text}", with: text) : prompt + "\n" + text
@@ -101,6 +102,7 @@ public actor SaroAI {
             return Ladder.label(reply)
         } catch {
             let reason = Ladder.reason(error)
+            if reason == "rate_limited" { return .deferred(reason: reason) }
             return ["unsupportedLanguageOrLocale", "assetsUnavailable"].contains(reason)
                 ? .unavailable(reason: reason) : .uncertain(reason: reason)
         }

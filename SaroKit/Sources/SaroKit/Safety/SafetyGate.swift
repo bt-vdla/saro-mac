@@ -58,10 +58,12 @@ public actor SafetyGate {
     }
 
     /// Layers 0-2 in §13.2 order: safety hold > model unavailable > technical hold > clear.
-    /// `transcriptConfidence` is nil for typed text.
-    public func gate(text: String, transcriptConfidence: Double?) async -> GateResult {
+    /// `transcriptConfidence` is nil for typed text. nil when the classifier was rate-limited: there is no verdict yet,
+    /// so the caller stores nothing and asks again later (§11.7).
+    public func gate(text: String, transcriptConfidence: Double?) async -> GateResult? {
         if Self.phraseHit(text) { return GateResult(verdict: "safety_hold", layer: 1, reasonCode: "phrase_hit") }
         switch await classifyChunks(text) {
+        case .deferred: return nil
         case .label(.active): return GateResult(verdict: "safety_hold", layer: 2, reasonCode: "classifier_active")
         case .label(.passive): return GateResult(verdict: "safety_hold", layer: 2, reasonCode: "classifier_passive")
         case .uncertain: return GateResult(verdict: "safety_hold", layer: 2, reasonCode: "classifier_uncertain")

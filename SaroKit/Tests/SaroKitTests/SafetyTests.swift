@@ -89,8 +89,16 @@ let notFlagged = [
 
 let none: @Sendable (String) async -> ClassifierOutcome = { _ in .label(.none) }
 
+/// Only `.deferred` yields no result, and these classifiers never defer.
 func gate(_ text: String, confidence: Double? = nil, _ classify: (@Sendable (String) async -> ClassifierOutcome)? = none) async -> GateResult {
-    await SafetyGate(classify: classify, timeout: .milliseconds(200)).gate(text: text, transcriptConfidence: confidence)
+    await SafetyGate(classify: classify, timeout: .milliseconds(200)).gate(text: text, transcriptConfidence: confidence)!
+}
+
+@Test func rateLimitedClassifierIsNoVerdict() async {
+    let limited: @Sendable (String) async -> ClassifierOutcome = { _ in .deferred(reason: "rate_limited") }
+    #expect(await SafetyGate(classify: limited).gate(text: "A quiet evening.", transcriptConfidence: nil) == nil)
+    // Layer 1 still holds without the classifier.
+    #expect(await SafetyGate(classify: limited).gate(text: "I want to die.", transcriptConfidence: nil)?.state == .safetyHold)
 }
 
 @Test func clearState() async {

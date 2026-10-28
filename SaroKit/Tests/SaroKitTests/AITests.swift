@@ -13,6 +13,7 @@ let entryJSON = #"{"title": "Chai with Ravi", "summary": "You had chai with Ravi
 let fallbackReading = EntryReading(title: "In your words", summary: "", mood: .neutral)
 let guidedReading = EntryReading(title: "Guided", summary: "You wrote.", mood: .reflective)
 let guardrail = LanguageModelError.guardrailViolation(.init(debugDescription: "test"))
+let rateLimited = LanguageModelError.rateLimited(.init(resetDate: nil, debugDescription: "test"))
 
 func walk(permissive: @escaping @Sendable (Int) async throws -> String,
           guided: @escaping @Sendable (Int) async throws -> EntryReading,
@@ -125,6 +126,13 @@ func walk(permissive: @escaping @Sendable (Int) async throws -> String,
     let second = await walk(permissive: { _ in "garbage" }, guided: { _ in hitGuided }, log: CallLog())
     #expect(second.stop == "output_gate" && second.calls == 3)
     #expect(await walk(permissive: { _ in entryJSON }, guided: { _ in guidedReading }, log: CallLog()).stop == nil)
+}
+
+@Test func rateLimitedStopsTheLadderAtOnce() async {
+    let log = CallLog()
+    let result = await walk(permissive: { _ in throw rateLimited }, guided: { _ in guidedReading }, log: log)
+    #expect(result.stop == "rate_limited" && result.calls == 1)
+    #expect(await log.guided == 0)
 }
 
 @Test func quoteIndexOutOfRangeIsRejected() {

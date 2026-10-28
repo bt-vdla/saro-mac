@@ -102,9 +102,9 @@ import Testing
 enum Ask { case classify, entry, day }
 
 /// Routes each prompt by kind: the classifier's ends in "Label:", the day's opens with its notes.
-func stubAI(_ answer: @escaping @Sendable (Ask) throws -> String) -> SaroAI {
+func stubAI(_ answer: @escaping @Sendable (Ask) async throws -> String) -> SaroAI {
     SaroAI(stub: { prompt in
-        try answer(prompt.hasSuffix("Label:") ? .classify : prompt.hasPrefix("Notes on today's entries") ? .day : .entry)
+        try await answer(prompt.hasSuffix("Label:") ? .classify : prompt.hasPrefix("Notes on today's entries") ? .day : .entry)
     })
 }
 
@@ -147,6 +147,31 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
         #expect(r != nil && r?.question != "How is your sister settling in?" && r?.moodBasis != "the move to Pune")
         #expect(await p.latestDayReading(e.localDay)?.generator == "heuristic")
     }
+}
+
+@Test func rateLimitedDefersTheGateAndTheReading() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    // The classifier: no verdict, so the entry is neither held nor cleared; it waits, pending, for the next pass.
+    let p = Pipeline(ledger: l, ai: stubAI { _ in throw rateLimited })
+    await p.process(entryId: e.id) {}
+    #expect(try await l.run("SELECT COUNT(*) AS n FROM safety_verdict").first?["n"]?.int == 0)
+    #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
+    #expect(await p.dayStatus(e.localDay) == .working)
+    // The reading: the clear verdict stays, nothing generated is stored, and the model is asked once.
+    let asked = CallLog()
+    await Pipeline(ledger: l, ai: stubAI { ask in
+        guard ask == .classify else { await asked.hitPermissive(); throw rateLimited }
+        return "NONE"
+    }).process(entryId: e.id) {}
+    #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "clear")
+    #expect(try await l.annotations(day: e.localDay).isEmpty)
+    #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
+    #expect(await asked.permissive == 1)
+    // Once the limit lifts, the next pass reads it.
+    await Pipeline(ledger: l, ai: answers()).process(entryId: e.id) {}
+    #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "on_device")
 }
 
 @Test func outputGateHitOnAnEntryReadingHoldsIt() async throws {

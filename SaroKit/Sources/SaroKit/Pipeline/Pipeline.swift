@@ -99,7 +99,11 @@ public actor Pipeline {
         if let v = verdict?.verdict, v.hasPrefix("unavailable"), ai.status == .available { verdict = nil }
         if verdict == nil {
             await status(ProcessingStatus.gating)
-            let r = await gate.gate(text: source.text, transcriptConfidence: source.confidence)
+            guard let r = await gate.gate(text: source.text, transcriptConfidence: source.confidence) else {
+                // Rate-limited (§11.7): no verdict yet. Pending, so the next pass or the launch sweep checks it.
+                await status(ProcessingStatus.pending)
+                return
+            }
             let row = SafetyVerdictRow(entryId: entryId, textSha256: hash, safetyVersion: SafetyGate.version, layer: r.layer,
                                        verdict: r.verdict, reasonCode: r.reasonCode)
             try? await ledger.insertVerdict(row)
@@ -129,6 +133,11 @@ public actor Pipeline {
             (reading, prov) = (fallback, Provenance(executor: "heuristic", rung: .heuristic, guardrails: nil, variant: nil,
                                                     osBuild: SaroAI.osBuild, contextSize: nil, promptVersion: SaroAI.entryPromptVersion,
                                                     tokensIn: nil, modelCalls: 0, latencyMs: 0))
+        }
+        if prov.status == "rate_limited" {
+            // Deferred, not failed (§11.7): nothing stored, so a later pass reads it.
+            await status(ProcessingStatus.pending)
+            return
         }
 
         // Layer 3 over whatever was generated, heuristic included (SR-08): the ladder stops on a hit in any reply, and
@@ -215,8 +224,10 @@ public actor Pipeline {
         var sources: [String] = []
         let modelOK = ai.status == .available && entries.allSatisfy { verdicts[$0.id].map { $0.verdict != "unavailable_clear" } ?? true }
         for e in entries {
+            // Only a reading of exactly the current text: one deferred by a rate limit leaves the older reading newest.
             guard let row = verdicts[e.id], row.verdict == "clear" || row.verdict == "unavailable_clear",
-                  let a = annotations[e.id], let src = try? await text(for: e), sha256(src.text) == row.textSha256 else { continue }
+                  let a = annotations[e.id], let src = try? await text(for: e), sha256(src.text) == row.textSha256,
+                  (try? await ledger.hasAnnotation(entryId: e.id, inputHash: row.textSha256)) == true else { continue }
             digests.append(EntryDigest(entryId: e.id, kind: e.kind.rawValue, time: e.capturedAt.formatted(date: .omitted, time: .shortened),
                                        title: a.title ?? e.kind.rawValue, summary: a.summary ?? "", mood: a.moodLabel.flatMap(Mood.init(rawValue:))))
             candidates += Heuristics.candidates(entryId: e.id, field: src.field, text: src.text, firstIndex: candidates.count)
@@ -245,6 +256,7 @@ public actor Pipeline {
             (reading, prov) = (fallback, Provenance(executor: "heuristic", rung: .heuristic, guardrails: nil, variant: nil, osBuild: SaroAI.osBuild,
                                                     contextSize: nil, promptVersion: SaroAI.dayPromptVersion, tokensIn: nil, modelCalls: 0, latencyMs: 0))
         }
+        if prov.status == "rate_limited" { return nil } // deferred (§11.7): the next readDay asks again
         // Layer 3 (SR-08): a hit holds every entry the reading drew on, so the whole day is held and nothing is stored.
         if prov.status == "output_gate" || SafetyGate.phraseHit(reading.prose) {
             for d in digests {

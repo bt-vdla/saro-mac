@@ -119,6 +119,8 @@ public enum ClassifierOutcome: Sendable, Hashable {
     case uncertain(reason: String)
     /// deviceNotEligible, appleIntelligenceNotEnabled, modelNotReady, unsupported locale.
     case unavailable(reason: String)
+    /// rateLimited: no answer yet, so no verdict either; ask again later (§11.7).
+    case deferred(reason: String)
 }
 
 /// Where a ladder result came from (§11.3).
