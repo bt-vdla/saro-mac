@@ -61,6 +61,8 @@ final class PlayerModel {
     var durationMs: Int?
     /// Play all: the next file in the queue started (its index).
     @ObservationIgnored var onAdvance: ((Int) -> Void)?
+    /// Play all: the last file played to its end, and the queue let it go.
+    @ObservationIgnored var onFinish: (() -> Void)?
     @ObservationIgnored private let items: [AVPlayerItem]
     @ObservationIgnored private var token: Any?
     @ObservationIgnored private var ended: (any NSObjectProtocol)?
@@ -94,6 +96,8 @@ final class PlayerModel {
                 guard let m = self, let i = m.items.firstIndex(where: { $0 === item }) else { return }
                 if i + 1 < m.items.count {
                     m.onAdvance?(i + 1)
+                } else if m.items.count > 1 {
+                    m.onFinish?()
                 } else {
                     m.playing = false
                     m.timeMs = 0
@@ -250,6 +254,8 @@ private struct MediaDetail: View {
         turnId = first.0.id
         let p = PlayerModel(urls: files.map(\.1))
         p.onAdvance = { i in turnId = files[i].0.id }
+        // The queue has no file left to play or seek: the last turn loads on its own, at the top, as a single one ends.
+        p.onFinish = { load(files[files.count - 1].0) }
         player = p
         p.player.play()
     }
