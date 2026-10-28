@@ -674,7 +674,7 @@ struct DayStage: View {
             ForEach(Array(members.enumerated()), id: \.element.id) { i, e in
                 let p = fanned || reduceMotion ? points[e.id] ?? origin : origin
                 VStack(spacing: 8) {
-                    CardFace(entry: e, selected: model.selection.contains(e.id))
+                    CardFace(entry: e, selected: model.selection.contains(e.id), size: tile)
                     Text("Turn \(e.turnNumber ?? i + 1)").monoCaps(10).foregroundStyle(Tok.ink3)
                 }
                 .scaleEffect(fanned || reduceMotion ? 1 : 0.6)
