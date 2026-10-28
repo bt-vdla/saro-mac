@@ -1,0 +1,207 @@
+import Foundation
+
+/// The toast stack's rules (use-toast.ts): at most three, newest first; same-title toasts within a second fold into
+/// one that counts them; past the limit the oldest without an action close, and one with an action never does.
+public enum ToastRules {
+    public static let limit = 3
+    public static let foldWindow: TimeInterval = 1
+
+    public struct Shown: Sendable, Hashable {
+        public var title: String
+        public var destructive: Bool
+        public var at: Date
+        public var hasAction: Bool
+        public var count: Int
+
+        public init(title: String, destructive: Bool, at: Date, hasAction: Bool, count: Int = 1) {
+            (self.title, self.destructive, self.at, self.hasAction, self.count) = (title, destructive, at, hasAction, count)
+        }
+    }
+
+    /// For a toast arriving over `shown` (newest first): the indexes that fold into it, its count, and those that close.
+    public static func arrive(_ new: Shown, over shown: [Shown]) -> (twins: [Int], count: Int, closing: [Int]) {
+        let twins = shown.indices.filter {
+            shown[$0].title == new.title && shown[$0].destructive == new.destructive && new.at.timeIntervalSince(shown[$0].at) < foldWindow
+        }
+        let count = twins.reduce(1) { $0 + shown[$1].count }
+        let open = shown.indices.filter { !twins.contains($0) }
+        let excess = open.count - (limit - 1)
+        let closing = excess > 0 ? Array(open.filter { !shown[$0].hasAction }.suffix(excess)) : []
+        return (twins, count, closing)
+    }
+
+    public static func title(_ base: String, count: Int) -> String { count > 1 ? "\(base) (\(count))" : base }
+}
+
+/// Every user-content write, keyed by what it saves (save-status.ts): one card's failure can't be hidden by another's
+/// success, and a deleted card's failure is forgotten.
+public struct SaveTally: Sendable, Hashable {
+    public private(set) var pending = 0
+    public private(set) var failed: Set<String> = []
+
+    public init() {}
+
+    public mutating func begin() { pending += 1 }
+
+    public mutating func end(_ key: String, saved: Bool) {
+        pending = max(0, pending - 1)
+        if saved { failed.remove(key) } else { failed.insert(key) }
+    }
+
+    public mutating func forget(_ key: String) { failed.remove(key) }
+
+    /// What a screen reader hears, and the dot shows.
+    public var label: String { pending > 0 ? "Saving…" : failed.isEmpty ? "Saved" : "Not saved" }
+}
+
+/// Trash's countdown (TrashModal.tsx timeLeft): hours on the last day, days before it.
+public enum TrashClock {
+    public static func left(until expiry: Date, now: Date = .now) -> String {
+        let s = expiry.timeIntervalSince(now)
+        if s < 86_400 {
+            let hours = max(1, Int((s / 3600).rounded(.up)))
+            return "\(hours) \(hours == 1 ? "hour" : "hours") left"
+        }
+        let days = Int((s / 86_400).rounded())
+        return "\(days) \(days == 1 ? "day" : "days") left"
+    }
+}
+
+public enum ShellText {
+    /// The avatar's letters (ProfileAvatar.tsx initialsOf): the first word's first and the last word's first.
+    public static func initials(_ name: String) -> String {
+        let parts = name.split(whereSeparator: \.isWhitespace)
+        guard let first = parts.first?.first else { return "" }
+        let last = parts.count > 1 ? parts.last?.first.map(String.init) ?? "" : ""
+        return (String(first) + last).uppercased()
+    }
+
+    /// "27 Oct 2026", the same in every locale so names sort and read alike.
+    public static func fileDay(_ day: String) -> String {
+        guard let d = LocalDay.date(day) else { return day }
+        return d.formatted(Date.VerbatimFormatStyle(format: "\(day: .defaultDigits) \(month: .abbreviated) \(year: .defaultDigits)",
+                                                    locale: Locale(identifier: "en_GB"), timeZone: .current, calendar: Calendar(identifier: .gregorian)))
+    }
+
+    /// A readable name for an exported copy: "Saro moment, 27 Oct 2026.mov".
+    public static func exportName(_ kind: EntryKind, day: String, ext: String) -> String {
+        let noun = switch kind {
+        case .moment: "moment"
+        case .voice: "voice note"
+        case .still: "still"
+        case .reflection: "reflection"
+        case .music: "song"
+        }
+        return "Saro \(noun), \(fileDay(day))" + (ext.isEmpty ? "" : ".\(ext)")
+    }
+
+    public static func dayImageName(_ day: String) -> String { "saro-\(day).png" }
+
+    /// Text laid out right to left when its first strong character is (dir="auto"): Hebrew, Arabic, Syriac, Thaana,
+    /// N'Ko and their presentation forms. Digits, spaces and punctuation are weak and are skipped.
+    public static func isRightToLeft(_ text: String) -> Bool {
+        for s in text.unicodeScalars where s.properties.isAlphabetic {
+            switch s.value {
+            case 0x0590...0x08FF, 0xFB1D...0xFDFF, 0xFE70...0xFEFF, 0x10800...0x10FFF, 0x1E800...0x1EFFF: return true
+            default: return false
+            }
+        }
+        return false
+    }
+}
+
+/// Export Day as Image (Canvas.tsx): 48 pt around the cards, up to twice the points, the longest side at most 4096 px.
+public enum DayImageMath {
+    public static let pad: Double = 48
+    public static let maxSide: Double = 4096
+
+    public static func scale(for size: CGSize) -> Double {
+        min(2, maxSide / max(1, max(size.width, size.height)))
+    }
+}
+
+extension Prefs.LockAfter {
+    /// How long Saro may be away or idle before it locks; nil locks only at launch and on sleep.
+    public var seconds: TimeInterval? {
+        switch self {
+        case .immediately: 0
+        case .fiveMinutes: 300
+        case .hour: 3600
+        case .never: nil
+        }
+    }
+}
+
+/// Plain words for a failed write, never the raw error (FR-SHELL): what to do here on this Mac.
+public enum FailureCopy {
+    public static func remedy(for error: Error) -> String {
+        outOfSpace(error) ? "Your Mac may be out of space." : "Try again in a moment."
+    }
+
+    static func outOfSpace(_ error: Error) -> Bool {
+        let e = error as NSError
+        if e.domain == NSCocoaErrorDomain && e.code == NSFileWriteOutOfSpaceError { return true }
+        if e.domain == NSPOSIXErrorDomain && e.code == Int(ENOSPC) { return true }
+        if let s = error as? SQLiteError, s.description.contains("full") { return true }
+        return (e.userInfo[NSUnderlyingErrorKey] as? Error).map(outOfSpace) ?? false
+    }
+
+    /// Content-free, for the log and the Alpha report: the error's domain and code, never its message.
+    public static func code(_ error: Error) -> String {
+        let e = error as NSError
+        return "\(e.domain) \(e.code)"
+    }
+}
+
+/// Every shortcut the Keyboard Shortcuts window lists, in one table.
+public struct Shortcut: Sendable, Hashable, Identifiable {
+    public enum Group: String, Sendable, CaseIterable { case capture = "Capture", days = "Days", canvas = "Canvas", search = "Search", windows = "Windows" }
+    public var group: Group
+    public var title: String
+    public var keys: String
+    /// Only while this is open; shortcuts with a scope may reuse keys of the app-wide ones.
+    public var scope: String?
+    public var id: String { "\(group.rawValue)|\(title)" }
+
+    init(_ group: Group, _ title: String, _ keys: String, scope: String? = nil) {
+        (self.group, self.title, self.keys, self.scope) = (group, title, keys, scope)
+    }
+
+    public static let all: [Shortcut] = [
+        Shortcut(.capture, "Record a moment", "⌘N"),
+        Shortcut(.capture, "Leave a voice note", "⇧⌘N"),
+        Shortcut(.capture, "Write", "⌥⌘W"),
+        Shortcut(.capture, "Capture from anywhere", "⌃⌘J"),
+        Shortcut(.capture, "Paste a photo as a still", "⌘V"),
+        Shortcut(.days, "Today", "⌘T"),
+        Shortcut(.days, "Previous day", "⌘["),
+        Shortcut(.days, "Next day", "⌘]"),
+        Shortcut(.days, "Show days", "⌃⌘S"),
+        Shortcut(.days, "What Saro noticed", "⌥⌘I"),
+        Shortcut(.days, "Evening letter", "⌥⌘L"),
+        Shortcut(.days, "Step through a replay", "← →", scope: "replay"),
+        Shortcut(.days, "Play or pause a replay", "Space", scope: "replay"),
+        Shortcut(.canvas, "Fit the day", "⌘0"),
+        Shortcut(.canvas, "Zoom in", "⌘="),
+        Shortcut(.canvas, "Zoom out", "⌘-"),
+        Shortcut(.canvas, "Open the selected card", "↵"),
+        Shortcut(.canvas, "Card menu", "⇧F10"),
+        Shortcut(.canvas, "Edit details", "⌘I"),
+        Shortcut(.canvas, "Export a copy", "⇧⌘S"),
+        Shortcut(.canvas, "Show in Finder", "⌥⌘R"),
+        Shortcut(.canvas, "Copy text", "⇧⌘C"),
+        Shortcut(.canvas, "Stack", "⌘S"),
+        Shortcut(.canvas, "Grid", "⌘G"),
+        Shortcut(.canvas, "Move to Trash", "⌘⌫"),
+        Shortcut(.canvas, "Undo", "⌘Z"),
+        Shortcut(.search, "Search and commands", "⌘K"),
+        Shortcut(.search, "Replay the row's day", "⌘↵", scope: "search"),
+        Shortcut(.search, "Actions for the row", "⌘K", scope: "search"),
+        Shortcut(.search, "Scope to a kind", "⌘P", scope: "search"),
+        Shortcut(.windows, "What Saro knows", "⌥⌘K"),
+        Shortcut(.windows, "Settings", "⌘,"),
+        Shortcut(.windows, "Keyboard shortcuts", "⌘/"),
+        Shortcut(.windows, "Lock Saro", "⌃⌘L"),
+        Shortcut(.windows, "Close", "Esc"),
+    ]
+}
