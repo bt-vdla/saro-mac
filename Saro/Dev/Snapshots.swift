@@ -133,8 +133,45 @@ enum Snapshots {
                         await model.reload()
                     }
                 }),
+                // Capture (demo journal only, synthetic text, SR-28): a song from a link on the canvas and its view, then a page
+                // started from a prompt with a question Saro asked under it, then that page edited on its card.
+                ("capture-song", {
+                    guard model.isDemo else { return }
+                    model.openEntryID = nil
+                    model.goToday()
+                    Task {
+                        try? await Task.sleep(for: .seconds(0.8))
+                        if let url = Music.link("https://music.apple.com/gb/album/a-night-at-the-opera/1440650428") { await model.newMusic(url: url, at: nil) }
+                    }
+                }),
+                ("capture-songview", { model.openEntryID = model.entries.last(where: { $0.kind == .music })?.id }),
+                ("capture-page", {
+                    guard model.isDemo else { return }
+                    model.openEntryID = nil
+                    Task {
+                        guard let e = await model.newWriting(body: "Walked home the long way. The river was loud after the rain and I kept thinking about the move.")
+                        else { return }
+                        try? await model.ledger.insertTurn(ReflectionTurn(kind: .prompt, question: "Which moment from today stands out?", generator: "curated",
+                                                                          localDay: e.localDay, entryId: e.id))
+                        try? await model.ledger.insertTurn(ReflectionTurn(kind: .reflectFurther, question: "You wrote “The river was loud after the rain”. What did that place give you?",
+                                                                          generator: "heuristic", localDay: e.localDay, entryId: e.id))
+                        await model.reload()
+                        await CaptureUI.shared.loadPrompts(model)
+                        model.openEntryID = e.id
+                    }
+                }),
+                ("capture-cardedit", {
+                    guard let e = model.entries.last(where: { $0.kind == .reflection }) else { return }
+                    model.openEntryID = nil
+                    model.selection = [e.id]
+                    Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        CaptureUI.shared.editing = (e.id, .body)
+                    }
+                }),
                 // Three weeks of synthetic history, seeded here so the steps before see only the demo day.
                 ("knows", {
+                    CaptureUI.shared.editing = nil
                     UserDefaults.standard.set("graph", forKey: "saro.knows.mode")
                     Task {
                         await MemoryDemo.seed(model)
@@ -165,6 +202,7 @@ enum Snapshots {
                 ("loaderror", { model.loadFailed = true }),
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
+                ("capture-pieces", { p.contentView = NSHostingView(rootView: CaptureGallery().environment(model)) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
                 // Onboarding, each step hosted on its own flow (the demo journal itself skips onboarding).
                 ("onboarding-welcome", { p.contentView = onboarding(.preview(step: .welcome), model) }),
@@ -313,13 +351,91 @@ private struct GrowGallery: View {
 
     @ViewBuilder private func surface(_ kind: EntryKind) -> some View {
         if kind == .voice {
-            VoicePill(notice: nil, inSession: false, grows: true, toggle: {}, done: {}, close: {}).frame(width: 380)
+            VoicePill(notice: nil, grows: true, kept: { _ in true }, close: {}, shut: {}).frame(width: 380)
         } else {
             Text("Getting your camera ready…").font(Typo.ui(13)).foregroundStyle(.white.opacity(0.8))
                 .frame(width: 400, height: 250)
                 .background(.black, in: .rect(cornerRadius: 28))
                 .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
         }
+    }
+}
+
+/// Capture's pieces that only a camera, a microphone or a drag would bring up, side by side: the moment frame at a
+/// checkpoint, the finish dialog's steps, the held checkpoint, the developed frame, the drop overlay, the music field and
+/// card, the voice pill's steps and Edit details (synthetic text, SR-28).
+private struct CaptureGallery: View {
+    @Environment(AppModel.self) private var model
+    private static let words = "I walked home the long way and the river was loud after the rain so I stopped on the bridge for a while"
+        .split(separator: " ").map { LiveWord(text: String($0), final: true) }
+    private static let song = Entry(kind: .music, body: "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC")
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
+                frame {
+                    VStack(spacing: 0) {
+                        SaroVoice(question: "What did the bridge give you?", observation: "You came back to the river twice there.",
+                                  followUp: true, orb: .talking, instant: true)
+                            .padding(.top, 40)
+                        Spacer()
+                        GlassNotice(text: "Click Pause & reflect (or press R) when you want Saro to respond.")
+                        CaptionStatus(text: nil)
+                        LiveCaptions(words: Self.words, placeholder: nil, size: 19).frame(width: 520)
+                        Button("Keep going") {}.buttonStyle(CaptureButtonStyle.mint).padding(.vertical, 18)
+                    }
+                }
+                frame {
+                    VStack {
+                        SaroVoice(question: "Bharat, which moment from today stands out?")
+                            .padding(.top, 40)
+                        Spacer()
+                        CaptionStatus(text: CaptureController.Live.connecting.line(paused: false, voice: false), connecting: true)
+                        LiveCaptions(words: [], placeholder: "Your words will appear here as you speak.").frame(width: 520).padding(.bottom, 30)
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach([FinishDialog.Step.confirm, .discard], id: \.self) { step in
+                    FinishDialog(day: LocalDay.today(), paused: true, interrupted: false, keptParts: step == .discard, step: .constant(step),
+                                 finish: {}, keepRecording: {}, discard: {})
+                        .frame(width: 520, height: 250)
+                        .background(Color(0x223029, 0x223029), in: .rect(cornerRadius: 20))
+                }
+                NightSafetyCard {}.frame(width: 520, height: 360).background(.black, in: .rect(cornerRadius: 20))
+            }
+            VStack(alignment: .leading, spacing: 20) {
+                DropOverlay(kind: .moment, day: LocalDay.today()).frame(width: 440, height: 250)
+                    .background(Tok.bg, in: .rect(cornerRadius: 20))
+                MusicField().frame(width: 440, height: 200).background(Tok.bg, in: .rect(cornerRadius: 20))
+                MusicFace(entry: Self.song, box: CanvasMath.size(.music)).padding(8)
+                VoicePill(notice: nil, kept: { _ in true }, close: {}, shut: {}).frame(width: 380)
+                VoiceReview(again: {}, discard: {}, keep: {}).frame(width: 380)
+                    .background(Night.surface, in: .rect(cornerRadius: 28)).environment(\.colorScheme, .dark)
+                EditDetails(entry: Self.song).clipShape(.rect(cornerRadius: 20)).elevation(.overlay)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Tok.bg)
+    }
+
+    private func frame(@ViewBuilder _ content: () -> some View) -> some View {
+        ZStack {
+            DevelopedFrame.gallery
+            LinearGradient(colors: [.black.opacity(0.55), .clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
+            Color.black.opacity(0.4)
+            content().environment(\.colorScheme, .dark)
+        }
+        .frame(width: 600, height: 390)
+        .clipShape(.rect(cornerRadius: 28))
+    }
+}
+
+extension DevelopedFrame {
+    /// A stand-in for a camera frame: warm dusk light.
+    static var gallery: some View {
+        LinearGradient(colors: [Color(0x6B4B3A, 0x6B4B3A), Color(0x2D3B36, 0x2D3B36)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
