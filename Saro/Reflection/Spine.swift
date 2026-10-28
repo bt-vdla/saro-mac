@@ -155,7 +155,7 @@ private struct SpineColumn: View {
             try? await Task.sleep(for: .milliseconds(150))
             loading = true
         }
-        .onChange(of: r.refocusSpine) { _, now in
+        .onChange(of: r.refocusSpine, initial: true) { _, now in
             guard now else { return }
             r.refocusSpine = false
             focused.wrappedValue = true

@@ -43,7 +43,7 @@ struct NoticedView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
-                Text("What Saro noticed · \(DayFormat.bar(model.day))").monoCaps(10, tracking: 0.12).foregroundStyle(Tok.ink3)
+                Text("What Saro noticed · \(DayNarrative.label(model.day))").monoCaps(10, tracking: 0.12).foregroundStyle(Tok.ink3)
                     .lineLimit(1)
                 Spacer()
                 Button { model.insight = .spine } label: {
