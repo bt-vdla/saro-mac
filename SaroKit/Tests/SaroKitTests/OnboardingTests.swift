@@ -224,6 +224,30 @@ private let answers: [Int: String] = [
     #expect(FirstPrompt.compose(starter: s, name: "Bee", tone: .gentle) == [FirstPrompt.Candidate(text: "Bee, what moment still lingers?")])
 }
 
+@Test func onlyGatedAnswersAreStoredOrComposedFrom() {
+    var s = StarterContext(version: 1)
+    s.answers = [1: "Bee", 2: "The launch, mostly.", 4: "More sleep"]
+    let clear = { (t: String) in AnswerVerdict(text: t, verdict: "clear") }
+    // Q4 is still at the gate: nothing yet, and it isn't stored.
+    var v: [Int: AnswerVerdict] = [1: clear("Bee"), 2: clear("The launch, mostly.")]
+    #expect(FirstPrompt.state(s, verdicts: v, name: "Bee", tone: .gentle) == .waiting)
+    #expect(s.gated(v, knownName: "Bee").answers.keys.sorted() == [1, 2])
+    // A verdict for older text doesn't count for the text there now.
+    v[4] = clear("More sleep and less")
+    #expect(FirstPrompt.state(s, verdicts: v, name: "Bee", tone: .gentle) == .waiting)
+    v[4] = clear("More sleep")
+    guard case .ready(let all) = FirstPrompt.state(s, verdicts: v, name: "Bee", tone: .gentle) else { Issue.record("not ready"); return }
+    #expect(all.count == 3 && all[0].text.contains("the launch"))
+    // A deferred verdict: only their tone's line.
+    v[4] = AnswerVerdict(text: "More sleep", verdict: nil)
+    #expect(FirstPrompt.state(s, verdicts: v, name: "Bee", tone: .gentle) == .ready([FirstPrompt.Candidate(text: "Bee, what moment still lingers?")]))
+    // A held answer: the SafetyCard, and nothing derived from it is stored.
+    v[2] = AnswerVerdict(text: "The launch, mostly.", verdict: "safety_hold")
+    #expect(FirstPrompt.state(s, verdicts: v, name: "Bee", tone: .gentle) == .held)
+    let stored = s.gated(v, knownName: "Bee").storable
+    #expect(stored.held == [2] && !stored.picks.contains { $0.q == 2 } && stored.firstPrompt == nil)
+}
+
 @Test func emptyAnswersGateClearWithoutTheModel() async throws {
     let ledger = try Ledger(rootURL: URL.temporaryDirectory.appending(path: "onb-\(UUID().uuidString)"))
     let pipeline = Pipeline(ledger: ledger, ai: SaroAI())

@@ -38,14 +38,6 @@ final class OnboardingFlow {
     /// How the last move was made: a pointer gets the rise, a key the quick crossfade.
     enum Nav { case pointer, key }
 
-    /// The first prompt, once every answer has its verdict.
-    enum Prompt: Equatable {
-        case waiting
-        /// A held answer: no personal prompt, the SafetyCard instead.
-        case held
-        case ready([FirstPrompt.Candidate])
-    }
-
     static let maxName = 30, maxAnswer = 280
     /// A demo journal keeps its own onboarding keys, so trying it never moves the real journal's place.
     static let defaults: UserDefaults = {
@@ -62,14 +54,21 @@ final class OnboardingFlow {
     /// What the field shows for the question on screen.
     var text = ""
     private(set) var starter = StarterContext(version: 1)
-    /// The text each question's verdict was for, and the verdict (nil: the gate deferred, so unchecked).
-    private(set) var verdicts: [Int: (text: String, verdict: String?)] = [:]
+    /// Each question's verdict, for the text it was given.
+    private(set) var verdicts: [Int: AnswerVerdict] = [:]
     /// The name Saro has for them: Q1's, else the profile's, else this Mac's.
     private(set) var knownName = ""
     private(set) var loaded = false
     private(set) var leaving = false
     var speech: Readiness.SpeechState?
-    let light = LightCheck()
+    /// Made on first use: the view's @State builds a flow on every parent render, and only Find your light needs a camera.
+    @ObservationIgnored private var check: LightCheck?
+    var light: LightCheck {
+        if let check { return check }
+        let made = LightCheck()
+        check = made
+        return made
+    }
 
     // MARK: Loading
 
@@ -192,21 +191,12 @@ final class OnboardingFlow {
         Task {
             let result = await model.pipeline.gate(answer: answer)
             guard starter.answers[q] == answer else { return }
-            verdicts[q] = (answer, result?.verdict)
+            verdicts[q] = AnswerVerdict(text: answer, verdict: result?.verdict)
             await save(model, profileFrom: q)
         }
     }
 
-    /// What may be stored: only answers whose verdict is in, with the held ones marked, so nothing is composed or
-    /// learned from text the gate hasn't seen.
-    private var gated: StarterContext {
-        var s = starter
-        s.answers = starter.answers.filter { verdicts[$0.key]?.text == $0.value }
-        s.held = Set(s.answers.keys.filter { verdicts[$0]?.verdict == "safety_hold" })
-        s.picks = Onboarding.picks(answers: s.answers, dropped: s.dropped, knownName: name)
-        s.reflectTime = Onboarding.reflectTime(s.picks)
-        return s
-    }
+    private var gated: StarterContext { starter.gated(verdicts, knownName: name) }
 
     private func save(_ model: AppModel, profileFrom q: Int? = nil) async {
         let s = gated
@@ -232,19 +222,7 @@ final class OnboardingFlow {
     /// The picks that may be used past About you: gated, not held, not left out.
     var keptPicks: [Pick] { gated.storable.picks }
 
-    var prompt: Prompt {
-        let answered = starter.answers.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        if answered.contains(where: { verdicts[$0.key]?.text != $0.value }) { return .waiting }
-        let s = gated
-        if !s.held.isEmpty { return .held }
-        // An answer the gate couldn't check gets the tone's line, never a prompt made from it.
-        let unchecked = s.answers.keys.contains { q in
-            let v = verdicts[q]?.verdict ?? nil
-            return v != "clear" && v != "unavailable_clear"
-        }
-        if unchecked { return .ready([FirstPrompt.Candidate(text: tone.previewLine(name: name))]) }
-        return .ready(FirstPrompt.compose(starter: s, name: name, tone: tone))
-    }
+    var prompt: FirstPrompt.State { FirstPrompt.state(starter, verdicts: verdicts, name: name, tone: tone) }
 
     /// 'Answer it' (or Continue past the SafetyCard): the prompt is kept unless an answer was held, then First week.
     func accept(_ text: String?, model: AppModel) {
@@ -260,7 +238,7 @@ final class OnboardingFlow {
     func finish(_ mode: AppModel.FirstMode?, model: AppModel) async {
         guard !leaving else { return }
         leaving = true
-        await light.release()
+        await check?.release()
         let d = Self.defaults
         d.set(Step.about.rawValue, forKey: "onboarding.step")
         d.set(Step.about.rawValue, forKey: "onboarding.furthest")
@@ -292,7 +270,7 @@ final class OnboardingFlow {
         f.starter.answers = answers
         f.aboutStep = about
         f.recompute()
-        for (q, a) in answers { f.verdicts[q] = (a, held.contains(q) ? "safety_hold" : "clear") }
+        for (q, a) in answers { f.verdicts[q] = AnswerVerdict(text: a, verdict: held.contains(q) ? "safety_hold" : "clear") }
         f.text = text ?? f.answer(for: about)
         f.loaded = true
         return f
