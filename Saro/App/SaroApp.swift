@@ -12,6 +12,7 @@ struct SaroApp: App {
                 RootView()
                     .environment(model)
                     .task { await model.sweep() }
+                    .task { CapturePanelController.shared.install(model) }
             case .failure(let error):
                 ContentUnavailableView("Saro couldn't open its journal", systemImage: "externaldrive.badge.exclamationmark",
                                        description: Text(error.localizedDescription))
@@ -31,6 +32,8 @@ struct SaroApp: App {
         Settings {
             if case .success(let model) = boot { SettingsView().environment(model) }
         }
+
+        SaroMenuBar()
     }
 }
 

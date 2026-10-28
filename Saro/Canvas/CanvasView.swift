@@ -40,7 +40,7 @@ struct DayView: View {
                 if let id = shownID, let entry = model.entry(id) { detail(entry) }
                 if let kind = model.recorderKind {
                     Tok.bg.opacity(0.7).ignoresSafeArea().onTapGesture {}
-                    RecorderSlot(kind: kind) { model.recorderKind = nil }
+                    RecorderView(kind: kind) { model.recorderKind = nil }
                 }
                 ToastHost()
             }
@@ -526,20 +526,5 @@ private struct ZoomControls: View {
         .buttonStyle(.plain)
         .foregroundStyle(Tok.ink2)
         .saroSurface(radius: 13)
-    }
-}
-
-/// Where the recorder goes; the capture module provides `RecorderView`.
-private struct RecorderSlot: View {
-    let kind: EntryKind
-    let onClose: () -> Void
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("Recorder").font(Typo.serif(22))
-            Button("Close", action: onClose).keyboardShortcut(.cancelAction)
-        }
-        .padding(40)
-        .saroSurface(radius: 20, lifted: true)
     }
 }
