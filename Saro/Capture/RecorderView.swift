@@ -2,9 +2,10 @@ import AVFoundation
 import SaroKit
 import SwiftUI
 
-/// The recorder: live preview (or a voice level), device pickers, timer and turn count, record/pause/resume and Done.
-/// In the window it floats as a centred card over the canvas; in the capture panel it fills the panel.
-/// Space records, pauses and resumes; Return is Done; Esc closes before anything is recorded.
+/// The recording ritual from the web build (VideoReflectionScreen, CountdownOverlay, VoiceEchoOverlay).
+/// In the window a moment records in a large frame over the dimmed, blurred canvas and a voice note in a night pill
+/// pinned to the bottom; in the capture panel either one fills the panel.
+/// Space records, pauses and resumes (and skips the countdown); Return is Done; Esc closes before anything is recorded.
 struct RecorderView: View {
     let kind: EntryKind
     var surface: CaptureController.Surface = .window
@@ -14,228 +15,642 @@ struct RecorderView: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+    @State private var countdown: Int?
+    @State private var developing = false
+    /// The countdown, or the develop flash before Done closes.
+    @State private var ritual: Task<Void, Never>?
 
     private var capture: CaptureController { .shared }
     private var compact: Bool { surface == .panel }
     private var available: Bool { capture.isAvailable(to: surface) }
     private var inSession: Bool { capture.hasSession(surface) }
-    private var live: Bool { available && [.previewing, .recording, .paused].contains(capture.state) }
 
     var body: some View {
-        let card = VStack(spacing: 14) {
-            header
-            stage
-            if compact, live { pickers }
-            controls
+        Group {
+            if compact {
+                stage(radius: 20)
+            } else {
+                GeometryReader { geo in
+                    if kind == .moment { momentFrame(geo.size) } else { voicePill(geo.size) }
+                }
+            }
         }
         .task(id: available ? kind : nil) {
             if available { await capture.prepare(kind, for: surface, model: model) }
         }
-        .onDisappear { capture.finish(surface) }
-        .animation(Motion.pick(Motion.fade, reduce: reduceMotion), value: capture.state)
+        .onAppear { appeared = true }
+        .onDisappear {
+            ritual?.cancel()
+            capture.finish(surface)
+        }
+        .transition(.opacity.animation(CaptureMotion.out(0.2)))
+    }
 
-        if compact {
-            card
-        } else {
-            card
-                .padding(18)
-                .frame(width: 620)
-                .saroSurface(radius: 20, lifted: true)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Tok.bg.opacity(0.55))
+    // MARK: Layouts
+
+    /// Inset 16 (24 on wide canvases), radius 28, over black/45 and a blur.
+    private func momentFrame(_ size: CGSize) -> some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+                .overlay(Color.black.opacity(0.45))
+                .environment(\.colorScheme, .dark)
+                .contentShape(.rect)
+                .onTapGesture {}
+                .opacity(appeared ? 1 : 0)
+                .animation(CaptureMotion.out(0.3), value: appeared)
+            stage(radius: 28)
+                .background(RoundedRectangle(cornerRadius: 28).fill(.black).shadow(color: .black.opacity(0.24), radius: 40, y: 32))
+                .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
+                .padding(size.width >= 1024 ? 24 : 16)
+                .scaleEffect(appeared || reduceMotion ? 1 : 0.96, anchor: .bottom)
+                .opacity(appeared ? 1 : 0)
+                .animation(reduceMotion ? Motion.fade : CaptureMotion.surface, value: appeared)
         }
     }
 
-    // MARK: Parts
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Text(kind == .moment ? "MOMENT" : "VOICE NOTE")
-                .font(Typo.mono(10.5))
-                .tracking(0.8)
-                .foregroundStyle(Tok.ink3)
-            Spacer()
-            if live { RecorderClock() }
-        }
+    /// min(380, width − 32) wide, 8 pt above the bottom of the canvas.
+    private func voicePill(_ size: CGSize) -> some View {
+        VoicePill(notice: notice, inSession: inSession, toggle: { capture.toggle() }, done: done, close: close)
+            .frame(width: max(0, min(380, size.width - 32)))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .padding(.bottom, 8)
     }
 
-    @ViewBuilder private var stage: some View {
-        if !available {
-            message(icon: "record.circle", capture.owner == surface ? "Saving your last recording…"
-                    : capture.owner == .panel ? "Saro is recording in the capture panel." : "The recorder is open in Saro's window.")
-        } else if case .needsAccess(let access) = capture.state {
-            message(icon: access == .camera ? "video.slash" : "mic.slash",
-                    access == .camera ? "Saro needs your camera to record a moment." : "Saro needs your microphone to record.",
-                    detail: "Turn it on in System Settings → Privacy & Security, then reopen the recorder.") {
-                Button("Open System Settings") { NSWorkspace.shared.open(access.settingsURL) }
-                if access == .camera { voiceInstead }
+    /// The frame's content: the live camera (or, for a voice note in the panel, the meter) under the HUD, or a state card.
+    private func stage(radius: CGFloat) -> some View {
+        let notice = notice
+        return ZStack {
+            if kind == .moment {
+                Color.black
+                if notice == nil { CameraPreview(session: capture.engine.session) }
+            } else {
+                Night.surface
             }
-        } else if case .failed(let text) = capture.state {
-            message(icon: "exclamationmark.triangle", text) { if kind == .moment { voiceInstead } }
-        } else if !live {
-            ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: compact ? 150 : 200, maxHeight: compact ? .infinity : nil)
-        } else if kind == .moment {
-            CameraPreview(session: capture.engine.session)
-                .aspectRatio(16 / 9, contentMode: .fit)
-                .overlay(alignment: .bottomLeading) {
-                    LevelBars(bars: 14, height: 14, color: Tok.mint)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.35), in: .capsule)
-                        .padding(10)
-                }
-        } else {
-            LevelBars(bars: compact ? 36 : 60, height: compact ? 96 : 140, color: Tok.sage)
-                .frame(maxWidth: .infinity, minHeight: compact ? 150 : 200, maxHeight: compact ? .infinity : nil)
-                .background(Tok.surfaceAlt, in: .rect(cornerRadius: 12))
-        }
-    }
-
-    /// Only the window offers this; the panel has its own Voice tab.
-    @ViewBuilder private var voiceInstead: some View {
-        if !compact { Button("Record a voice note instead") { model.recorderKind = .voice } }
-    }
-
-    private func message<Actions: View>(icon: String, _ text: String, detail: String? = nil,
-                                        @ViewBuilder actions: () -> Actions = { EmptyView() }) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 22)).foregroundStyle(Tok.ink3)
-            Text(text).font(Typo.ui(13, .medium)).foregroundStyle(Tok.ink)
-            if let detail { Text(detail).font(Typo.ui(12)).foregroundStyle(Tok.ink2) }
-            HStack { actions() }.controlSize(.small).padding(.top, 4)
-        }
-        .multilineTextAlignment(.center)
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: compact ? 150 : 200, maxHeight: compact ? .infinity : nil)
-        .background(Tok.surfaceAlt, in: .rect(cornerRadius: 12))
-    }
-
-    private var pickers: some View {
-        HStack(spacing: 8) {
-            if kind == .moment, !capture.cameras.isEmpty {
-                Picker("Camera", selection: Binding(get: { capture.cameraID ?? "" }, set: { capture.select(camera: $0) })) {
-                    ForEach(capture.cameras) { Label($0.name, systemImage: $0.isPhone ? "iphone" : "web.camera").tag($0.id) }
-                }
+            if notice == nil {
+                hud
+                    .environment(\.colorScheme, .dark)
+                    .opacity(developing ? 0 : 1)
+                    .animation(CaptureMotion.out(0.2), value: developing)
             }
-            Picker("Microphone", selection: Binding(get: { capture.micID ?? "" }, set: { capture.select(mic: $0) })) {
-                ForEach(capture.mics) { Label($0.name, systemImage: "mic").tag($0.id) }
+            if kind == .moment, !compact { flash }
+            if let notice {
+                StateCard(notice: notice, compact: compact, close: close,
+                          voiceInstead: notice.voiceInstead ? { model.recorderKind = .voice } : nil)
+                    .transition(.opacity)
             }
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .controlSize(.small)
-        .fixedSize()
-        .disabled(capture.state == .recording)
+        .clipShape(.rect(cornerRadius: radius))
+        // The brand card fades into the camera, as the web build's loading screen does.
+        .animation(CaptureMotion.out(0.6), value: notice == nil)
     }
 
-    private var controls: some View {
-        HStack {
-            Group { if !compact, live { pickers } }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if live { recordButton }
-            Group {
-                if inSession {
-                    Button("Done", action: done)
-                        .keyboardShortcut(.defaultAction)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Tok.sage)
-                        .disabled(capture.starting)
-                } else {
-                    Button("Cancel", action: close).keyboardShortcut(.cancelAction)
-                }
+    private var hud: some View {
+        ZStack {
+            if kind == .moment {
+                // Legibility shades: 45% from the top, half from the bottom.
+                LinearGradient(stops: [
+                    .init(color: .black.opacity(0.55), location: 0), .init(color: .black.opacity(0.15), location: 0.225),
+                    .init(color: .clear, location: 0.45), .init(color: .clear, location: 0.5),
+                    .init(color: .black.opacity(0.2), location: 0.75), .init(color: .black.opacity(0.65), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+            } else {
+                LevelMeter(height: 56, color: Night.echo, live: capture.state != .paused)
+                    .opacity(capture.state == .recording ? 1 : 0.4)
+                    .animation(CaptureMotion.out(0.24), value: capture.state)
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            if let countdown {
+                Countdown(count: countdown)
+                    .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.96)),
+                                                                     removal: .opacity.combined(with: .scale(scale: 1.04))))
+            }
+            VStack(spacing: 0) {
+                topBar
+                Spacer(minLength: 0)
+                bottomBar
+            }
+            if !compact {
+                Image("Logo").resizable().scaledToFit()
+                    .frame(width: 56, height: 56)
+                    .opacity(0.8)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
+    }
+
+    private var topBar: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if !compact { DatePill() }
+            devicePills
+            Spacer(minLength: 8)
+            if inSession {
+                Button("Done", action: done)
+                    .buttonStyle(CaptureButtonStyle.glass(padding: 24))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(capture.starting || developing)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
+            } else {
+                Button("Close") { countdown == nil ? close() : cancelCountdown() }
+                    .buttonStyle(CaptureButtonStyle.glass())
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(countdown == nil ? 1 : 0)
+                    .allowsHitTesting(countdown == nil)
+                    .transition(.opacity)
+            }
+        }
+        .padding(compact ? 12 : 24)
+        .animation(reduceMotion ? Motion.fade : CaptureMotion.small, value: inSession)
+        .animation(CaptureMotion.out(0.2), value: countdown == nil)
+    }
+
+    private var bottomBar: some View {
+        HStack(alignment: .top, spacing: compact ? 8 : 24) {
+            Group { if inSession { timer.transition(.opacity) } }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.top, 20)
+            recordButton
+            Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, compact ? 14 : 24)
+        .animation(CaptureMotion.out(0.25), value: inSession)
+    }
+
+    /// Elapsed across turns in Geist Mono, with the turn count under it.
+    private var timer: some View {
+        let paused = capture.state == .paused
+        return VStack(alignment: .trailing, spacing: 2) {
+            ElapsedText()
+                .font(Typo.mono(12.5, .regular))
+                .tracking(0.75)
+                .foregroundStyle(.white.opacity(paused ? 0.6 : 1))
+            Text(paused ? "Paused · turn \(capture.turn)" : "Turn \(capture.turn)")
+                .font(Typo.ui(11, .medium))
+                .foregroundStyle(.white.opacity(0.6))
+        }
+        .legible()
+        .accessibilityElement(children: .combine)
     }
 
     private var recordButton: some View {
-        let recording = capture.state == .recording
-        let size: CGFloat = compact ? 48 : 58
-        return Button { capture.toggle() } label: {
-            Image(systemName: recording ? "pause.fill" : "circle.fill")
-                .font(.system(size: recording ? size * 0.36 : size * 0.6))
-                .foregroundStyle(Tok.voice)
-                .contentTransition(.symbolEffect(.replace))
-                .frame(width: size, height: size)
-                .overlay(Circle().strokeBorder(Tok.voice.opacity(0.35), lineWidth: 2))
-                .contentShape(.circle)
+        let look: RecordLook = countdown != nil ? .armed
+            : capture.state == .recording ? .recording : capture.state == .paused ? .paused : .idle
+        let wash: Color = look == .recording ? .black.opacity(0.2) : .white.opacity(0.1)
+        return VStack(spacing: 6) {
+            Button(action: primary) { RecordDisc(look: look) }
+                .buttonStyle(CaptureButtonStyle(fill: wash, hover: look == .recording ? wash : .white.opacity(0.2),
+                                                ink: .white, diameter: 64))
+                .keyboardShortcut(.space, modifiers: [])
+                .disabled(!capture.canToggle || developing)
+                .accessibilityLabel(look.label)
+                .help("\(look.label) (Space)")
+                .tourAnchor(.recordButton)
+            Text(look.caption)
+                .font(Typo.ui(11, .medium))
+                .foregroundStyle(.white.opacity(0.8))
+                .legible()
+                .accessibilityHidden(true)
         }
+    }
+
+    /// Camera and microphone as quiet glass pills; locked while a turn records.
+    private var devicePills: some View {
+        let recording = capture.state == .recording
+        return HStack(spacing: 8) {
+            if kind == .moment, let camera = capture.cameras.first(where: { $0.id == capture.cameraID }) {
+                devicePill("Camera", icon: camera.isPhone ? "iphone" : "web.camera", current: camera.name,
+                           devices: capture.cameras, selection: camera.id) { CaptureController.shared.select(camera: $0) }
+            }
+            if let mic = capture.mics.first(where: { $0.id == capture.micID }) {
+                devicePill("Microphone", icon: "mic", current: mic.name, devices: capture.mics, selection: mic.id) {
+                    CaptureController.shared.select(mic: $0)
+                }
+            }
+        }
+        .disabled(recording)
+        .opacity(recording ? 0.35 : 1)
+        .animation(CaptureMotion.out(0.2), value: recording)
+    }
+
+    private func devicePill(_ title: String, icon: String, current: String, devices: [CaptureController.Device],
+                            selection: String, select: @escaping @MainActor @Sendable (String) -> Void) -> some View {
+        Menu {
+            Picker(title, selection: Binding(get: { selection }, set: select)) {
+                ForEach(devices) { Text($0.name).tag($0.id) }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                if !compact { Text(current).lineLimit(1).frame(maxWidth: 150) }
+            }
+        }
+        .menuStyle(.button)
         .buttonStyle(.plain)
-        .keyboardShortcut(.space, modifiers: [])
-        .disabled(!capture.canToggle)
-        .opacity(capture.canToggle ? 1 : 0.4)
-        .accessibilityLabel(recording ? "Pause" : inSession ? "Resume" : "Record")
-        .help(recording ? "Pause (Space)" : inSession ? "Resume (Space)" : "Record (Space)")
-        .tourAnchor(.recordButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .font(Typo.ui(12, .medium))
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, compact ? 10 : 12)
+        .frame(height: 28)
+        .frosted()
+        .help(current)
+        .accessibilityLabel("\(title): \(current)")
+    }
+
+    /// A develop flash on Done: the frame washes bright and settles back, like a print, before it closes.
+    private var flash: some View {
+        Color(red: 1, green: 0.97, blue: 0.9)
+            .keyframeAnimator(initialValue: 0.0, trigger: developing) { view, value in view.opacity(value) } keyframes: { _ in
+                LinearKeyframe(0.55, duration: 0.12, timingCurve: CaptureMotion.outCurve)
+                LinearKeyframe(0, duration: 0.88, timingCurve: .easeInOut)
+            }
+            .allowsHitTesting(false)
+    }
+
+    // MARK: State
+
+    /// What to show instead of the live recorder; nil once the preview runs. No icon means a spinner.
+    private var notice: RecorderNotice? {
+        if !available {
+            if capture.owner == surface { return RecorderNotice(title: "Saving your last recording…") }
+            return RecorderNotice(icon: "record.circle",
+                                  title: capture.owner == .panel ? "Saro is recording in the capture panel." : "The recorder is open in Saro's window.",
+                                  detail: "Finish there, then come back.")
+        }
+        switch capture.state {
+        case .previewing, .recording, .paused:
+            return nil
+        case .needsAccess(let access):
+            let camera = access == .camera
+            return RecorderNotice(icon: camera ? "video.slash" : "mic.slash",
+                                  title: camera ? "Saro needs your camera to record a moment." : "Saro needs your microphone to record.",
+                                  detail: "Turn it on in System Settings → Privacy & Security → \(camera ? "Camera" : "Microphone"), then reopen the recorder.",
+                                  settings: access.settingsURL, voiceInstead: camera && !compact)
+        case .failed(let text):
+            return RecorderNotice(icon: "exclamationmark.triangle", title: text, voiceInstead: kind == .moment && !compact)
+        default:
+            return kind == .moment
+                ? RecorderNotice(title: "Getting your camera ready…", detail: "If macOS asks, allow the camera and microphone.")
+                : RecorderNotice(title: "Starting the microphone…")
+        }
+    }
+
+    // MARK: Actions
+
+    /// The record button: a moment's first turn waits for a 3-2-1, which the button (or Space) skips.
+    private func primary() {
+        if countdown != nil { return startNow() }
+        if kind == .moment, capture.state == .previewing, !inSession { return startCountdown() }
+        capture.toggle()
+    }
+
+    private func startCountdown() {
+        ritual = Task {
+            for n in [3, 2, 1] {
+                withAnimation(reduceMotion ? Motion.fade : CaptureMotion.out(n == 3 ? 0.3 : 0.35)) { countdown = n }
+                AccessibilityNotification.Announcement("\(n)").post()
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            startNow()
+        }
+    }
+
+    private func startNow() {
+        cancelCountdown()
+        capture.toggle()
+    }
+
+    private func cancelCountdown() {
+        ritual?.cancel()
+        ritual = nil
+        withAnimation(reduceMotion ? Motion.fade : CaptureMotion.out(0.3)) { countdown = nil }
     }
 
     private func done() {
         let saved = inSession
+        guard saved, kind == .moment, !compact, !reduceMotion else { return finish(saved) }
+        // Stop this turn now; the preview stays live under the flash.
+        if capture.state == .recording { capture.toggle() }
+        developing = true
+        ritual = Task {
+            try? await Task.sleep(for: .seconds(1))
+            if !Task.isCancelled { finish(saved) }
+        }
+    }
+
+    private func finish(_ saved: Bool) {
         capture.finish(surface)
         if saved, let onSaved { onSaved() } else { onClose() }
     }
 
     private func close() {
+        ritual?.cancel()
         capture.finish(surface)
         onClose()
     }
 }
 
-/// Elapsed time across turns and the turn count; re-renders at 20 Hz on its own.
-private struct RecorderClock: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+struct RecorderNotice: Equatable {
+    var icon: String?
+    var title: String
+    var detail: String?
+    var settings: URL?
+    var voiceInstead = false
+}
 
-    var body: some View {
-        let capture = CaptureController.shared
-        let elapsed = capture.elapsed
-        HStack(spacing: 6) {
-            if capture.state == .recording {
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 7))
-                    .foregroundStyle(Tok.voice)
-                    .symbolEffect(.pulse, isActive: !reduceMotion)
-            }
-            Text(elapsed.formatted(.time(pattern: elapsed >= .seconds(3600) ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2))))
-                .font(Typo.mono(12))
-                .monospacedDigit()
-                .foregroundStyle(Tok.ink)
-            if capture.turn > 0 {
-                Text("TURN \(capture.turn)").font(Typo.mono(10.5)).foregroundStyle(Tok.ink3)
-            }
+/// The web build's motion tokens (lib/motion.ts).
+enum CaptureMotion {
+    /// Overlays, sheets, big surfaces.
+    static let surface = Animation.spring(response: 0.272, dampingFraction: 1)
+    /// Pills, chips, small surfaces.
+    static let small = Animation.spring(response: 0.170, dampingFraction: 1)
+    static let press = Animation.spring(response: 0.102, dampingFraction: 1)
+    /// ease.out, cubic-bezier(0.23, 1, 0.32, 1): entrances and exits.
+    static let outCurve = UnitCurve.bezier(startControlPoint: UnitPoint(x: 0.23, y: 1), endControlPoint: UnitPoint(x: 0.32, y: 1))
+    static func out(_ duration: Double) -> Animation { .timingCurve(0.23, 1, 0.32, 1, duration: duration) }
+}
+
+/// The web build's buttons: 44 pt pills (or discs) with a hover fill, pressing to 0.96 on the press spring.
+struct CaptureButtonStyle: ButtonStyle {
+    var fill: Color
+    var hover: Color
+    var ink: Color
+    var line: Color = .clear
+    var shadow: Color = .clear
+    var frosted = false
+    var padding: CGFloat = 20
+    var size: CGFloat = 14
+    /// A disc of this size instead of a pill.
+    var diameter: CGFloat?
+
+    static var primary: Self { Self(fill: Tok.sage, hover: Tok.sageDark, ink: Tok.onPrimary, shadow: Tok.sage.opacity(0.22)) }
+    static var secondary: Self { Self(fill: Tok.surfaceAlt, hover: Tok.bg, ink: Tok.ink, line: Tok.border) }
+
+    /// Frosted glass over video: black/30 on a blur, a white/20 hairline.
+    static func glass(padding: CGFloat = 20) -> Self {
+        Self(fill: .black.opacity(0.3), hover: .white.opacity(0.2), ink: .white, line: .white.opacity(0.2),
+             shadow: .black.opacity(0.1), frosted: true, padding: padding)
+    }
+
+    func makeBody(configuration: Configuration) -> some View { Styled(style: self, configuration: configuration) }
+
+    private struct Styled: View {
+        let style: CaptureButtonStyle
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var enabled
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(Typo.ui(style.size, .medium))
+                .foregroundStyle(style.ink)
+                .padding(.horizontal, style.diameter == nil ? style.padding : 0)
+                .frame(width: style.diameter, height: style.diameter ?? 44)
+                .background(hovering && enabled ? style.hover : style.fill, in: .capsule)
+                .background { if style.frosted { Capsule().fill(.ultraThinMaterial) } }
+                .overlay(Capsule().strokeBorder(style.line))
+                .shadow(color: style.shadow, radius: 10, y: 4)
+                .contentShape(.capsule)
+                .opacity(enabled ? 1 : 0.5)
+                .scaleEffect(configuration.isPressed ? 0.96 : 1)
+                .animation(CaptureMotion.press, value: configuration.isPressed)
+                .animation(CaptureMotion.out(0.16), value: hovering)
+                .onHover { hovering = $0 }
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
-/// A rolling history of the mic level as bars.
-private struct LevelBars: View {
-    let bars: Int
-    let height: CGFloat
-    let color: Color
-    @State private var history: [Double]
-
-    init(bars: Int, height: CGFloat, color: Color) {
-        self.bars = bars
-        self.height = height
-        self.color = color
-        _history = State(initialValue: Array(repeating: 0, count: bars))
+extension View {
+    /// The web build's `breathe` keyframe: opacity 1 → 0.5 and scale 1 → 0.8 and back, every 2.4 s.
+    @ViewBuilder func breathing(_ active: Bool) -> some View {
+        if active {
+            phaseAnimator([false, true]) { view, inhale in
+                view.opacity(inhale ? 0.5 : 1).scaleEffect(inhale ? 0.8 : 1)
+            } animation: { _ in .easeInOut(duration: 1.2) }
+        } else {
+            self
+        }
     }
 
+    /// Glass over video for pills that aren't buttons.
+    fileprivate func frosted() -> some View {
+        background(.black.opacity(0.3), in: .capsule)
+            .background(.ultraThinMaterial, in: .capsule)
+            .overlay(Capsule().strokeBorder(.white.opacity(0.2)))
+            .shadow(color: .black.opacity(0.1), radius: 8, y: 5)
+    }
+
+    /// White text that stays readable on any frame of video.
+    fileprivate func legible() -> some View {
+        shadow(color: .black.opacity(0.55), radius: 1, y: 1).shadow(color: .black.opacity(0.35), radius: 14)
+    }
+}
+
+// MARK: - Parts
+
+/// Elapsed time across turns; re-renders at 20 Hz on its own.
+struct ElapsedText: View {
     var body: some View {
-        let level = CaptureController.shared.level
-        HStack(spacing: 3) {
-            ForEach(history.indices, id: \.self) { i in
-                Capsule()
-                    .fill(color.opacity(0.35 + 0.65 * history[i]))
-                    .frame(width: 3, height: max(3, height * history[i]))
+        let elapsed = CaptureController.shared.elapsed
+        Text(elapsed.formatted(.time(pattern: elapsed >= .seconds(3600) ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2))))
+            .monospacedDigit()
+    }
+}
+
+private enum RecordLook: Equatable {
+    case idle, armed, recording, paused
+
+    var caption: String {
+        switch self {
+        case .idle: "Record"
+        case .armed: "Skip"
+        case .recording: "Pause"
+        case .paused: "Resume"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .idle: "Start recording"
+        case .armed: "Skip the countdown"
+        case .recording: "Pause recording"
+        case .paused: "Resume recording"
+        }
+    }
+}
+
+/// 64 pt: a white/80 ring around a 48 pt circle that shrinks to an apricot square while recording
+/// (a smaller circle while paused), with a breathing halo.
+private struct RecordDisc: View {
+    let look: RecordLook
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let hot = look == .recording || look == .armed
+        let radius: CGFloat = hot ? 12 : 24
+        ZStack {
+            if look == .recording {
+                Circle().strokeBorder(Tok.voiceBright.opacity(0.6), lineWidth: 2)
+                    .frame(width: 76, height: 76)
+                    .breathing(!reduceMotion)
+                    .transition(.opacity)
             }
+            Circle().strokeBorder(.white.opacity(look == .recording ? 0.6 : 0.8), lineWidth: 4)
+            RoundedRectangle(cornerRadius: radius)
+                .fill(look == .idle ? .clear : Tok.voiceBright.opacity(look == .paused ? 0.9 : 1))
+                .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(.white.opacity(look == .idle ? 0.5 : 0), lineWidth: 2))
+                .frame(width: 48, height: 48)
+                .scaleEffect(hot ? 0.5 : look == .paused ? 0.83 : 1)
         }
-        .frame(height: height)
-        .onChange(of: level) { _, new in
-            history.removeFirst()
-            history.append(new)
+        .frame(width: 64, height: 64)
+        .animation(reduceMotion ? Motion.fade : CaptureMotion.out(0.15), value: look)
+    }
+}
+
+/// The soft 3-2-1 before a moment's first turn: a thin 144 pt ring drains once a second around the number.
+private struct Countdown: View {
+    let count: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var ring = 1.0
+
+    var body: some View {
+        ZStack {
+            ZStack {
+                Circle().stroke(.white.opacity(0.2), lineWidth: 1.8)
+                Circle().trim(from: 0, to: reduceMotion ? Double(count) / 3 : ring)
+                    .stroke(.white.opacity(0.9), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .padding(4.3)
+            .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+            Text("\(count)")
+                .font(Typo.ui(56, .light))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.45), radius: 10, y: 2)
+                .id(count)
+                .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(NumberSwap()))
         }
+        .frame(width: 144, height: 144)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .onAppear { if !reduceMotion { withAnimation(.linear(duration: 3)) { ring = 0 } } }
+    }
+}
+
+/// Numbers enter from blur 6 and scale 0.92, and leave to blur 6 and scale 1.08.
+private struct NumberSwap: Transition {
+    func body(content: Content, phase: TransitionPhase) -> some View {
+        content
+            .opacity(phase.isIdentity ? 1 : 0)
+            .blur(radius: phase.isIdentity ? 0 : 6)
+            .scaleEffect(phase == .willAppear ? 0.92 : phase == .didDisappear ? 1.08 : 1)
+    }
+}
+
+/// "TUE 27 OCT · 8:10 PM" in Geist Mono on glass.
+private struct DatePill: View {
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            let d = context.date
+            let day = "\(d.formatted(.dateTime.weekday(.abbreviated))) \(d.formatted(.dateTime.day())) \(d.formatted(.dateTime.month(.abbreviated)))"
+            Text("\(day) · \(d.formatted(.dateTime.hour().minute()))".uppercased())
+        }
+        .font(Typo.mono(11.5, .regular))
+        .tracking(0.58)
+        .monospacedDigit()
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, 14)
+        .frame(height: 28)
+        .frosted()
+    }
+}
+
+/// The loading, permission and busy states on the brand ground, filling the frame.
+private struct StateCard: View {
+    let notice: RecorderNotice
+    let compact: Bool
+    let close: () -> Void
+    let voiceInstead: (() -> Void)?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Tok.bg
+            VStack(spacing: 0) {
+                Group {
+                    if let icon = notice.icon {
+                        Image(systemName: icon)
+                            .font(.system(size: compact ? 20 : 26, weight: .medium))
+                            .foregroundStyle(Tok.danger)
+                            .frame(width: compact ? 48 : 64, height: compact ? 48 : 64)
+                            .background(Tok.dangerBg, in: .circle)
+                            .overlay(Circle().strokeBorder(Tok.dangerBorder))
+                    } else {
+                        Spinner()
+                    }
+                }
+                .padding(.bottom, compact ? 16 : 24)
+                Text(notice.title)
+                    .font(Typo.ui(compact ? 15 : 20, .medium))
+                    .tracking(compact ? 0 : -0.2)
+                    .foregroundStyle(Tok.ink)
+                if let detail = notice.detail {
+                    Text(detail)
+                        .font(Typo.ui(compact ? 13 : 14))
+                        .lineSpacing(compact ? 2 : 4)
+                        .foregroundStyle(Tok.ink2)
+                        .padding(.top, 8)
+                }
+                if notice.settings != nil || voiceInstead != nil {
+                    VStack(spacing: 12) {
+                        if let url = notice.settings {
+                            Button { NSWorkspace.shared.open(url) } label: { Text("Open System Settings").frame(maxWidth: .infinity) }
+                                .buttonStyle(CaptureButtonStyle.primary)
+                                .keyboardShortcut(.defaultAction)
+                        }
+                        if let voiceInstead {
+                            Button(action: voiceInstead) { Text("Record a voice note instead").frame(maxWidth: .infinity) }
+                                .buttonStyle(CaptureButtonStyle.secondary)
+                        }
+                    }
+                    .padding(.top, compact ? 16 : 24)
+                }
+            }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 448)
+            .padding(compact ? 20 : 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Button(action: close) { Image(systemName: "xmark").font(.system(size: compact ? 12 : 15, weight: .semibold)) }
+                .buttonStyle(CaptureButtonStyle(fill: Tok.surfaceAlt, hover: Tok.surface, ink: Tok.ink2, line: Tok.border,
+                                                diameter: compact ? 32 : 44))
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Close")
+                .padding(compact ? 12 : 24)
+        }
+    }
+}
+
+/// A 40 pt sage ring with one bright quarter, turning.
+private struct Spinner: View {
+    @State private var turning = false
+
+    var body: some View {
+        Circle().trim(from: 0, to: 0.25)
+            .stroke(Tok.sage, lineWidth: 3)
+            .background(Circle().stroke(Tok.sage.opacity(0.25), lineWidth: 3))
+            .frame(width: 37, height: 37)
+            .rotationEffect(.degrees(turning ? 360 : 0))
+            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: turning)
+            .onAppear { turning = true }
+            .accessibilityLabel("Loading")
     }
 }
 
@@ -254,8 +669,6 @@ private final class PreviewView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = .black
-        layer?.cornerRadius = 12
-        layer?.masksToBounds = true
         preview.videoGravity = .resizeAspectFill
         // Mac cameras (built-in and Continuity) all face you but report `.unspecified`, so mirror every preview
         // like Photo Booth. The recorded file stays unmirrored.
