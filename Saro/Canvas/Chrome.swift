@@ -126,10 +126,15 @@ struct MoodRibbon: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(model.week, id: \.day) { d in
-                Capsule().fill(d.mood.map(MoodPalette.color) ?? Tok.ink4.opacity(0.35))
-                    .frame(width: 14, height: 4)
-                    .overlay { if d.day == model.day { Capsule().strokeBorder(Tok.sage, lineWidth: 1).padding(-1.5) } }
-                    .help("\(DayFormat.sidebar(d.day))\(d.mood.map { ": \($0.rawValue)" } ?? "")")
+                VStack(spacing: 3) {
+                    Capsule().fill(d.mood.map(MoodPalette.color) ?? Tok.ink.opacity(0.1))
+                        .frame(width: 14, height: 4)
+                    Text(LocalDay.date(d.day)?.formatted(.dateTime.weekday(.narrow)) ?? "")
+                        .font(Typo.mono(10)).textCase(.uppercase)
+                        .foregroundStyle(d.day == model.day ? Tok.ink : Tok.ink3)
+                }
+                .frame(width: 14)
+                .help("\(DayFormat.sidebar(d.day))\(d.mood.map { ": \($0.rawValue)" } ?? "")")
             }
         }
     }
