@@ -231,7 +231,8 @@ struct SettingsWindow: View {
     private func jump(to s: SettingsSection, _ proxy: ScrollViewProxy, instant: Bool) {
         tops.pinned = nil
         tops.holdUntil = .now.addingTimeInterval(instant || reduceMotion ? 0.1 : 0.7)
-        active = s
+        // After a key the rail's bar is just there (the frequency rule).
+        withTransaction(\.disablesAnimations, instant) { active = s }
         if instant || reduceMotion {
             proxy.scrollTo(s, anchor: .top)
         } else {

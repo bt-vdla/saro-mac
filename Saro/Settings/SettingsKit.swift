@@ -141,7 +141,8 @@ private struct SageSwitch: View {
         .onTapGesture { configuration.isOn.toggle() }
         .focusable(enabled)
         .onKeyPress(.space) {
-            configuration.isOn.toggle()
+            // The frequency rule: a key's flip doesn't slide.
+            withTransaction(\.disablesAnimations, true) { configuration.isOn.toggle() }
             return .handled
         }
         .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: on)
