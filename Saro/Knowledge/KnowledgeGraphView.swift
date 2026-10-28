@@ -28,6 +28,8 @@ struct KnowledgeGraphView: View {
     @State private var layout: [String: SIMD2<Double>] = [:]
     @State private var camera = Camera()
     @State private var userMoved = false
+    /// The last rebuild moves its nodes on the spring.
+    @State private var settling = false
     @State private var hovered: String?
     @State private var selected: String?
     @State private var panStart: CGSize?
@@ -125,6 +127,9 @@ struct KnowledgeGraphView: View {
                         let on = lit.map { $0.contains(e.a) && $0.contains(e.b) } ?? true
                         EdgeLine(a: screen(a), b: screen(b))
                             .stroke(Tok.ink.opacity(on ? (lit == nil ? 0.13 : 0.34) : 0.04), lineWidth: 0.75 + 1.1 * log2(1 + e.weight))
+                            // A new edge has no earlier ends to move from, so it waits out the spring (it settles by 0.4 s).
+                            .transition(.asymmetric(insertion: settling ? .opacity.animation(Motion.easeOut(0.2).delay(0.35)) : .identity,
+                                                    removal: .opacity))
                     }
                 }
             }
@@ -242,7 +247,9 @@ struct KnowledgeGraphView: View {
         }.value
         let first = layout.isEmpty
         // The graph settles into its new shape on the surface spring; Reduce Motion places it without moving.
-        withAnimation(first || reduceMotion || NSApp.currentEvent?.type == .keyDown ? nil : Motion.surface) {
+        let settle = first || reduceMotion || Motion.byKey ? nil : Motion.surface
+        withAnimation(settle) {
+            settling = settle != nil
             graph = g
             layout = l
             if let s = selected, !g.nodes.contains(where: { $0.id == s }) { selected = nil }
