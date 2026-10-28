@@ -13,7 +13,8 @@ struct TourAnchorKey: PreferenceKey {
 }
 
 extension View {
+    /// Merges into what the views inside reported, so an anchor on a container doesn't hide the anchors within it.
     func tourAnchor(_ target: TourTarget) -> some View {
-        anchorPreference(key: TourAnchorKey.self, value: .bounds) { [target: $0] }
+        transformAnchorPreference(key: TourAnchorKey.self, value: .bounds) { $0[target] = $1 }
     }
 }
