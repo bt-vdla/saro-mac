@@ -240,7 +240,9 @@ struct DayStage: View {
     private var background: some View {
         ZStack {
             Color.clear
-            CanvasEvents(enabled: isCurrent && shownID == nil && model.recorderKind == nil && model.openStackID == nil,
+            // The letter, the Noticed panel, ⌘K and dev notes scroll themselves; the monitor would take their wheel.
+            CanvasEvents(enabled: isCurrent && shownID == nil && model.recorderKind == nil && model.openStackID == nil
+                             && model.insight == .spine && !model.searchOpen && !model.devNotesVisible,
                          onPan: { d in
                              userMoved = true
                              camera.pan = CGSize(width: camera.pan.width + d.width, height: camera.pan.height + d.height)
