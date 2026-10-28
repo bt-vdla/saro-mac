@@ -28,6 +28,8 @@ struct DayView: View {
                     // The voice pill sits 8 pt above the bar; the moment frame fills the canvas.
                     RecorderView(kind: kind) { model.recorderKind = nil }
                         .padding(.bottom, kind == .voice ? 92 : 0)
+                        // A window close or pane switch ends the session too; left set, the camera would come back on its own.
+                        .onDisappear { model.recorderKind = nil }
                 }
                 ToastHost()
             }
