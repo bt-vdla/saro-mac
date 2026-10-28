@@ -326,7 +326,7 @@ struct DayStage: View {
                 RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .padding(12)
             }
-            DayState(day: day, empty: cards.isEmpty, width: size.width)
+            DayStateView(day: day, empty: cards.isEmpty, width: size.width)
         }
         .contentShape(.rect)
         .gesture(marqueeGesture)
@@ -660,7 +660,7 @@ struct MorphFlight: View, @MainActor Animatable {
 
 /// What the canvas says when it has no cards (DayState.tsx): the day is loading (only once that is slow enough to notice,
 /// so a quick load doesn't flash), it couldn't be read, or it is honestly empty.
-struct DayState: View {
+struct DayStateView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let day: String
@@ -691,7 +691,7 @@ struct DayState: View {
         ZStack {
             switch shown {
             case .loading:
-                Skeleton(width: width)
+                DaySkeleton(width: width)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Loading \(label)…")
                     .transition(.opacity.animation(Motion.easeOut(0.2)))
@@ -733,7 +733,7 @@ struct DayState: View {
 }
 
 /// Three shimmer blocks, 24 pt apart, each 120 ms behind the last; the outer two give way on a narrow window.
-private struct Skeleton: View {
+private struct DaySkeleton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let width: CGFloat
     @State private var start = Date.now
