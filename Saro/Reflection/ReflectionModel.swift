@@ -77,6 +77,13 @@ final class ReflectionModel {
     /// The day's mood: the person's own when they set one, else the reading's.
     func mood(_ reading: DayReading) -> Mood { state.lockedMood ?? reading.mood }
 
+    /// The commitments and carry-overs the day shows: none on a held day, where the SafetyCard stands alone (DailyInsightBar).
+    var shownCommitments: [Commitment] { model?.isDayHeld == true ? [] : commitments }
+    var shownCarryOvers: [Commitment] { model?.isDayHeld == true ? [] : carryOvers }
+
+    /// Read the Day Again, from the panel, the View menu or ⌘K: only on a day whose reading may show.
+    var canRefresh: Bool { model?.dayStatus == .ready && !busy.contains(.insights) }
+
     // MARK: Loading
 
     /// Reads the day's own records, then the first week's note, the letter's notification and the evening arrival.
@@ -90,7 +97,7 @@ final class ReflectionModel {
             let today = LocalDay.today()
             let state = (try? await ledger.dayState(day)) ?? DayState(day: day)
             let commitments = (try? await ledger.commitments(day: day)) ?? []
-            let open = day == today ? (try? await ledger.openCommitments(from: LocalDay.adding(-1, to: day))) ?? [] : []
+            let carry = day == today ? await model.pipeline.carryOvers(to: day, list: commitments) : []
             let kept = (try? await ledger.keptLetter(day: day)).flatMap { try? JSONDecoder().decode(Letter.self, from: Data($0.payload.utf8)) }
             let turns = (try? await ledger.turns(day: day, kind: .dailyQuestion)) ?? []
             let note = await firstWeekNote(day, model: model)
@@ -98,7 +105,7 @@ final class ReflectionModel {
             self.day = day
             self.state = state
             self.commitments = commitments
-            carryOvers = Commitment.pending(open, today: commitments)
+            carryOvers = carry
             self.kept = kept
             answer = turns.last { $0.answer != nil && $0.question == model.dayReading?.payload.reading.question }?.answer
             self.note = note
@@ -421,7 +428,7 @@ final class ReflectionModel {
             try await write()
             let list = try await model.ledger.commitments(day: day)
             commitments = list
-            if isToday { carryOvers = Commitment.pending(try await model.ledger.openCommitments(from: LocalDay.adding(-1, to: day)), today: list) }
+            if isToday { carryOvers = await model.pipeline.carryOvers(to: day, list: list) }
         } catch {
             model.show(Toast("Couldn’t save that commitment. Try again in a moment.", style: .error))
         }

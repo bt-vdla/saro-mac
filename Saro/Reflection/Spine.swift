@@ -28,9 +28,9 @@ struct InsightSurface: View {
 
     /// Content-sized, never under 320 pt, so the commitment marks always fit.
     private var spineHeight: CGFloat {
-        let r = model.reflection
-        let marks = min(3, r.commitments.count) + (r.carryOvers.isEmpty ? 0 : 1) + 1
-        let group = CGFloat(marks) * 20 + (r.commitments.count > 3 ? 12 : 0) + CGFloat(marks - (r.commitments.count > 3 ? 0 : 1)) * 6
+        let (list, carry) = (model.reflection.shownCommitments, model.reflection.shownCarryOvers)
+        let marks = min(3, list.count) + (carry.isEmpty ? 0 : 1) + 1
+        let group = CGFloat(marks) * 20 + (list.count > 3 ? 12 : 0) + CGFloat(marks - (list.count > 3 ? 0 : 1)) * 6
         return max(Self.spineMin, 48 + 141 + group)
     }
 
@@ -163,7 +163,7 @@ private struct SpineColumn: View {
     }
 
     private var carryHint: String {
-        switch model.reflection.carryOvers.count {
+        switch model.reflection.shownCarryOvers.count {
         case 0: ""
         case 1: "A commitment from yesterday is waiting."
         case let n: "\(n) commitments from yesterday are waiting."
@@ -171,7 +171,7 @@ private struct SpineColumn: View {
     }
 
     @ViewBuilder private var glyphs: some View {
-        let r = model.reflection
+        let (list, carry) = (model.reflection.shownCommitments, model.reflection.shownCarryOvers)
         let dim = model.entries.isEmpty ? 0.6 : 1
         if folded {
             glyph("sun.max", Tok.moment).opacity(dim)
@@ -182,20 +182,21 @@ private struct SpineColumn: View {
                 glyph("questionmark.circle", Tok.still)
                 Rectangle().fill(Tok.ink.opacity(0.1)).frame(width: 20, height: 1)
                 VStack(spacing: 6) {
-                    if !r.carryOvers.isEmpty {
+                    if !carry.isEmpty {
                         Circle().strokeBorder(Tok.voice, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2.5])).frame(width: 20, height: 20)
                     }
-                    ForEach(r.commitments.prefix(3)) { c in
+                    ForEach(list.prefix(3)) { c in
                         glyph(c.done ? "checkmark.circle.fill" : "circle", c.done ? Tok.moment : Tok.reflection)
                     }
-                    if r.commitments.count > 3 {
-                        Text("+\(r.commitments.count - 3)").font(Typo.ui(10, .medium)).foregroundStyle(Tok.reflectionInk).frame(height: 12)
+                    if list.count > 3 {
+                        Text("+\(list.count - 3)").font(Typo.ui(10, .medium)).foregroundStyle(Tok.reflectionInk).frame(height: 12)
                     }
-                    glyph("plus", Tok.moment)
+                    // Nothing to add to on a held day, whose panel is the SafetyCard alone.
+                    if !model.isDayHeld { glyph("plus", Tok.moment) }
                 }
             }
             .opacity(dim)
-            .animation(Motion.small, value: r.commitments)
+            .animation(Motion.small, value: list)
         }
     }
 

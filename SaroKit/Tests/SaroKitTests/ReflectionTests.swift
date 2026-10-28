@@ -461,3 +461,17 @@ private let work = [
     let next = try #require(await p.readDay(e.localDay))
     #expect(next.reading.question == q && next.questionGenerator == "curated")
 }
+
+@Test func carryOverNeverVoicesAHeldDayOrWordsThatTripTheGate() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let (yesterday, today) = ("2026-10-25", "2026-10-26")
+    let call = try #require(try await l.addCommitment("Call Ravi", day: yesterday))
+    try await l.addCommitment("Kill myself tomorrow", day: yesterday)
+    #expect(await p.carryOvers(to: today, list: []).map(\.id) == [call.id])
+    let held = Entry(kind: .reflection, body: "Some nights I just want to die.", localDay: yesterday)
+    try await l.insertEntry(held)
+    await p.process(entryId: held.id) {}
+    #expect(await p.dayStatus(yesterday) == .held)
+    #expect(await p.carryOvers(to: today, list: []).isEmpty)
+}

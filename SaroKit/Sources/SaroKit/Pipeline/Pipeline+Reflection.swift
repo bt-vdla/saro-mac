@@ -87,6 +87,14 @@ extension Pipeline {
         }
     }
 
+    /// Yesterday's open commitments to ask about on `day` (D9): none already on its `list` by the same words, none from a
+    /// held day, and none whose words trip the phrase gate, since the prompt sets them in Saro's voice (SR-13).
+    public func carryOvers(to day: String, list: [Commitment]) async -> [Commitment] {
+        let yesterday = LocalDay.adding(-1, to: day)
+        guard await dayStatus(yesterday) != .held, let open = try? await ledger.openCommitments(from: yesterday) else { return [] }
+        return Commitment.pending(open, today: list).filter { !SafetyGate.phraseHit($0.text) }
+    }
+
     /// The day's mood for the ribbon and the letter: the person's own when they set one, else the reading's; none unless the
     /// day's reading may show (§13.2).
     public func dayMood(_ day: String) async -> Mood? {

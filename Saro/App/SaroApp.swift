@@ -111,6 +111,7 @@ struct SaroCommands: Commands {
             }
             .keyboardShortcut("l", modifiers: [.command, .option])
             Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
+                .disabled(!model.reflection.canRefresh)
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") {

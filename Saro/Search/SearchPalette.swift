@@ -17,6 +17,8 @@ struct PaletteCommand: Identifiable {
     let symbol: String
     var keywords = ""
     var shortcut: String?
+    /// Offered only when this holds (Read the day again, on a day that can be read).
+    var available: @MainActor (AppModel) -> Bool = { _ in true }
     let run: @MainActor (AppModel) -> Void
 
     /// Every query word starts a word of the title or keywords, or the query is the title's initials ("wsn").
@@ -160,7 +162,8 @@ struct SearchPalette: View {
                 $0.pane = .day
                 $0.showLetter = true
             },
-            PaletteCommand(id: "reread", title: "Read the day again", symbol: "arrow.clockwise", keywords: "refresh insights update reading noticed") { m in
+            PaletteCommand(id: "reread", title: "Read the day again", symbol: "arrow.clockwise", keywords: "refresh insights update reading noticed",
+                           available: { $0.reflection.canRefresh }) { m in
                 m.pane = .day
                 Task { await m.reflection.refreshInsights() }
             },
@@ -481,7 +484,7 @@ struct SearchPalette: View {
         var out: [PaletteSection] = []
         var entries = hits
         if scope == nil {
-            var matched = Self.commands.filter { $0.matches(q) }
+            var matched = Self.commands.filter { $0.matches(q) && $0.available(model) }
             var top: Row?
             if let day = LocalDay.parse(q) {
                 top = .day(day)

@@ -18,7 +18,8 @@ struct NoticedView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     content
                     LetterEntry().padding(.top, 10)
-                    CommitmentsCard().padding(.top, 10)
+                    // A held day's SafetyCard stands alone (DailyInsightBar.tsx).
+                    if !model.isDayHeld { CommitmentsCard().padding(.top, 10) }
                     provenance.padding(.top, 14)
                 }
                 .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 18)
