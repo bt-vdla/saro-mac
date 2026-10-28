@@ -67,7 +67,8 @@ struct DevNotes {
                         "Mic errors offer Try again; a disconnect keeps what was said"],
                 stubbed: [],
                 issues: ["The launch sweep that reconciles rows and files after a crash isn't verified with kill -9 (FR-CAP-11)",
-                         "Live captions, checkpoints and the develop flight need a person at the Mac to check (camera, mic, speech)"],
+                         "Live captions, checkpoints and the develop flight need a person at the Mac to check (camera, mic, speech)",
+                         "Deliberate (§11.7, one model call at a time): a checkpoint's gate and question wait for the entry being read, so after a long part 'Reflecting…' can outlast the 2.5 s budget (FR-REF-06) while that part is transcribed and read"],
                 brd: ["FR-CAP-01", "FR-CAP-04", "FR-CAP-05", "FR-CAP-11", "FR-REF-06", "DR-11", "DR-12"])
         case .capturePanel:
             DevNotes(
