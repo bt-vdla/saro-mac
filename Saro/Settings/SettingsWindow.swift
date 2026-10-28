@@ -37,13 +37,16 @@ struct SettingsWindow: View {
     @AccessibilityFocusState private var heading: SettingsSection?
     @Namespace private var rail
 
-    private static let sayItRequest = Notification.Name("SaroSettingsSayIt")
+    /// ⌘K → Change a setting in words: Settings, with the cursor in Say it once its window is key, however cold.
+    @MainActor @Observable
+    final class SayItRequest {
+        static let shared = SayItRequest()
+        var pending = false
+    }
 
-    /// ⌘K → Change a setting in words: Settings, with the cursor in Say it.
     static func askInWords() {
+        SayItRequest.shared.pending = true
         WindowActions.openSettings()
-        // ponytail: a window opened just now isn't listening yet; a beat later it is.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NotificationCenter.default.post(name: sayItRequest, object: nil) }
     }
 
     /// Where a jump lands a section's top, below the window's top edge.
@@ -83,6 +86,11 @@ struct SettingsWindow: View {
                 openLinkedSection(proxy)
             }
             .onChange(of: PrefsStore.shared.settingsSection) { openLinkedSection(proxy) }
+            // A link that came before the window was up is followed once it is.
+            .onChange(of: window) {
+                openLinkedSection(proxy)
+                answerSayIt()
+            }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .frame(minWidth: 640, idealWidth: 920, minHeight: 480, idealHeight: 720)
@@ -92,7 +100,10 @@ struct SettingsWindow: View {
         .background(WindowReader(window: $window))
         .onExitCommand { window?.performClose(nil) }
         .onAppear(perform: watchSlash)
-        .onReceive(NotificationCenter.default.publisher(for: Self.sayItRequest)) { _ in sayIt = true }
+        .onChange(of: SayItRequest.shared.pending) { answerSayIt() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { n in
+            if n.object as? NSWindow === window { answerSayIt() }
+        }
         .onDisappear {
             if let keys { NSEvent.removeMonitor(keys) }
             keys = nil
@@ -236,14 +247,24 @@ struct SettingsWindow: View {
         if reached != active { active = reached }
     }
 
+    private func answerSayIt() {
+        guard SayItRequest.shared.pending, window?.isKeyWindow == true else { return }
+        SayItRequest.shared.pending = false
+        sayIt = true
+    }
+
+    /// Only a page that's in a window takes the link, so one being replaced can't swallow it.
     private func openLinkedSection(_ proxy: ScrollViewProxy) {
-        guard let s = PrefsStore.shared.settingsSection else { return }
+        guard window != nil, let s = PrefsStore.shared.settingsSection else { return }
         PrefsStore.shared.settingsSection = nil
         // After the first layout, so the section has a place to scroll to.
         Task { @MainActor in
             jump(to: s, proxy, instant: true)
             tops.pinned = s
             tops.holdUntil = .now.addingTimeInterval(1.5)
+            // A first layout that wasn't ready to scroll gets a second try.
+            try? await Task.sleep(for: .milliseconds(250))
+            if tops.pinned == s, abs((tops.y[s] ?? .infinity) - Self.mark) > 2 { proxy.scrollTo(s, anchor: .top) }
         }
     }
 
@@ -259,17 +280,27 @@ struct SettingsWindow: View {
     }
 }
 
-/// The NSWindow a view is in, for Escape and the "/" key.
+/// The NSWindow a view is in, for Escape, the "/" key and links; nil again once the view leaves it.
 struct WindowReader: NSViewRepresentable {
     @Binding var window: NSWindow?
 
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        Task { @MainActor in window = v.window }
-        return v
-    }
+    func makeNSView(context: Context) -> NSView { Probe { window = $0 } }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if nsView.window !== window { Task { @MainActor in window = nsView.window } }
+    final class Probe: NSView {
+        let moved: (NSWindow?) -> Void
+
+        init(_ moved: @escaping (NSWindow?) -> Void) {
+            self.moved = moved
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        // After this update, not during it.
+        override func viewDidMoveToWindow() {
+            let window = window
+            Task { @MainActor in moved(window) }
+        }
     }
 }
