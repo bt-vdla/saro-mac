@@ -177,6 +177,16 @@ enum Snapshots {
                 // Opened by a pinch: the day has flown into its tile; then the X flies back out and the day is refitted.
                 ("nav-lens-pinch", { model.openLens(level: .week, opener: .pinch) }),
                 ("nav-lens-back", { model.lens?.close(how: .animated) }),
+                // The day as narrow as the smallest window leaves it beside the sidebar: the bar takes two rows, and a toast
+                // still sits 8 pt above it.
+                ("nav-bar-narrow", {
+                    p.setContentSize(NSSize(width: 570, height: 860))
+                    model.show(Toast("Saved Yesterday as an image"))
+                }),
+                ("nav-bar-wide", {
+                    p.setContentSize(NSSize(width: 1320, height: 860))
+                    model.toast = nil
+                }),
                 // ⌘K's actions menu, then a day not yet loaded as it loads and as it couldn't be read, on its own ground
                 // (the canvas's own load is too quick to catch). These leave the live UI, so they come after its states.
                 ("actions", {
