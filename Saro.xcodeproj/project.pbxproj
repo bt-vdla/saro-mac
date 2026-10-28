@@ -12,6 +12,7 @@
 		1A3F59BE94ABE56DD2D2D37B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 320C04C124D8B3573D4A40C7 /* Assets.xcassets */; };
 		23EBC0A75857925ECC525882 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5FFC278D920442B79B07E9 /* DetailView.swift */; };
 		309D29B93A2FBCC914D5668F /* LitGround.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81644A536600F8AFD6FFD647 /* LitGround.swift */; };
+		3C9AF37A00425B065D8E543E /* PrivacyCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC09F871B9D385B345A917B9 /* PrivacyCopy.swift */; };
 		3DC351D29BD3C0C22C30D8FA /* MenuBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121AD3F54C416054DB3AFF15 /* MenuBar.swift */; };
 		4E9493CCC108A944490F4617 /* VoiceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */; };
 		51E775D16964D65E690C4B4E /* TourAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E73D2841136756AAF6CEE1 /* TourAnchor.swift */; };
@@ -21,17 +22,22 @@
 		673D8916B7B56891D6B66A96 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66B6A3717D162092779AC808 /* AppModel.swift */; };
 		679F7A2501430F338B835EAC /* Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DCF4C77F0FB18F2BD6A95CF /* Snapshots.swift */; };
 		6AAC53A45874582A0E952878 /* DecisionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F7593CA70015527F6B3D59 /* DecisionsView.swift */; };
+		7713564DF3630DED7D9EE689 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C0DFD44481651B1CC250D3 /* Reminders.swift */; };
 		7D727562FB35D57EBD055DA0 /* LitGround.metal in Sources */ = {isa = PBXBuildFile; fileRef = 3306973E95E1D9CE8074FF75 /* LitGround.metal */; };
 		7F1ADF51C0C662BE555DD77B /* SaroApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D39271F914E4803CF22B5C /* SaroApp.swift */; };
 		848E0232474677303258CA4D /* Daylight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E33F63CB76CBB2928A7CA251 /* Daylight.swift */; };
 		857A3E5239F6CCFB67E0E03C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA646C960CFACB390B21351C /* Theme.swift */; };
+		898943F211D3A627BD1C82D6 /* MotionBlur.swift in Sources */ = {isa = PBXBuildFile; fileRef = E629612A6858D91BD707FF0F /* MotionBlur.swift */; };
 		8E06AB4E67A051E145F81371 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21905B32B376B19FAC8A09BF /* CardView.swift */; };
+		8EA4472FA63A0E3450FE49D1 /* NotificationPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F376A3B403DA8EE477D71993 /* NotificationPreview.swift */; };
 		9237C41C4BABB8103283DA39 /* CapturePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D36681741638F4D012EDD1D /* CapturePanel.swift */; };
 		998518E03C5B843EC37619A2 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = D00D018E3D4830CC2D505F23 /* Fonts */; };
 		9A45F0112D7F08B4097A3F8D /* DragGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B261B10F5EF57AD7F371C9 /* DragGrid.swift */; };
+		9B0235AC066E6C904663BAC3 /* MotionBlur.metal in Sources */ = {isa = PBXBuildFile; fileRef = 73F556865445C2CBDF371F8D /* MotionBlur.metal */; };
 		A0DCBA6C28409E565B610BCC /* DevNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 865129438C25D44EE9A11CEF /* DevNotes.swift */; };
 		AA48556D55DC05CD0C350338 /* SearchPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DAB745ABA4CE416F4668E4 /* SearchPalette.swift */; };
 		B4BF028C44531D06A70B991D /* CanvasEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB9C112B5827AA481D05A87 /* CanvasEvents.swift */; };
+		B896DEB868BD1E50834F3604 /* PrefsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E8CFC6F974E8498CEC9EF56 /* PrefsStore.swift */; };
 		BBAC725F47B28896CDA6FB40 /* DevCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6CDFA3BC6CD9749F17A451 /* DevCommands.swift */; };
 		BC1CE38651D9D16211AFFEAD /* VoicePill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C60C4B0FF55279B0830DBB /* VoicePill.swift */; };
 		BD031E290EC19E370D1D4BE0 /* DayReplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C7DED65EDFFA345D4E774C /* DayReplay.swift */; };
@@ -39,9 +45,12 @@
 		C9D8F22016F2C3423FD28EE7 /* ToastHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */; };
 		D0184C2EAF95A67F6D3CED5F /* CaptureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED31938C0123C1789E50945 /* CaptureController.swift */; };
 		D0B01ACDA0BFB069FDB4AB83 /* Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D651C6DDCA649B5F35280A /* Chrome.swift */; };
+		D66C9B623356764EFD91023B /* AppModel+DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8F83FCD6518BC7DFABA9E7 /* AppModel+DeepLink.swift */; };
 		DFD798A06DA62504A1E29F49 /* RecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09F8D26D339B641BEFEB048 /* RecorderView.swift */; };
+		E1E24CE27F754357E65233E3 /* AppModel+Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B8ABDB1D8D8F11A0C7A6A2 /* AppModel+Profile.swift */; };
 		E89FA24183EF7A173CE47CC6 /* SaroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B374F272D089E98B91D7E9A /* SaroKit */; };
 		ED15910DB783DAE798B5D808 /* DevNotesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0A15D65AF6CFF1DBE0B06F /* DevNotesPanel.swift */; };
+		EE157BAAB1C546DF865FCD4F /* Scenarios.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5440E9806DDCB36B90902A6 /* Scenarios.swift */; };
 		F8457D0F981363EA179883ED /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A769C058197B201354AD6998 /* CanvasView.swift */; };
 		FEE6177C88287A5AC5AF2C46 /* HotKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0359A36E873ED1524535248 /* HotKey.swift */; };
 /* End PBXBuildFile section */
@@ -52,6 +61,7 @@
 		14DAB745ABA4CE416F4668E4 /* SearchPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPalette.swift; sourceTree = "<group>"; };
 		21905B32B376B19FAC8A09BF /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
 		21E73D2841136756AAF6CEE1 /* TourAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TourAnchor.swift; sourceTree = "<group>"; };
+		2E8CFC6F974E8498CEC9EF56 /* PrefsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrefsStore.swift; sourceTree = "<group>"; };
 		320C04C124D8B3573D4A40C7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3306973E95E1D9CE8074FF75 /* LitGround.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LitGround.metal; sourceTree = "<group>"; };
 		3B48D9A473F828AD42AE415A /* SaroKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SaroKit; path = SaroKit; sourceTree = SOURCE_ROOT; };
@@ -63,12 +73,14 @@
 		66B6A3717D162092779AC808 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		69D39271F914E4803CF22B5C /* SaroApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaroApp.swift; sourceTree = "<group>"; };
 		6E1AD23BC016AD6E604A412F /* SafetyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyCardView.swift; sourceTree = "<group>"; };
+		73F556865445C2CBDF371F8D /* MotionBlur.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = MotionBlur.metal; sourceTree = "<group>"; };
 		7DCF4C77F0FB18F2BD6A95CF /* Snapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshots.swift; sourceTree = "<group>"; };
 		81644A536600F8AFD6FFD647 /* LitGround.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LitGround.swift; sourceTree = "<group>"; };
 		81B261B10F5EF57AD7F371C9 /* DragGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragGrid.swift; sourceTree = "<group>"; };
 		865129438C25D44EE9A11CEF /* DevNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevNotes.swift; sourceTree = "<group>"; };
 		89D651C6DDCA649B5F35280A /* Chrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome.swift; sourceTree = "<group>"; };
 		8B48C1E33BD8AEE5627768EA /* Saro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Saro.entitlements; sourceTree = "<group>"; };
+		8C8F83FCD6518BC7DFABA9E7 /* AppModel+DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+DeepLink.swift"; sourceTree = "<group>"; };
 		90C60C4B0FF55279B0830DBB /* VoicePill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePill.swift; sourceTree = "<group>"; };
 		953A0F3CF7976BE189E9EEC0 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		9AB9C112B5827AA481D05A87 /* CanvasEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasEvents.swift; sourceTree = "<group>"; };
@@ -78,14 +90,20 @@
 		A769C058197B201354AD6998 /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
 		AA646C960CFACB390B21351C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCard.swift; sourceTree = "<group>"; };
+		C0C0DFD44481651B1CC250D3 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
 		C4C7DED65EDFFA345D4E774C /* DayReplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayReplay.swift; sourceTree = "<group>"; };
 		D00D018E3D4830CC2D505F23 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Saro/Resources/Fonts; sourceTree = SOURCE_ROOT; };
 		D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastHost.swift; sourceTree = "<group>"; };
+		D6B8ABDB1D8D8F11A0C7A6A2 /* AppModel+Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Profile.swift"; sourceTree = "<group>"; };
+		DC09F871B9D385B345A917B9 /* PrivacyCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyCopy.swift; sourceTree = "<group>"; };
 		E33F63CB76CBB2928A7CA251 /* Daylight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Daylight.swift; sourceTree = "<group>"; };
+		E5440E9806DDCB36B90902A6 /* Scenarios.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Scenarios.swift; sourceTree = "<group>"; };
+		E629612A6858D91BD707FF0F /* MotionBlur.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionBlur.swift; sourceTree = "<group>"; };
 		E6662A64CD75AA6E77DB3717 /* Tour.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tour.swift; sourceTree = "<group>"; };
 		EED31938C0123C1789E50945 /* CaptureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureController.swift; sourceTree = "<group>"; };
 		EF6CDFA3BC6CD9749F17A451 /* DevCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevCommands.swift; sourceTree = "<group>"; };
 		F1F7593CA70015527F6B3D59 /* DecisionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionsView.swift; sourceTree = "<group>"; };
+		F376A3B403DA8EE477D71993 /* NotificationPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreview.swift; sourceTree = "<group>"; };
 		F972C69F1190B651CB3B7BAC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -107,6 +125,8 @@
 				E33F63CB76CBB2928A7CA251 /* Daylight.swift */,
 				3306973E95E1D9CE8074FF75 /* LitGround.metal */,
 				81644A536600F8AFD6FFD647 /* LitGround.swift */,
+				73F556865445C2CBDF371F8D /* MotionBlur.metal */,
+				E629612A6858D91BD707FF0F /* MotionBlur.swift */,
 				AA646C960CFACB390B21351C /* Theme.swift */,
 			);
 			path = Design;
@@ -135,6 +155,7 @@
 				EF6CDFA3BC6CD9749F17A451 /* DevCommands.swift */,
 				865129438C25D44EE9A11CEF /* DevNotes.swift */,
 				4E0A15D65AF6CFF1DBE0B06F /* DevNotesPanel.swift */,
+				E5440E9806DDCB36B90902A6 /* Scenarios.swift */,
 				7DCF4C77F0FB18F2BD6A95CF /* Snapshots.swift */,
 				E6662A64CD75AA6E77DB3717 /* Tour.swift */,
 			);
@@ -160,6 +181,8 @@
 		761EF23FC0193603DE759B0F /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				F376A3B403DA8EE477D71993 /* NotificationPreview.swift */,
+				DC09F871B9D385B345A917B9 /* PrivacyCopy.swift */,
 				6E1AD23BC016AD6E604A412F /* SafetyCardView.swift */,
 				D1D1816EFB4F2FA2A9CB9B70 /* ToastHost.swift */,
 				21E73D2841136756AAF6CEE1 /* TourAnchor.swift */,
@@ -171,6 +194,10 @@
 			isa = PBXGroup;
 			children = (
 				66B6A3717D162092779AC808 /* AppModel.swift */,
+				8C8F83FCD6518BC7DFABA9E7 /* AppModel+DeepLink.swift */,
+				D6B8ABDB1D8D8F11A0C7A6A2 /* AppModel+Profile.swift */,
+				2E8CFC6F974E8498CEC9EF56 /* PrefsStore.swift */,
+				C0C0DFD44481651B1CC250D3 /* Reminders.swift */,
 				953A0F3CF7976BE189E9EEC0 /* RootView.swift */,
 				69D39271F914E4803CF22B5C /* SaroApp.swift */,
 				3F898A20055CE54EDCCDEBA8 /* ShellViews.swift */,
@@ -343,6 +370,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D66C9B623356764EFD91023B /* AppModel+DeepLink.swift in Sources */,
+				E1E24CE27F754357E65233E3 /* AppModel+Profile.swift in Sources */,
 				673D8916B7B56891D6B66A96 /* AppModel.swift in Sources */,
 				B4BF028C44531D06A70B991D /* CanvasEvents.swift in Sources */,
 				F8457D0F981363EA179883ED /* CanvasView.swift in Sources */,
@@ -363,11 +392,18 @@
 				7D727562FB35D57EBD055DA0 /* LitGround.metal in Sources */,
 				309D29B93A2FBCC914D5668F /* LitGround.swift in Sources */,
 				3DC351D29BD3C0C22C30D8FA /* MenuBar.swift in Sources */,
+				9B0235AC066E6C904663BAC3 /* MotionBlur.metal in Sources */,
+				898943F211D3A627BD1C82D6 /* MotionBlur.swift in Sources */,
 				5730C84EE26D6371F5F8BA8F /* NoticedView.swift in Sources */,
+				8EA4472FA63A0E3450FE49D1 /* NotificationPreview.swift in Sources */,
+				B896DEB868BD1E50834F3604 /* PrefsStore.swift in Sources */,
+				3C9AF37A00425B065D8E543E /* PrivacyCopy.swift in Sources */,
 				DFD798A06DA62504A1E29F49 /* RecorderView.swift in Sources */,
+				7713564DF3630DED7D9EE689 /* Reminders.swift in Sources */,
 				598EFFDDC58E3AC706155A63 /* RootView.swift in Sources */,
 				138DB5E2B24A1945B8AC37FD /* SafetyCardView.swift in Sources */,
 				7F1ADF51C0C662BE555DD77B /* SaroApp.swift in Sources */,
+				EE157BAAB1C546DF865FCD4F /* Scenarios.swift in Sources */,
 				AA48556D55DC05CD0C350338 /* SearchPalette.swift in Sources */,
 				04415728228C0CBE0420538D /* ShellViews.swift in Sources */,
 				679F7A2501430F338B835EAC /* Snapshots.swift in Sources */,

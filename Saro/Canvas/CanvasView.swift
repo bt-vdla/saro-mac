@@ -189,6 +189,8 @@ struct DayStage: View {
     @State private var scrim = false
     @State private var fanned = false
     @State private var userMoved = false
+    /// Cards let go and still gliding, which keep their motion blur until they land.
+    @State private var thrown: Set<String> = []
 
     init(day: String, cards: [StageCard], size: CGSize) {
         self.day = day
@@ -306,6 +308,7 @@ struct DayStage: View {
         let p = screen(c.center)
         let selected = !model.selection.isDisjoint(with: c.ids)
         let open = !c.item.isStack && model.openVoiceID == c.item.top.id
+        let at = CGPoint(x: p.x + off.width, y: p.y + off.height)
         return Group {
             if c.item.isStack { StackFace(entries: c.item.entries, selected: selected) } else { CardFace(entry: c.item.top, selected: selected, open: open) }
         }
@@ -317,7 +320,10 @@ struct DayStage: View {
         .animation(Motion.small, value: drag?.tilt)
         .modifier(ReplayLanding(shown: model.replay.shows(c.id), cue: model.replay.cues[c.id], reduceMotion: reduceMotion))
         .scaleEffect(camera.zoom)
-        .position(x: p.x + off.width, y: p.y + off.height)
+        // Held or thrown only (useCardGesture.ts); an open voice note holds a scroller the shader can't draw.
+        .modifier(MotionBlurred(position: at, coverage: c.size.width * c.size.height * camera.zoom * camera.zoom / (size.width * size.height),
+                                enabled: !open && (moving || !thrown.isDisjoint(with: c.ids))))
+        .position(at)
         .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) ? 0 : 1)
         .zIndex(moving ? 10 : open ? 5 : 0)
         .gesture(dragGesture(c))
@@ -368,9 +374,12 @@ struct DayStage: View {
                     try? await Task.sleep(for: .seconds(DragGridLayer.retract))
                     if grid?.ended == ended { grid = nil }
                 }
+                thrown.formUnion(d.ids)
                 withAnimation(reduceMotion ? nil : speed > 1000 ? Motion.release : Motion.lift) {
                     model.move(d.ids, by: CGSize(width: total.width / camera.zoom, height: total.height / camera.zoom))
                     drag = nil
+                } completion: {
+                    thrown.subtract(d.ids)
                 }
             }
     }
@@ -435,6 +444,7 @@ struct DayStage: View {
     private func fan(_ sid: String) -> some View {
         let points = fanPoints(sid)
         let members = model.entries.filter { points[$0.id] != nil }
+        let tile = members.first.map { CanvasMath.size($0.kind) } ?? .zero
         let origin = cards.first { $0.item.stackID == sid }.map { screen($0.center) } ?? CGPoint(x: size.width / 2, y: size.height / 2)
         return ZStack {
             Rectangle().fill(.ultraThinMaterial).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
@@ -446,6 +456,7 @@ struct DayStage: View {
                     Text("Turn \(e.turnNumber ?? i + 1)").monoCaps(10).foregroundStyle(Tok.ink3)
                 }
                 .scaleEffect(fanned || reduceMotion ? 1 : 0.6)
+                .modifier(MotionBlurred(position: p, coverage: tile.width * tile.height / (size.width * size.height)))
                 .position(p)
                 .opacity(e.id == shownID ? 0 : 1)
                 .animation(fanned ? Motion.easeOut(0.42).delay(Double(i) * 0.04) : Motion.easeOut(0.22).delay(Double(members.count - 1 - i) * 0.03), value: fanned)
@@ -520,21 +531,23 @@ struct DayStage: View {
                 .opacity(scrim ? 1 : 0)
                 .onTapGesture { model.openEntryID = nil }
             MorphFlight(entry: entry, from: flightFrom.rect, fromRadius: flightFrom.radius, to: detailTarget(entry),
-                        toRadius: Radius.sheet, v: flight, crossfadeOnly: reduceMotion)
+                        toRadius: Radius.sheet, viewport: size, v: flight, crossfadeOnly: reduceMotion)
         }
     }
 }
 
 /// The flight between a card and its detail: size interpolates in log space, the centre in a straight line, the card
-/// fades out by v 0.55 and the detail in by v 0.35 (morph.ts).
+/// fades out by v 0.55 and the detail in by v 0.35, blurred along its path while it travels fast (morph.ts, MorphLayer.tsx).
 struct MorphFlight: View, @MainActor Animatable {
     let entry: Entry
     let from: CGRect
     let fromRadius: CGFloat
     let to: CGRect
     let toRadius: CGFloat
+    let viewport: CGSize
     var v: Double
     var crossfadeOnly = false
+    @State private var blur = MotionBlurTracker()
 
     var animatableData: Double {
         get { v }
@@ -552,6 +565,8 @@ struct MorphFlight: View, @MainActor Animatable {
         let cardSize = CanvasMath.size(entry.kind)
         let source = 1 - ((v - 0.05) / 0.5).clamped(to: 0...1)
         let dest = crossfadeOnly ? v : (v / 0.35).clamped(to: 0...1)
+        let sigma = crossfadeOnly || v == 0 || v == 1 ? blur.reset()
+            : blur.track(CGPoint(x: cx, y: cy), coverage: w * h / (viewport.width * viewport.height))
         ZStack {
             DetailView(entry: entry)
                 .id(entry.id)
@@ -568,6 +583,9 @@ struct MorphFlight: View, @MainActor Animatable {
         .frame(width: w, height: h)
         .background(Tok.surface)
         .clipShape(.rect(cornerRadius: r))
+        // The detail holds AppKit views (player, editors, scrollers) the shader can't sample, so the flight takes
+        // SwiftUI's round blur at the web's strength along its path.
+        .blur(radius: max(sigma.width, sigma.height))
         .elevation(v > 0.5 ? .overlay : .panel)
         .position(x: cx, y: cy)
         .opacity(crossfadeOnly ? v : 1)
