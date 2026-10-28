@@ -52,8 +52,9 @@ extension Schema {
       BEGIN SELECT RAISE(ABORT, 'memory_tombstone is append-only'); END;
 
     -- Hides retracted rows, forgotten keys, rows from before forget-everything, rows from trashed or duplicated entries,
-    -- and every entry's row on a local_day with a live safety hold (SR-16, FR-MEM-05); a re-gate that clears the day
-    -- brings them back. A row the person wrote themselves belongs to no day's entries, so a held day doesn't hide it.
+    -- and every entry's row on a local_day with a live safety hold on an entry, an answer or the mood note (SR-13, SR-16,
+    -- FR-MEM-05); a re-gate that clears the day brings them back. A row the person wrote themselves belongs to no day's
+    -- entries, so a held day doesn't hide it.
     CREATE VIEW active_observation AS
     SELECT o.* FROM observation o
     LEFT JOIN entry e ON e.id = o.entry_id
@@ -66,6 +67,7 @@ extension Schema {
           SELECT 1 FROM live_entry h JOIN safety_verdict v ON v.entry_id = h.id
           WHERE h.local_day = o.local_day AND v.verdict = 'safety_hold'
             AND v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = h.id))
-        AND NOT EXISTS (SELECT 1 FROM reflection_turn t WHERE t.local_day = o.local_day AND t.answer_verdict = 'safety_hold')));
+        AND NOT EXISTS (SELECT 1 FROM reflection_turn t WHERE t.local_day = o.local_day AND t.answer_verdict = 'safety_hold')
+        AND NOT EXISTS (SELECT 1 FROM day_state d WHERE d.local_day = o.local_day AND d.mood_note_verdict = 'safety_hold')));
     """
 }

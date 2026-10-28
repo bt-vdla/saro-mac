@@ -59,6 +59,19 @@ private func people(_ entries: [String]) -> [String] { texts(derived(entries).fi
     try await l.insertVerdict(SafetyVerdictRow(entryId: held.id, textSha256: sha256("x"), safetyVersion: SafetyGate.version, layer: 2, verdict: "clear", reasonCode: "t"))
     #expect(try await keys().contains("person:maya"))
 
+    // So does a held answer or mood note, the person's words outside an entry (SR-13); checked again and cleared, they're back.
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: "What stood out?", generator: "heuristic", localDay: a.localDay)
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: "x", verdict: "safety_hold")
+    #expect(try await !keys().contains("person:maya"))
+    try await l.setTurnAnswer(id: turn.id, answer: "x", verdict: "clear")
+    #expect(try await keys().contains("person:maya"))
+    try await l.setUserMood(day: a.localDay, label: .calm, note: "x", verdict: "safety_hold")
+    #expect(try await !keys().contains("person:maya"))
+    #expect(try await keys().contains("theme:nature"))
+    try await l.setUserMood(day: a.localDay, label: .calm, note: "x", verdict: "clear")
+    #expect(try await keys().contains("person:maya"))
+
     // Trash hides, restore brings back, with no write to observations.
     let batch = try await l.trash([b.id])
     #expect(try await !keys().contains("theme:nature"))
