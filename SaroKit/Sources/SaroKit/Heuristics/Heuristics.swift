@@ -27,10 +27,10 @@ public enum Heuristics {
     // ai.ts's WORD_SOURCE, widened from Latin to every script so Devanagari entries get candidates too. A word starts on
     // a letter or digit, so it never begins inside a character such as the keycap "#️⃣".
     private static let wordRegex = try! NSRegularExpression(pattern: #"[\p{L}\p{N}][\p{L}\p{M}\p{N}]*(?:['’-][\p{L}\p{M}\p{N}]+)*"#)
-    private static let sentenceRegex = try! NSRegularExpression(pattern: #"^.*?[.!?](?=\s|$)"#)
-    private static let rawSentenceRegex = try! NSRegularExpression(pattern: #"(?s)\S(?:.*?(?:[.!?](?=\s|\z)|\S(?=\s*\z)))?"#)
+    private static let sentenceRegex = try! NSRegularExpression(pattern: #"^.*?[.!?।](?=\s|$)"#)
+    private static let rawSentenceRegex = try! NSRegularExpression(pattern: #"(?s)\S(?:.*?(?:[.!?।](?=\s|\z)|\S(?=\s*\z)))?"#)
     private static let titleClauseRegex = try! NSRegularExpression(pattern: #"[^,;:—–()]+"#)
-    private static let phraseClauseRegex = try! NSRegularExpression(pattern: #"[^.!?;:,\n—–()"“”]+"#)
+    private static let phraseClauseRegex = try! NSRegularExpression(pattern: #"[^.!?।;:,\n—–()"“”]+"#)
 
     private static func all(_ text: String) -> NSRange { NSRange(location: 0, length: (text as NSString).length) }
 

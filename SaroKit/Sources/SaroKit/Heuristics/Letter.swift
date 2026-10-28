@@ -25,7 +25,7 @@ public struct Letter: Sendable, Hashable {
         guard let last = quotes.last else { return nil }
         let quoted = quotes.map { "\"\($0.text)\"" }
         let list = quoted.count == 1 ? quoted[0] : quoted.dropLast().joined(separator: ", ") + " and " + quoted[quoted.count - 1]
-        return "In your words today: \(list)" + (".!?".contains(last.text.last ?? " ") ? "" : ".")
+        return "In your words today: \(list)" + (".!?।".contains(last.text.last ?? " ") ? "" : ".")
     }
 
     public struct Segment: Sendable, Hashable {
