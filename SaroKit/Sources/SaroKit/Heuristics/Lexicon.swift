@@ -159,9 +159,9 @@ enum Lexicon {
         options: .caseInsensitive)
     static let bannedPhrases = ["journey", "embrace", "you've got this", "be kind to yourself", "self-care", "remember to", "you should",
                                 "it's okay to", "consider therapy", "trust the process", "honor your", "the universe", "your truth",
-                                "small victories", "give yourself grace", "proud of you"]
+                                "small victories", "give yourself grace", "proud of you", "it's ok to", "it is okay to", "it is ok to"]
     /// Spelled numbers that must be backed by the source; "one", "first" and friends are too often not numbers.
-    static let numberWords = Set("two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty hundred thousand million".split(separator: " ").map(String.init))
+    static let numberWords = Set("two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty hundred thousand million twice thrice third fourth fifth sixth seventh eighth ninth tenth".split(separator: " ").map(String.init))
     /// Capitalised words that are not names (NOT_NAMES in evals/checks.py).
     static let notNames = commonCaps.union(Mood.allCases.map { $0.rawValue.lowercased() }).union(["i", "you", "your", "saro", "may"])
 
