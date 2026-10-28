@@ -58,6 +58,7 @@ final class PlayerModel {
     /// The file's own length, for a recording whose row has none.
     var durationMs: Int?
     @ObservationIgnored private var token: Any?
+    @ObservationIgnored private var ended: (any NSObjectProtocol)?
 
     init(url: URL) {
         player = AVPlayer(url: url)
@@ -72,6 +73,14 @@ final class PlayerModel {
                 m.timeMs = Int(t.seconds * 1000)
                 m.playing = m.player.rate != 0
                 if let d = m.player.currentItem?.duration, d.isNumeric { m.durationMs = Int(d.seconds * 1000) }
+            }
+        }
+        // ...but not when it plays to its end: its last call still sees rate 1. Back to the top, as the web's onEnded.
+        ended = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: player.currentItem,
+                                                       queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.playing = false
+                self?.timeMs = 0
             }
         }
     }
@@ -95,6 +104,8 @@ final class PlayerModel {
         player.pause()
         if let token { player.removeTimeObserver(token) }
         token = nil
+        if let ended { NotificationCenter.default.removeObserver(ended) }
+        ended = nil
     }
 }
 
