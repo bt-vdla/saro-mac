@@ -176,6 +176,7 @@ public actor Ledger {
                   AND NOT EXISTS (SELECT 1 FROM entry_annotation WHERE entry_id=entry.id)
                 """, [.text(id)])
             guard !empty.isEmpty else { return }
+            try db.run("DELETE FROM reflection_turn WHERE entry_id=? AND answer IS NULL", [.text(id)])
             try db.run("DELETE FROM card_layout WHERE entry_id=?", [.text(id)])
             try db.run("DELETE FROM entry WHERE id=?", [.text(id)])
         }
