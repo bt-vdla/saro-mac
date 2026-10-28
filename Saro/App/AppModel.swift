@@ -79,6 +79,8 @@ final class AppModel {
     /// The world rect the day's camera shows inside the chrome, published by the stage; new cards land in it.
     var visibleWorld: CGRect?
     var stageSize = CGSize(width: 1320, height: 860)
+    /// Where the day view sits in the window, published by it, so ⌘K over the whole window can fly a row into it.
+    var dayOrigin: CGPoint = .zero
     /// How far the bottom bar reaches up from the window's bottom (one row or two), published by the day view; the
     /// voice pill, toasts and the spine keep clear of it.
     var barClear: CGFloat = 84

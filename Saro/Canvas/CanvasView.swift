@@ -51,6 +51,7 @@ struct DayView: View {
             .background(OwnFocus(focused: $canvasFocused))
         }
         .clipped()
+        .onGeometryChange(for: CGPoint.self) { $0.frame(in: .global).origin } action: { model.dayOrigin = $0 }
         .focusable(model.lens == nil)
         .focusEffectDisabled()
         .focused($focused)

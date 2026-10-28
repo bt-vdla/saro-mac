@@ -124,6 +124,8 @@ struct SearchPalette: View {
     /// The query and scope `hits` belong to; until it matches, the last results stay up instead of flashing empty.
     @State private var hitsKey: String?
     @State private var selected: String?
+    /// Where the highlighted row sits in the window, so a click on it flies its entry out of the row.
+    @State private var currentFrame: CGRect?
     @State private var window: NSWindow?
     @State private var monitor: Any?
     @State private var mouse: CGPoint?
@@ -506,7 +508,10 @@ struct SearchPalette: View {
         .frame(height: 44)
         .background(isCurrent ? Tok.ink.opacity(scheme == .dark ? 0.08 : 0.06) : .clear, in: .rect(cornerRadius: 12))
         .contentShape(.rect)
-        .onTapGesture { run(row) }
+        .background {
+            if isCurrent { Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { currentFrame = $0 } }
+        }
+        .onTapGesture { run(row, from: isCurrent ? currentFrame : nil) }
         // Only a real pointer move selects: rows scrolling under a still pointer must not take the keyboard's place.
         .onContinuousHover { phase in
             guard case .active = phase, NSEvent.mouseLocation != mouse else { return }
@@ -726,11 +731,11 @@ struct SearchPalette: View {
 
     // MARK: Actions
 
-    private func run(_ row: Row) {
+    private func run(_ row: Row, from: CGRect? = nil) {
         switch row {
         case .entry(let h):
             isPresented = false
-            Self.open(h, in: model)
+            Self.open(h, in: model, from: from.map { $0.offsetBy(dx: -model.dayOrigin.x, dy: -model.dayOrigin.y) })
         case .command(let c) where c.value != nil:
             // A setting cycles in place, and the footer flashes what it is now.
             c.run(model)
@@ -823,11 +828,13 @@ struct SearchPalette: View {
         }
     }
 
-    /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to load.
-    private static func open(_ h: SearchHit, in model: AppModel) {
+    /// The canvas opens an entry only once it is loaded, so another day's entry waits for that day to load. A clicked row
+    /// is where the entry's flight into its detail starts (day view coordinates); a key opens it from its card.
+    private static func open(_ h: SearchHit, in model: AppModel, from: CGRect? = nil) {
         model.go(to: h.localDay)
         Task {
             if model.entry(h.entryId) == nil { await model.reload() }
+            model.reflection.flightSource = from
             model.openEntryID = h.entryId
         }
     }
