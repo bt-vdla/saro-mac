@@ -194,8 +194,27 @@ enum Snapshots {
                     p.setContentSize(NSSize(width: 960, height: 860))
                     p.contentView = onboarding(.preview(step: .firstWeek, answers: Self.answers), model)
                 }),
+                // Text size 150%: the answer and the ritual time grow with the question, and the graph's labels keep apart.
+                ("onboarding-text150-q2", {
+                    PrefsStore.shared.textScale = 1.5
+                    p.setContentSize(NSSize(width: 1320, height: 860))
+                    p.contentView = onboarding(.preview(step: .about, about: .question(2), answers: [1: "Bharat"],
+                                                        text: "The launch. My sister Maya. Sleep, honestly."), model)
+                }),
+                ("onboarding-text150-week", {
+                    PrefsStore.shared.textScale = 1.5
+                    p.contentView = onboarding(.preview(step: .firstWeek, answers: Self.answers), model)
+                }),
+                ("knows-text150", {
+                    PrefsStore.shared.textScale = 1.5
+                    UserDefaults.standard.set("graph", forKey: "saro.knows.mode")
+                    model.memory.query = ""
+                    model.pane = .knows
+                    p.contentView = NSHostingView(rootView: RootView().environment(model))
+                }),
                 // The first reflection's hand-off: the page under its question, then the recorder's two surfaces.
                 ("handoff-write", {
+                    PrefsStore.shared.textScale = 1
                     p.setContentSize(NSSize(width: 1320, height: 860))
                     p.contentView = NSHostingView(rootView: RootView().environment(model))
                     Task { await model.startFirstReflection(.write) }

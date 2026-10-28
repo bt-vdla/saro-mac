@@ -18,7 +18,9 @@ struct AnswerField: NSViewRepresentable {
     var onComposing: (Int?) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static let font = NSFont(name: "Geist-Regular", size: 28) ?? .systemFont(ofSize: 28)
+    /// Read as the parent draws, so Text size and the Writing Tools switch reach a field that's already open.
+    private let font = NSFont(name: "Geist-Regular", size: 28 * PrefsStore.shared.textScale) ?? .systemFont(ofSize: 28 * PrefsStore.shared.textScale)
+    private let writingTools: NSWritingToolsBehavior = PrefsStore.shared.writingTools ? .default : .none
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -36,19 +38,19 @@ struct AnswerField: NSViewRepresentable {
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isGrammarCheckingEnabled = false
-        tv.writingToolsBehavior = PrefsStore.shared.writingTools ? .default : .none
+        tv.writingToolsBehavior = writingTools
         tv.textContainerInset = .zero
         tv.textContainer?.lineFragmentPadding = 0
         tv.textContainer?.widthTracksTextView = true
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
-        tv.font = Self.font
+        tv.font = font
         tv.textColor = NSColor(Tok.ink)
         tv.insertionPointColor = NSColor(Tok.sage)
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = 1.18
         tv.defaultParagraphStyle = style
-        tv.typingAttributes = [.font: Self.font, .foregroundColor: NSColor(Tok.ink), .paragraphStyle: style, .kern: -0.28]
+        tv.typingAttributes = [.font: font, .foregroundColor: NSColor(Tok.ink), .paragraphStyle: style, .kern: -0.28]
         tv.string = text
         tv.setAccessibilityLabel(label)
         return tv
@@ -56,6 +58,11 @@ struct AnswerField: NSViewRepresentable {
 
     func updateNSView(_ tv: AnswerTextView, context: Context) {
         context.coordinator.parent = self
+        if tv.font != font {
+            tv.font = font
+            tv.typingAttributes[.font] = font
+        }
+        if tv.writingToolsBehavior != writingTools { tv.writingToolsBehavior = writingTools }
         if tv.string != text, !tv.hasMarkedText() {
             tv.string = text
             tv.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
@@ -69,7 +76,7 @@ struct AnswerField: NSViewRepresentable {
         guard let container = tv.textContainer, let layout = tv.layoutManager else { return nil }
         container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
-        let line = layout.defaultLineHeight(for: Self.font) * 1.18
+        let line = layout.defaultLineHeight(for: font) * 1.18
         return CGSize(width: width, height: max(line, ceil(layout.usedRect(for: container).height)))
     }
 

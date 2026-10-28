@@ -37,7 +37,10 @@ struct KnowledgeGraphView: View {
     nonisolated private static let unit: CGFloat = 120
     private static let panelWidth: CGFloat = 360
 
-    private var buildKey: String { "\(memory.rows.count)|\(memory.rows.last?.id ?? "")|\(range)|\(kinds.map(\.rawValue).sorted())" }
+    /// Text size too: the labels' boxes grow with it.
+    private var buildKey: String {
+        "\(memory.rows.count)|\(memory.rows.last?.id ?? "")|\(range)|\(kinds.map(\.rawValue).sorted())|\(PrefsStore.shared.textScale)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -225,15 +228,15 @@ struct KnowledgeGraphView: View {
 
     private func rebuild() async {
         let rows = memory.rows
-        let (range, kinds, start) = (range.since, kinds, layout)
+        let (range, kinds, start, scale) = (range.since, kinds, layout, PrefsStore.shared.textScale)
         let (g, l) = await Task.detached(priority: .userInitiated) {
             var g = KnowledgeGraph.build(rows, since: range)
             g.nodes.removeAll { !kinds.contains($0.kind) }
             let ids = Set(g.nodes.map(\.id))
             g.edges.removeAll { !ids.contains($0.a) || !ids.contains($0.b) }
             let boxes = Dictionary(uniqueKeysWithValues: g.nodes.map { n in
-                (n.id, SIMD2(Double(max(NodeDot.diameter(n), NodeDot.labelWidth(n))) / 2 + 8,
-                             Double(NodeDot.diameter(n) + 10 + 2 * NodeDot.labelHeight) / 2 + 4) / Double(Self.unit))
+                (n.id, SIMD2(Double(max(NodeDot.diameter(n), NodeDot.labelWidth(n, scale: scale))) / 2 + 8,
+                             Double(NodeDot.diameter(n) + 10 + 2 * NodeDot.labelHeight * scale) / 2 + 4) / Double(Self.unit))
             })
             return (g, g.layout(from: start, extents: boxes))
         }.value
@@ -301,8 +304,10 @@ struct NodeDot: View {
     static let labelFloor: CGFloat = 0.92
     nonisolated static let labelHeight: CGFloat = 20
     nonisolated static func diameter(_ n: KnowledgeGraph.Node) -> CGFloat { min(64, 14 + 9 * CGFloat(n.mentions.count).squareRoot()) }
-    /// Near enough for layout: Geist at 12.5 pt averages under 7 pt a character, plus the capsule's padding.
-    nonisolated static func labelWidth(_ n: KnowledgeGraph.Node) -> CGFloat { CGFloat(MemoryList.clip(n.label, 24).count) * 7 + 12 }
+    /// Near enough for layout: Geist at 12.5 pt (times Text size) averages under 7 pt a character, plus the capsule's padding.
+    nonisolated static func labelWidth(_ n: KnowledgeGraph.Node, scale: CGFloat) -> CGFloat {
+        CGFloat(MemoryList.clip(n.label, 24).count) * 7 * scale + 12
+    }
 
     var body: some View {
         Button(action: onTap) {

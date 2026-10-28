@@ -568,8 +568,9 @@ private struct RitualTimePill: View {
     @State private var hover = false
 
     var body: some View {
-        PillField(minutes: minutes, hour12: hour12, onCommit: onCommit, onRestore: onRestore, onEditing: onEditing)
-            .frame(width: 104, height: 24)
+        let scale = PrefsStore.shared.textScale
+        PillField(minutes: minutes, hour12: hour12, scale: scale, onCommit: onCommit, onRestore: onRestore, onEditing: onEditing)
+            .frame(width: 104 * scale, height: 24 * scale)
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Tok.surfaceAlt.opacity(hover ? 0.85 : 0.6), in: .capsule)
             .overlay(Capsule().strokeBorder(hover ? Tok.ink3 : Tok.borderStrong))
@@ -587,9 +588,13 @@ private struct RitualTimePill: View {
 private struct PillField: NSViewRepresentable {
     let minutes: Int
     let hour12: Bool
+    /// Settings → Comfort → Text size.
+    let scale: CGFloat
     let onCommit: (Int) -> Void
     let onRestore: () -> Void
     let onEditing: (Bool) -> Void
+
+    private var font: NSFont { NSFont(name: "GeistMono-Regular", size: 15 * scale) ?? .monospacedSystemFont(ofSize: 15 * scale, weight: .regular) }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -600,7 +605,7 @@ private struct PillField: NSViewRepresentable {
         f.drawsBackground = false
         f.focusRingType = .none
         f.alignment = .center
-        f.font = NSFont(name: "GeistMono-Regular", size: 15) ?? .monospacedSystemFont(ofSize: 15, weight: .regular)
+        f.font = font
         f.textColor = NSColor(Tok.ink)
         f.delegate = context.coordinator
         f.stringValue = FirstWeek.clockLabel(minutes, hour12: hour12)
@@ -610,6 +615,7 @@ private struct PillField: NSViewRepresentable {
 
     func updateNSView(_ f: NSTextField, context: Context) {
         context.coordinator.parent = self
+        if f.font != font { f.font = font }
         if f.currentEditor() == nil { f.stringValue = FirstWeek.clockLabel(minutes, hour12: hour12) }
     }
 
