@@ -206,6 +206,19 @@ enum Snapshots {
                     CaptureUI.shared.musicGrows = true
                     CaptureUI.shared.musicOpen = true
                 }),
+                // A page whose title alone trips the phrase gate: the title is gated with its words, so its day is held (SR-01).
+                ("capture-titleheld", {
+                    guard model.isDemo else { return }
+                    CaptureUI.shared.musicOpen = false
+                    Task {
+                        let day = LocalDay.adding(-4, to: LocalDay.today())
+                        let e = Entry(kind: .reflection, titleUser: "No point anymore", body: "Walked home the long way by the river after work.", localDay: day)
+                        try? await model.ledger.insertEntry(e)
+                        model.go(to: day)
+                        model.process(e.id)
+                        model.insight = .panel
+                    }
+                }),
                 // Three weeks of synthetic history, seeded here so the steps before see only the demo day.
                 ("knows", {
                     CaptureUI.shared.musicOpen = false
@@ -227,6 +240,7 @@ enum Snapshots {
                 // ⌘K's actions menu, then a day not yet loaded as it loads and as it couldn't be read, on its own ground
                 // (the canvas's own load is too quick to catch). These leave the live UI, so they come after its states.
                 ("actions", {
+                    model.goToday()
                     model.pane = .day
                     paletteActions = true
                     model.searchOpen = true
