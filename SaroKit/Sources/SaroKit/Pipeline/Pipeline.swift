@@ -62,7 +62,7 @@ public actor Pipeline {
     public func process(entryId: String, onStatus: @Sendable () async -> Void) async {
         guard let entry = try? await ledger.entry(entryId), entry.trashedAt == nil else { return }
         func status(_ s: String) async {
-            try? await ledger.setProcessingStatus(id: entryId, s)
+            try? await ledger.setProcessingStatus(s, startedFrom: entry)
             await onStatus()
         }
 

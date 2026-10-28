@@ -134,6 +134,21 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(await p.latestDayReading(e.localDay)?.generator == "on_device")
 }
 
+@Test func anEditSavedDuringAPassStaysPending() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    // The editor reopened and autosaved new text while the pass for the old text ran, then the app quit.
+    await p.process(entryId: e.id) { try? await l.updateEntryText(id: e.id, body: "I want to die.", titleUser: nil) }
+    #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
+    #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
+    #expect(await p.dayStatus(e.localDay) == .working)
+    // The launch sweep's pass gates the edit.
+    await p.process(entryId: e.id) {}
+    #expect(await p.dayStatus(e.localDay) == .held)
+}
+
 @Test func dayQuestionAndMoodBasisAreDriftChecked() async throws {
     let drifted = [cleanDay.replacingOccurrences(of: "What did Ravi say?", with: "How is your sister settling in?"),
                    cleanDay.replacingOccurrences(of: #""moodBasis": "chai""#, with: #""moodBasis": "the move to Pune""#)]
