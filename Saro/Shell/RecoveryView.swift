@@ -33,28 +33,29 @@ struct RecoveryView: View {
                     .font(Typo.ui(13, .medium))
                     .padding(.horizontal, 12)
                 }
+                Button(copied ? "Copied" : "Copy Details") {
+                    NSPasteboard.general.clearContents()
+                    // The domain and code only, never the message, which can name a file.
+                    NSPasteboard.general.setString("Saro \(AboutView.version) (\(AboutView.commit)): \(FailureCopy.code(error))", forType: .string)
+                    copied = true
+                    AccessibilityNotification.Announcement("Copied").post()
+                }
+                .buttonStyle(SheetButton(primary: false))
+                .help("Copies the error's code for a report, never your words or file names")
             }
+            .fixedSize()
             .padding(.top, 28)
             if let failed { Text(failed).font(Typo.ui(12)).foregroundStyle(Tok.danger).padding(.top, 12) }
             DisclosureGroup("Details") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(error.localizedDescription).font(Typo.mono(11, .regular)).foregroundStyle(Tok.ink2).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(copied ? "Copied" : "Copy Details") {
-                        NSPasteboard.general.clearContents()
-                        // The domain and code only, never the message, which can name a file.
-                        NSPasteboard.general.setString("Saro \(AboutView.version) (\(AboutView.commit)): \(FailureCopy.code(error))", forType: .string)
-                        copied = true
-                    }
-                    .buttonStyle(SheetButton(primary: false))
-                }
-                .padding(.top, 8)
+                Text(error.localizedDescription).font(Typo.mono(11, .regular)).foregroundStyle(Tok.ink2).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
             }
             .font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink3)
             .padding(.top, 28)
         }
         .padding(48)
-        .frame(maxWidth: 560, alignment: .leading)
+        .frame(maxWidth: 680, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { LitGround().ignoresSafeArea() }
         .background(Tok.bg)

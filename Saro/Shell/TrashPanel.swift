@@ -212,7 +212,10 @@ struct TrashPanel: View {
         }
         busy = nil
         if all, done > 0 { model.show(Toast(done == 1 ? "Restored 1 item" : "Restored \(done) items")) }
-        if flies, let e = entries.first, done == 1 { flyBack(e) }
+        // One restored: it flies back to its card when that's on screen, and otherwise says where it went.
+        if !all, done == 1, let e = entries.first, !(flies && flyBack(e)) {
+            model.show(Toast("Restored to \(DayFormat.sidebar(e.localDay))"))
+        }
         await load()
     }
 
@@ -229,12 +232,14 @@ struct TrashPanel: View {
         await load()
     }
 
-    /// The restored card flies from its row back to its place on the canvas, through the trash flight Undo uses.
-    private func flyBack(_ e: Entry) {
+    /// The restored card flies from its row back to its place on the canvas, through the trash flight Undo uses. False
+    /// when its card isn't on screen.
+    private func flyBack(_ e: Entry) -> Bool {
         guard let row = rows[e.id], let origin = ShellPanels.shared.toastOrigin,
-              let card = model.stageCards.first(where: { $0.ids.contains(e.id) }) else { return }
+              let card = model.stageCards.first(where: { $0.ids.contains(e.id) }) else { return false }
         let frame = row.offsetBy(dx: -origin.x, dy: -origin.y)
         model.trashFlight = TrashFlight(cards: [card], back: (Toast(title: Self.title(e)), frame))
+        return true
     }
 
     /// The person's own words only: a trashed entry's generated title is never read here.

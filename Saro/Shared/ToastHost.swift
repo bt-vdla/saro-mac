@@ -71,10 +71,11 @@ private struct ToastRow: View {
     let undo: () -> Void
     @State private var hover = false
     @State private var drag: CGFloat = 0
-    @AccessibilityFocusState private var voiceOver: Bool
+    /// VoiceOver lands on the toast's parts, not on the toast, so each part reports it.
+    @AccessibilityFocusState private var voiceOver: ToastPart?
 
     var body: some View {
-        ToastFace(toast: toast, act: { toast.undo != nil ? undo() : run() }, dismiss: { model.dismiss(toast.id) })
+        ToastFace(toast: toast, act: { toast.undo != nil ? undo() : run() }, dismiss: { model.dismiss(toast.id) }, voiceOver: $voiceOver)
             .offset(x: drag)
             .opacity(1 - Double(min(1, -drag / 240)))
             .gesture(
@@ -89,8 +90,7 @@ private struct ToastRow: View {
                     }
             )
             .onHover { hover = $0 }
-            .accessibilityFocused($voiceOver)
-            .onChange(of: hover || voiceOver || drag != 0, initial: true) { _, held in
+            .onChange(of: hover || voiceOver != nil || drag != 0, initial: true) { _, held in
                 if held { model.heldToasts.insert(toast.id) } else { model.heldToasts.remove(toast.id) }
             }
     }
@@ -101,11 +101,14 @@ private struct ToastRow: View {
     }
 }
 
+enum ToastPart: Hashable { case text, action, dismiss }
+
 /// The toast itself: its title, the line under it, its action and the dismiss. The copy that flies out of it does nothing.
 private struct ToastFace: View {
     let toast: Toast
     var act: () -> Void = {}
     var dismiss: () -> Void = {}
+    var voiceOver: AccessibilityFocusState<ToastPart?>.Binding?
 
     var body: some View {
         let destructive = toast.style == .destructive
@@ -118,12 +121,15 @@ private struct ToastFace: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+            .voiceOverFocus(voiceOver, .text)
             if let action = toast.action {
                 Button(action: act) {
                     Text(action.label).font(Typo.ui(13, .semibold)).padding(.horizontal, 12).frame(minHeight: 32)
                 }
                 .buttonStyle(ToastControl(chip: true, destructive: destructive))
                 .accessibilityHint(action.label == "Undo" ? "Undoes this" : "Tries again")
+                .voiceOverFocus(voiceOver, .action)
             }
         }
         .padding(.vertical, 12).padding(.leading, 16).padding(.trailing, 44)
@@ -137,10 +143,17 @@ private struct ToastFace: View {
             }
             .buttonStyle(ToastControl(chip: false, destructive: destructive))
             .accessibilityLabel("Dismiss")
+            .voiceOverFocus(voiceOver, .dismiss)
             .padding(.trailing, 8)
         }
         .elevation(.float)
         .accessibilityElement(children: .contain)
+    }
+}
+
+private extension View {
+    @ViewBuilder func voiceOverFocus(_ focus: AccessibilityFocusState<ToastPart?>.Binding?, _ part: ToastPart) -> some View {
+        if let focus { accessibilityFocused(focus, equals: part) } else { self }
     }
 }
 
