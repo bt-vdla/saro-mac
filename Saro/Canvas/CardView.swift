@@ -40,11 +40,15 @@ extension AppModel {
     func title(for e: Entry) -> String {
         if let t = e.titleUser, !t.isEmpty { return t }
         if e.kind == .still { return caption(for: e) ?? e.kind.noun }
+        // A song is named by its link, read offline; no AI reads it.
+        if e.kind == .music { return music(e)?.info.title ?? "Music link" }
         if e.kind == .reflection, let first = e.body?.split(separator: "\n").first, !first.isEmpty, (e.body?.contains("\n") ?? false) {
             return String(first.prefix(80))
         }
         // A held day shows no AI text at all (SR-13), titles included.
         if verdicts[e.id]?.verdict == "clear", !isDayHeld, let t = annotations[e.id]?.title, let first = t.first { return first.uppercased() + t.dropFirst() }
+        // A moment with no reading yet is named by the question it answered.
+        if e.kind == .moment, let p = prompt(for: e) { return p }
         return e.kind.noun
     }
 
@@ -131,20 +135,23 @@ struct CardFace: View {
     private var box: CGSize { size ?? model.size(of: entry) }
     private var radius: CGFloat { CanvasMath.radius(entry.kind) }
     private var ready: Bool { model.media[entry.mediaId ?? ""]?.state == "ready" }
+    /// The file went missing or never saved.
+    private var broken: Bool { ["missing", "failed"].contains(model.media[entry.mediaId ?? ""]?.state ?? "") }
 
     @ViewBuilder private var content: some View {
         switch entry.kind {
         case .moment: moment
         case .voice: VoiceFace(entry: entry, selected: selected, open: open)
         case .still: still
-        case .reflection, .music: reflection
+        case .reflection: ReflectionFace(entry: entry, box: box, selected: selected, radius: radius)
+        case .music: MusicFace(entry: entry, box: box)
         }
     }
 
     private var moment: some View {
         VStack(spacing: 0) {
             ZStack {
-                MediaThumb(url: model.mediaURL(for: entry), kind: .moment, ready: ready)
+                MediaThumb(url: model.mediaURL(for: entry), kind: .moment, ready: ready, broken: broken)
                 Color.black.opacity(hover ? 0.10 : 0)
                 // ponytail: hover only, no 0.95 press; a gesture on the disc would take the card's tap and drag.
                 Circle().fill(.white.opacity(0.9)).frame(width: 56, height: 56).elevation(.float)
@@ -171,7 +178,7 @@ struct CardFace: View {
 
     private var still: some View {
         VStack(spacing: 0) {
-            MediaThumb(url: model.mediaURL(for: entry), kind: .still, ready: ready)
+            MediaThumb(url: model.mediaURL(for: entry), kind: .still, ready: ready, broken: broken)
                 .frame(width: box.width, height: box.height - 48)
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: radius - 1, topTrailingRadius: radius - 1))
             CardMeta(entry: entry).padding(.horizontal, 14).frame(maxHeight: .infinity)
@@ -180,23 +187,109 @@ struct CardFace: View {
         .frame(width: box.width, height: box.height)
         .cardSurface(radius: radius, tint: nil, hover: hover)
     }
+}
 
-    private var reflection: some View {
-        let (title, body) = model.titleAndBody(entry)
+/// A reflection's page on the canvas (TextReflectionCard.tsx). The click that selects it only selects it; the next click
+/// puts a caret in its title (one line, up to two) or its body, and the edit is saved and gated when it ends. The corner
+/// button opens the reading page.
+struct ReflectionFace: View {
+    @Environment(AppModel.self) private var model
+    let entry: Entry
+    let box: CGSize
+    let selected: Bool
+    let radius: CGFloat
+    @State private var selectedAt: Date?
+    @State private var title = ""
+    @State private var text = ""
+    @FocusState private var focus: CaptureUI.CardField?
+
+    private var editing: CaptureUI.CardField? { CaptureUI.shared.editing.flatMap { $0.id == entry.id ? $0.field : nil } }
+    private var single: Bool { model.selection == [entry.id] }
+
+    var body: some View {
+        let (shownTitle, shownBody) = model.titleAndBody(entry)
         // Given its own height, the page fills it; otherwise its words stop at 128 pt, as on the web.
         let sized = box.height != CanvasMath.size(entry.kind).height
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(Typo.ui(15, .semibold)).foregroundStyle(Tok.reflectionInk).lineLimit(2)
-            Text(body.isEmpty ? "Empty page" : body)
-                .font(Typo.ui(13)).lineSpacing(2.5).foregroundStyle(body.isEmpty ? Tok.ink4 : Tok.ink2)
-                .frame(maxWidth: .infinity, maxHeight: sized ? .infinity : 128, alignment: .topLeading)
-                .clipped()
+        VStack(alignment: .leading, spacing: 8) {
+            Group {
+                if editing == .title {
+                    TextField("Title", text: $title, prompt: Text("Untitled").foregroundStyle(Tok.ink4), axis: .vertical)
+                        .lineLimit(1...2)
+                        .focused($focus, equals: .title)
+                        .onSubmit(commit)
+                } else {
+                    Text(shownTitle).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
+                        .simultaneousGesture(TapGesture().onEnded { arm(.title) })
+                }
+            }
+            .font(Typo.ui(15, .semibold)).foregroundStyle(Tok.reflectionInk)
+            .padding(.trailing, 28)
+            Group {
+                if editing == .body {
+                    TextEditor(text: $text)
+                        .scrollContentBackground(.hidden)
+                        .focused($focus, equals: .body)
+                        .overlay(alignment: .topLeading) {
+                            if text.isEmpty { Text("Write what’s on your mind…").foregroundStyle(Tok.ink4).padding(.leading, 5).allowsHitTesting(false) }
+                        }
+                } else {
+                    Text(shownBody.isEmpty ? "Write what’s on your mind…" : shownBody)
+                        .foregroundStyle(shownBody.isEmpty ? Tok.ink4 : Tok.ink2)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .contentShape(.rect)
+                        .simultaneousGesture(TapGesture().onEnded { arm(.body) })
+                }
+            }
+            .font(Typo.ui(13)).lineSpacing(2.5)
+            .frame(maxWidth: .infinity, maxHeight: sized ? .infinity : 128, alignment: .topLeading)
+            .clipped()
             if !sized { Spacer(minLength: 0) }
             CardMeta(entry: entry, showTitle: false)
         }
+        .textFieldStyle(.plain)
+        .saroWritingTools()
+        .multilineTextAlignment(.leading)
         .padding(.horizontal, 20).padding(.vertical, 16)
         .frame(width: box.width, height: box.height)
+        .overlay(alignment: .topTrailing) {
+            Button { model.openEntryID = entry.id } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Tok.reflectionInk).frame(width: 36, height: 36).contentShape(.circle)
+            }
+            .buttonStyle(PressStyle(hoverFill: true, radius: 18))
+            .accessibilityLabel("Open reflection")
+            .help("Open  ↵")
+            .padding(8)
+        }
         .cardSurface(radius: radius, tint: Tok.reflection, tintOpacity: 0.3)
+        .onChange(of: single, initial: true) { _, s in
+            selectedAt = s ? .now : nil
+            if !s, editing != nil { commit() }
+        }
+        .onChange(of: editing, initial: true) { _, f in
+            guard let f else { return }
+            title = entry.titleUser ?? ""
+            text = entry.body ?? ""
+            focus = f
+        }
+        .onChange(of: focus) { old, now in if old != nil, now == nil { commit() } }
+        .onExitCommand { if editing != nil { commit() } }
+    }
+
+    /// A click on a card that was already the one selection edits that field.
+    private func arm(_ field: CaptureUI.CardField) {
+        guard single, let at = selectedAt, Date.now.timeIntervalSince(at) > 0.2,
+              NSEvent.modifierFlags.isDisjoint(with: [.command, .shift]) else { return }
+        CaptureUI.shared.editing = (entry.id, field)
+    }
+
+    private func commit() {
+        guard let field = editing else { return }
+        CaptureUI.shared.editing = nil
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = field == .title ? (body: entry.body ?? "", title: t.isEmpty ? nil : t) : (body: text, title: entry.titleUser)
+        guard next.body != (entry.body ?? "") || next.title != entry.titleUser else { return }
+        Task { await model.saveText(entry, body: next.body, title: next.title, caption: entry.captionUser) }
     }
 }
 
@@ -287,12 +380,7 @@ struct EchoOrb: View {
     var body: some View {
         ZStack {
             Circle().fill(.white.opacity(0.1))
-            Circle()
-                .fill(RadialGradient(stops: [.init(color: Color(0xD9D5F6, 0xD9D5F6), location: 0), .init(color: Color(0xB4ADEA, 0xB4ADEA), location: 0.45),
-                                             .init(color: Color(0x8E87CF, 0x8E87CF), location: 1)],
-                                     center: UnitPoint(x: 0.4, y: 0.35), startRadius: 0, endRadius: size * 0.45))
-                .padding(size * 0.09)
-            if playing && !reduceMotion { talking.padding(size * 0.09).transition(.opacity) }
+            SaroOrb(state: playing ? .talking : .idle, palette: .echo).padding(size * 0.09).shadow(radius: 0)
             Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1)
             Circle().stroke(Color(0xB4AEEA, 0xB4AEEA).opacity(0.38), lineWidth: 1.5).padding(-2)
             Circle().fill(Color(0x1A102A, 0x1A102A).opacity(0.2)).frame(width: 28, height: 28)
@@ -304,24 +392,6 @@ struct EchoOrb: View {
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
         .animation(Motion.easeOut(0.5), value: playing)
-    }
-
-    /// ponytail: the web's WebGL orb, approximated: its colours flow round the sphere and a white ring swells at the
-    /// shader's "talking" levels. Port orb.tsx to Metal if this reads flat.
-    private var talking: some View {
-        TimelineView(.animation) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            let level = 0.65 + sin(t * 4.8) * 0.22
-            ZStack {
-                Circle().fill(AngularGradient(colors: [Color(0xB4ADEA, 0xB4ADEA), Color(0x8E87CF, 0x8E87CF), Color(0xFAFAF6, 0xFAFAF6),
-                                                       Color(0xB4ADEA, 0xB4ADEA)], center: .center, angle: .radians(t * 0.8)))
-                    .blur(radius: size * 0.08)
-                    .opacity(0.6)
-                Circle().strokeBorder(.white.opacity(0.12 + 0.33 * level), lineWidth: 1.5).scaleEffect(0.7 + 0.25 * level)
-            }
-            .clipShape(.circle)
-        }
-        .allowsHitTesting(false)
     }
 }
 
@@ -423,7 +493,11 @@ struct MediaThumb: View {
     let url: URL?
     let kind: EntryKind
     var ready = true
+    /// The file is missing or never saved.
+    var broken = false
     @State private var image: NSImage?
+    /// Ready, but it wouldn't decode.
+    @State private var unreadable = false
 
     var body: some View {
         ZStack {
@@ -431,6 +505,13 @@ struct MediaThumb: View {
             // The cache too, so a copy (a flight's face, drawn without running its task) has the picture from its first frame.
             if let image = image ?? (ready ? ThumbCache.cached(url) : nil) {
                 Image(nsImage: image).resizable().scaledToFill().frame(minWidth: 0, minHeight: 0)
+            } else if broken || unreadable {
+                VStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle").font(.system(size: 17)).foregroundStyle(kind.tint)
+                    Text("This \(kind == .still ? "photo" : "recording") couldn’t be opened. Your entry is saved.")
+                        .font(Typo.ui(12)).foregroundStyle(Tok.ink2).multilineTextAlignment(.center)
+                }
+                .padding(16)
             } else {
                 Image(systemName: kind.symbol).font(.system(size: 22)).foregroundStyle(kind.tint)
             }
@@ -439,6 +520,7 @@ struct MediaThumb: View {
         .task(id: "\(url?.path ?? "")\(ready)") {
             guard let url, ready else { return }
             image = await ThumbCache.image(for: url, kind: kind)
+            unreadable = image == nil
         }
     }
 }
