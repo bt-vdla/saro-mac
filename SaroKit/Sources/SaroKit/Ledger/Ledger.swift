@@ -22,6 +22,8 @@ public actor Ledger {
 
     static func migrate(_ db: SQLite) throws {
         let current = try db.run("PRAGMA user_version").first?.int("user_version") ?? 0
+        // A newer build's schema: writing to it would skip whatever that build's migrations hold the journal to.
+        guard current <= Schema.migrations.count else { throw NewerJournalError() }
         for (i, sql) in Schema.migrations.enumerated() where i >= current {
             try db.transaction {
                 try db.exec(sql)
@@ -449,6 +451,10 @@ public actor Ledger {
         out["memories"] = try memoriesForExport()
         try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
     }
+}
+
+public struct NewerJournalError: Error, LocalizedError {
+    public var errorDescription: String? { "This journal was made by a newer Saro. Update Saro to open it." }
 }
 
 extension Optional where Wrapped == String {

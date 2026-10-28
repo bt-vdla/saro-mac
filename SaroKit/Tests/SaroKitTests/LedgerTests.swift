@@ -168,3 +168,12 @@ func tempLedger() throws -> Ledger {
     try await l.discardIfEmpty(full.id)
     #expect(try await l.allEntries(includeTrashed: true).map(\.id) == [full.id])
 }
+
+/// A journal a newer Saro migrated is refused, not written to with a schema this build doesn't know.
+@Test func aNewerJournalIsRefused() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "saro-test-\(UUID().uuidString)")
+    let l = try Ledger(rootURL: root)
+    try await l.run("PRAGMA user_version = \(Schema.migrations.count + 1)")
+    #expect(throws: NewerJournalError.self) { try Ledger(rootURL: root) }
+    #expect(NewerJournalError().localizedDescription.contains("newer Saro"))
+}

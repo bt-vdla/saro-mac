@@ -33,3 +33,21 @@ import Testing
     let kept = try #require(try await l.run("SELECT title, tags FROM entry_annotation").first)
     #expect(kept["title"]?.string == "Kept" && kept["tags"]?.string == nil)
 }
+
+/// DR-02: a journal dogfood/v0 took to version 3 ran its cardSize at index 2, so this build runs stills, v4 and v5 on it.
+@Test func aJournalMigratedByDogfoodGetsStillsAndKeepsCardSizes() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "saro-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let db = try SQLite(path: root.appending(path: "saro.sqlite").path)
+    for (i, sql) in [Schema.v1, Schema.v3, "ALTER TABLE card_layout ADD COLUMN w REAL; ALTER TABLE card_layout ADD COLUMN h REAL;"].enumerated() {
+        try db.exec(sql)
+        try db.exec("PRAGMA user_version = \(i + 1)")
+    }
+    let l = try Ledger(rootURL: root)
+    #expect(try await l.schemaVersion() == Schema.migrations.count)
+    #expect(try await l.run("PRAGMA table_info(entry_annotation)").contains { $0["name"]?.string == "tags" })
+    #expect(try await l.run("PRAGMA table_info(card_layout)").filter { ["w", "h"].contains($0["name"]?.string) }.count == 2)
+    let still = Entry(kind: .still)
+    try await l.insertEntry(still)
+    #expect(try await l.stillCaption(entryId: still.id) == nil)
+}
