@@ -77,7 +77,10 @@ struct VoicePill: View {
         .onAppear { appeared = true }
         // Opening the pill starts recording, once the microphone is up.
         .onChange(of: capture.state, initial: true) { _, s in if s == .previewing, capture.turn == 0, confirm == nil { capture.toggle() } }
-        .onExitCommand { escape() }
+        // Esc asks before throwing anything away; the confirm and message steps have their own Esc buttons.
+        .background {
+            if step == .recording || step == .review { Button("", action: escape).keyboardShortcut(.cancelAction).hidden() }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(step == .review ? "Listen back to your voice note" : "Voice note")
     }

@@ -203,6 +203,8 @@ struct RecorderView: View {
                 Spacer(minLength: 0)
                 bottomBar
             }
+            // The finish dialog keeps the keys: Space mustn't resume behind it, nor Return press two Finishes.
+            .disabled(finishing != nil)
             if held && checkpoint.safetyShown {
                 NightSafetyCard { withAnimation(CaptureMotion.out(0.3)) { checkpoint.safetyShown = false } }
                     .padding(12)
