@@ -162,8 +162,9 @@ struct DevNotes {
             DevNotes(
                 name: "Trash",
                 does: "Deleted entries, one batch per action, restorable with ⌘Z or from here.",
-                built: ["Soft delete by batch", "Undo from the toast or ⌘Z", "Restore from this pane"],
-                stubbed: ["Purge after 30 days (DR-15)", "Two-step Empty Trash (FR-DAY-05)"],
+                built: ["Soft delete by batch", "Undo from the toast or ⌘Z", "Restore one or all from this pane",
+                        "Delete for good and a two-step Empty Trash (FR-DAY-05)", "Purge after 30 days at launch (DR-15)"],
+                stubbed: [],
                 issues: [],
                 brd: ["FR-DAY-05", "DR-15"])
         case .decisions:

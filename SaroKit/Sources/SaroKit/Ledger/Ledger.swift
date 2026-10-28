@@ -222,6 +222,45 @@ public actor Ledger {
         try db.run("SELECT * FROM entry WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC").map(Entry.init)
     }
 
+    /// Deletes trashed entries for good (FR-DAY-05, DR-15): every row derived from them, every reading that quotes them,
+    /// and their media files unless a live or trashed entry still shares one. The person's answers and commitments stay,
+    /// unlinked. A live entry is never touched. Returns how many were deleted.
+    @discardableResult
+    public func purge(_ ids: [String]) throws -> Int {
+        var files: [URL] = []
+        var purged = 0
+        try db.transaction {
+            for id in ids {
+                guard let e = try db.run("SELECT media_id FROM entry WHERE id=? AND trashed_at IS NOT NULL", [.text(id)]).first else { continue }
+                let arg: [SQLValue] = [.text(id)]
+                try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE entry_id=?)", arg)
+                for table in ["observation", "entry_annotation", "ai_run_input", "safety_verdict", "card_layout"] {
+                    try db.run("DELETE FROM \(table) WHERE entry_id=?", arg)
+                }
+                try db.run("DELETE FROM insight_snapshot WHERE instr(payload, ?) > 0 OR instr(COALESCE(quotes, ''), ?) > 0", arg + arg)
+                try db.run("DELETE FROM reflection_turn WHERE entry_id=? AND answer IS NULL", arg)
+                try db.run("UPDATE reflection_turn SET entry_id=NULL WHERE entry_id=?", arg)
+                try db.run("UPDATE commitment SET source_entry_id=NULL WHERE source_entry_id=?", arg)
+                try db.run("UPDATE entry SET duplicated_from_id=NULL WHERE duplicated_from_id=?", arg)
+                try db.run("DELETE FROM entry WHERE id=?", arg)
+                purged += 1
+                guard let mid = e.str("media_id"), try db.run("SELECT 1 FROM entry WHERE media_id=?", [.text(mid)]).isEmpty,
+                      let m = try db.run("SELECT * FROM media_asset WHERE id=?", [.text(mid)]).first.map(MediaAsset.init) else { continue }
+                try db.run("DELETE FROM transcript_word WHERE media_id=?", [.text(mid)])
+                try db.run("DELETE FROM media_asset WHERE id=?", [.text(mid)])
+                files.append(url(for: m))
+            }
+        }
+        for f in files { try? FileManager.default.removeItem(at: f) }
+        return purged
+    }
+
+    /// The 30-day purge (DR-15): entries trashed before `cutoff`.
+    @discardableResult
+    public func purgeTrash(before cutoff: Date) throws -> Int {
+        try purge(db.run("SELECT id FROM entry WHERE trashed_at < ?", [.text(cutoff.iso)]).compactMap { $0.str("id") })
+    }
+
     // MARK: Canvas layout
 
     public func setLayouts(_ layouts: [CardLayout]) throws {

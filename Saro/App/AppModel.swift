@@ -564,6 +564,8 @@ final class AppModel {
         // Once per launch: reopening the window mid-recording must not treat a live turn as crashed.
         guard !Self.swept else { return await reload() }
         Self.swept = true
+        // ponytail: at launch only; a Saro left running for weeks purges at its next launch.
+        _ = try? await ledger.purgeTrash(before: .now.addingTimeInterval(-30 * 86_400))
         for m in (try? await ledger.allMedia()) ?? [] where m.state == "recording" {
             let url = ledger.url(for: m)
             if FileManager.default.fileExists(atPath: url.path) {
