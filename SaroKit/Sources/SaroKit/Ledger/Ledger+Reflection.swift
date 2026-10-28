@@ -130,8 +130,14 @@ extension Ledger {
         try db.run("DELETE FROM insight_snapshot WHERE id=?", [.text(id)])
     }
 
+    /// A held day's readings and letters, and the first week's notes drawn on any entry of it, which are stored on the
+    /// day they came (SR-13, SR-15).
     func dropDayReadings(_ day: String) throws {
         try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=?", [.text(day)])
+        try db.run("""
+            DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter')
+              AND EXISTS (SELECT 1 FROM json_each(payload, '$.sources') s JOIN entry e ON e.id = s.value WHERE e.local_day=?)
+            """, [.text(day)])
     }
 
     // MARK: Daily question

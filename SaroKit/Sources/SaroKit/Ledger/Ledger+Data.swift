@@ -226,9 +226,44 @@ extension Ledger {
             }
             // An empty profile row, so the profile reads back even when the export had none.
             try db.run("INSERT OR IGNORE INTO profile (id, created_at, updated_at) VALUES (1, ?, ?)", [.text(Date.now.iso), .text(Date.now.iso)])
+            try purgeAgain()
         }
         summary.files = try await Self.copyTreeDetached(from: folder.appending(path: "Media", directoryHint: .isDirectory), to: mediaURL, progress: progress)
         return summary
+    }
+
+    /// An export can be older than this journal's holds and forgetting, and its rows come back under their own ids, so
+    /// what those deleted is deleted again (SR-15, FR-MEM-03), as `insertVerdict`, `setTurnAnswer`, `setUserMood` and
+    /// `forget` did.
+    func purgeAgain() throws {
+        let unclear = try db.run("""
+            SELECT v.entry_id, v.verdict, v.created_at, e.local_day, e.trashed_at FROM safety_verdict v JOIN entry e ON e.id = v.entry_id
+            WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict NOT IN ('clear','unavailable_clear')
+            """)
+        for r in unclear {
+            guard let id = r.str("entry_id"), let day = r.str("local_day") else { continue }
+            try dropMemory(entryId: id)
+            guard r.str("verdict") == "safety_hold" else { continue }
+            try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(id)])
+            if r.str("trashed_at") == nil { try dropDayReadings(day); continue }
+            // Its day may have been read again since it went to Trash: only what drew on it goes.
+            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=? AND created_at <= ?",
+                       [.text(day), .text(r.str("created_at") ?? "")])
+            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('pattern','week_letter') AND EXISTS (SELECT 1 FROM json_each(payload, '$.sources') WHERE value=?)",
+                       [.text(id)])
+        }
+        for r in try db.run("""
+            SELECT local_day FROM reflection_turn WHERE answer_verdict = 'safety_hold'
+            UNION SELECT local_day FROM day_state WHERE mood_note_verdict = 'safety_hold'
+            """) {
+            if let day = r.str("local_day") { try dropDayReadings(day) }
+        }
+        let forgotten = """
+            SELECT id FROM observation WHERE key_sha256 IN (SELECT key_sha256 FROM memory_tombstone)
+              OR created_at <= COALESCE((SELECT at FROM memory_tombstone WHERE key_sha256 = 'all'), '')
+            """
+        try db.run("DELETE FROM observation_retraction WHERE observation_id IN (\(forgotten))")
+        try db.run("DELETE FROM observation WHERE id IN (\(forgotten))")
     }
 
     static func sql(_ v: Any) -> SQLValue {

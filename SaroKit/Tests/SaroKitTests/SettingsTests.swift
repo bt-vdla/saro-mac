@@ -581,6 +581,55 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         #expect(!Book.build(year: 2026, name: "Alex", days: try await l.bookDays(year: 2026)).contains("You had chai with Ravi."))
     }
 
+    /// SR-15, FR-MEM-03: importing an export made before a hold, or before a forget, brings back none of what they deleted.
+    @Test func importingAnOlderExportBringsBackNothingAHoldOrForgetDeleted() async throws {
+        let l = try freshLedger()
+        let page = try await seed(l)
+        var a = EntryAnnotation(entryId: page.id, aiRunId: try #require(try await l.runs().first?.str("id")), generator: "heuristic")
+        a.title = "Chai"
+        try await l.insertAnnotation(a)
+        _ = try await keep(l, "You had chai with Ravi.")
+        let note = WeekNote(kind: .pattern, title: "A first pattern", lines: ["You said “Chai with Ravi.”"], sources: [page.id])
+        try await l.insertSnapshot(InsightSnapshot(kind: "pattern", day: "2026-10-28", aiRunId: nil, generator: "heuristic", inputHash: nil,
+                                                   payload: String(decoding: try JSONEncoder().encode(note), as: UTF8.self)))
+        let run = AIRun(feature: Ledger.memoryFeature, executor: "heuristic", status: "ok")
+        try await l.insertObservations([MemoryObservation(entryId: page.id, kind: .person, key: "person:ravi", label: "Ravi", quote: "Ravi",
+                                                          field: "body", spanStart: 10, spanEnd: 14, localDay: "2026-10-26")],
+                                       run: run, inputs: [AIRunInput(entryId: page.id, field: "body", text: page.body!)])
+        try await l.addUserMemory(MemoryObservation(entryId: nil, source: .user, kind: .line, key: "user:9", label: "Synthetic line", localDay: "2026-10-26"))
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        try await l.exportEverything(to: dir, prefs: nil)
+
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(page.body!), safetyVersion: "t", layer: 1, verdict: "safety_hold", reasonCode: "x"))
+        try await l.forget(keys: ["user:9"])
+        func generated() async throws -> [Int] {
+            var n: [Int] = []
+            for t in ["entry_annotation", "insight_snapshot", "observation", "ai_run WHERE feature='memory'"] {
+                n.append(try await l.run("SELECT COUNT(*) AS n FROM \(t)").first?.int("n") ?? -1)
+            }
+            return n
+        }
+        #expect(try await generated() == [0, 0, 0, 0])
+        try await l.importExport(from: dir)
+        #expect(try await l.verdicts(day: "2026-10-26")[page.id]?.verdict == "safety_hold")
+        #expect(try await generated() == [0, 0, 0, 0])
+    }
+
+    /// A held entry since trashed: its day may be read again, and that reading stays; what drew on the entry goes.
+    @Test func importAfterATrashedHoldKeepsTheDaysLaterReading() async throws {
+        let l = try freshLedger()
+        let page = try await seed(l)
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        try await l.exportEverything(to: dir, prefs: nil)
+        try await l.insertVerdict(SafetyVerdictRow(entryId: page.id, textSha256: sha256(page.body!), safetyVersion: "t", layer: 1, verdict: "safety_hold", reasonCode: "x"))
+        _ = try await l.trash([page.id])
+        try await Task.sleep(for: .milliseconds(5))
+        let later = InsightSnapshot(kind: "day_reading", day: "2026-10-26", aiRunId: nil, generator: "heuristic", inputHash: nil, payload: "{}")
+        try await l.insertSnapshot(later)
+        try await l.importExport(from: dir)
+        #expect(try await l.run("SELECT id FROM insight_snapshot").compactMap { $0.str("id") } == [later.id])
+    }
+
     /// FR-EXP-02: export, import into an empty journal, same rows and files; importing again adds nothing.
     @Test func exportImportRoundTrip() async throws {
         let a = try freshLedger()

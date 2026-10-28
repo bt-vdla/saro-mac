@@ -212,10 +212,10 @@ public actor Ledger {
         try db.transaction {
             for id in ids {
                 try db.run("UPDATE entry SET trashed_at=NULL, trash_batch_id=NULL, updated_at=? WHERE id=?", [.text(Date.now.iso), .text(id)])
-                try db.run("""
-                    DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=(SELECT local_day FROM entry WHERE id=?)
-                      AND (SELECT verdict FROM safety_verdict WHERE entry_id=? ORDER BY rowid DESC LIMIT 1)='safety_hold'
-                    """, [.text(id), .text(id)])
+                if try db.run("SELECT verdict FROM safety_verdict WHERE entry_id=? ORDER BY rowid DESC LIMIT 1", [.text(id)]).first?.str("verdict") == "safety_hold",
+                   let day = try entry(id)?.localDay {
+                    try dropDayReadings(day)
+                }
             }
         }
     }
@@ -374,9 +374,9 @@ public actor Ledger {
         return Dictionary(rows.map(EntryAnnotation.init).map { ($0.entryId, $0) }, uniquingKeysWith: { $1 })
     }
 
-    /// A safety hold also drops what was generated from the entry: its readings, and its day's readings and kept
-    /// letters, which Export would otherwise still write out (SR-15, which outranks DR-05's append-only rule here). Any
-    /// verdict that doesn't clear the entry drops what memory learned from it.
+    /// A safety hold also drops what was generated from the entry: its readings, and its day's readings, kept letters
+    /// and the first week's notes drawn on it, which Export would otherwise still write out (SR-15, which outranks
+    /// DR-05's append-only rule here). Any verdict that doesn't clear the entry drops what memory learned from it.
     public func insertVerdict(_ v: SafetyVerdictRow) throws {
         try db.transaction {
             try db.run("""
@@ -387,8 +387,7 @@ public actor Ledger {
             if v.verdict != "clear" && v.verdict != "unavailable_clear" { try dropMemory(entryId: v.entryId) }
             guard v.verdict == "safety_hold" else { return }
             try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(v.entryId)])
-            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=(SELECT local_day FROM entry WHERE id=?)",
-                       [.text(v.entryId)])
+            if let day = try entry(v.entryId)?.localDay { try dropDayReadings(day) }
         }
     }
 

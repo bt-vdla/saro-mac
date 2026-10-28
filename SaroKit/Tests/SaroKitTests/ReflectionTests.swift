@@ -455,6 +455,30 @@ private let work = [
     #expect(await p.weekNoteStatus(WeekNote(kind: .pattern, title: "", lines: [], sources: [b.id])) == .held)
 }
 
+/// SR-15: a hold on any day a stored week note drew on deletes the note in the same transaction, wherever it is stored.
+@Test func aHoldDeletesTheWeekNotesThatDrewOnItsDay() async throws {
+    let l = try tempLedger()
+    let (d0, d1, d2) = ("2026-09-26", "2026-09-27", "2026-09-28")
+    let a = Entry(kind: .reflection, body: "Long day at work.", localDay: d0), b = Entry(kind: .reflection, body: "A walk.", localDay: d1)
+    let other = Entry(kind: .reflection, body: "Rain.", localDay: d0)
+    for e in [a, b, other] { try await l.insertEntry(e) }
+    func store(_ kind: String, _ sources: [String]) async throws {
+        let note = WeekNote(kind: kind == "pattern" ? .pattern : .letter, title: "", lines: ["You said “long day”."], sources: sources)
+        try await l.insertSnapshot(InsightSnapshot(kind: kind, day: d2, aiRunId: nil, generator: "heuristic", inputHash: nil,
+                                                   payload: String(decoding: try JSONEncoder().encode(note), as: UTF8.self)))
+    }
+    try await store("pattern", [a.id])
+    try await store("week_letter", [b.id])
+    // Held through a different entry of the day the pattern quotes.
+    try await l.insertVerdict(SafetyVerdictRow(entryId: other.id, textSha256: sha256("Rain."), safetyVersion: "t", layer: 1, verdict: "safety_hold", reasonCode: "x"))
+    #expect(try await l.latestSnapshot(kind: "pattern") == nil)
+    #expect(try await l.latestSnapshot(kind: "week_letter") != nil)
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: "What stayed?", generator: "heuristic", localDay: d1)
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: "x", verdict: "safety_hold")
+    #expect(try await l.latestSnapshot(kind: "week_letter") == nil)
+}
+
 @Test func anAnswerAloneLeavesNothingToRead() async throws {
     let l = try tempLedger()
     let p = offline(l)
