@@ -90,7 +90,7 @@ struct RecorderView: View {
         let inset: CGFloat = size.width >= 1024 ? 24 : 16
         let lit = appeared && !leaving
         return ZStack {
-            Rectangle().fill(.ultraThinMaterial)
+            Rectangle().fill(.frosted(solid: Night.bg))
                 .overlay(Color.black.opacity(0.45))
                 .environment(\.colorScheme, .dark)
                 .contentShape(.rect)
@@ -546,7 +546,7 @@ struct CaptureButtonStyle: ButtonStyle {
                 .padding(.horizontal, style.diameter == nil ? style.padding : 0)
                 .frame(width: style.diameter, height: style.diameter ?? style.height)
                 .background(hovering && enabled ? style.hover : style.fill, in: .capsule)
-                .background { if style.frosted { Capsule().fill(.ultraThinMaterial) } }
+                .background { if style.frosted { Capsule().fill(.frosted(solid: Night.surface)) } }
                 .overlay(Capsule().strokeBorder(style.line))
                 .shadow(color: style.shadow, radius: 10, y: 4)
                 .contentShape(.capsule)
@@ -574,7 +574,7 @@ extension View {
     /// Glass over video for pills that aren't buttons.
     fileprivate func frosted() -> some View {
         background(.black.opacity(0.3), in: .capsule)
-            .background(.ultraThinMaterial, in: .capsule)
+            .background(.frosted(solid: Night.surface), in: .capsule)
             .overlay(Capsule().strokeBorder(.white.opacity(0.2)))
             .shadow(color: .black.opacity(0.1), radius: 8, y: 5)
     }

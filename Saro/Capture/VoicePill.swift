@@ -28,7 +28,7 @@ struct VoicePill: View {
         .animation(CaptureMotion.out(0.2), value: message)
         .frame(maxWidth: .infinity)
         .background(Night.surface.opacity(0.95))
-        .background(.ultraThinMaterial)
+        .background(.frosted(solid: Night.surface))
         .clipShape(.rect(cornerRadius: 28))
         .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
         .shadow(color: .black.opacity(0.24), radius: 40, y: 32)

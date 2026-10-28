@@ -25,6 +25,20 @@ private struct SaroWritingTools: ViewModifier {
     }
 }
 
+/// Frosted glass that turns solid under Reduce transparency, the device's or Saro's own: `solid` in place of the blur.
+struct Frosted: ShapeStyle {
+    var material: Material
+    var solid: Color
+
+    func resolve(in environment: EnvironmentValues) -> AnyShapeStyle {
+        environment.accessibilityReduceTransparency ? AnyShapeStyle(solid) : AnyShapeStyle(material)
+    }
+}
+
+extension ShapeStyle where Self == Frosted {
+    static func frosted(_ material: Material = .ultraThinMaterial, solid: Color = Tok.surface) -> Frosted { .init(material: material, solid: solid) }
+}
+
 /// Settings → Comfort → Haptics: a light trackpad tap when a dragged card snaps to a guide.
 @MainActor
 enum Haptics {

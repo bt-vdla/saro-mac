@@ -500,7 +500,7 @@ struct DayStage: View {
         let tile = members.first.map { CanvasMath.size($0.kind) } ?? .zero
         let origin = cards.first { $0.item.stackID == sid }.map { screen($0.center) } ?? CGPoint(x: size.width / 2, y: size.height / 2)
         return ZStack {
-            Rectangle().fill(.ultraThinMaterial).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
+            Rectangle().fill(.frosted(solid: Tok.bg)).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
                 .onTapGesture { close(sid) }
             ForEach(Array(members.enumerated()), id: \.element.id) { i, e in
                 let p = fanned || reduceMotion ? points[e.id] ?? origin : origin
@@ -583,7 +583,7 @@ struct DayStage: View {
 
     private func detail(_ entry: Entry) -> some View {
         ZStack {
-            Rectangle().fill(.ultraThinMaterial).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
+            Rectangle().fill(.frosted(solid: Tok.bg)).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
                 .opacity(scrim ? 1 : 0)
                 .onTapGesture { model.openEntryID = nil }
             MorphFlight(entry: entry, from: flightFrom.rect, fromRadius: flightFrom.radius, to: detailTarget(entry),

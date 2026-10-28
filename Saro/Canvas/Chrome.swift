@@ -22,7 +22,7 @@ struct OrbitNav: View {
                 .foregroundStyle(Tok.sageDark)
                 .padding(.leading, 14).padding(.trailing, 12).frame(height: 44)
                 .background(Tok.bg.opacity(hover ? 0.4 : 0.2), in: .capsule)
-                .background(.ultraThinMaterial, in: .capsule)
+                .background(.frosted(), in: .capsule)
                 .overlay(Capsule().strokeBorder(Tok.rim.opacity(0.6)))
                 .elevation(.lift)
                 .animation(Motion.fade, value: hover)

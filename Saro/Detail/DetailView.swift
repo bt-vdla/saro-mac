@@ -22,7 +22,7 @@ struct DetailView: View {
             Button { model.openEntryID = nil } label: {
                 Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Tok.ink2)
                     .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: .circle)
+                    .background(.frosted(), in: .circle)
                     .background(Tok.surface.opacity(0.8), in: .circle)
             }
             .buttonStyle(PressStyle())
