@@ -4,7 +4,7 @@ import Testing
 
 // MARK: - Normaliser properties (SR-05)
 
-let normaliserSamples = flagged + notFlagged + [
+let normaliserSamples = flagged + notFlagged + mustHit + mustNotHit + [
     "", " ", "...", "a", "Café, naïve façade", "Straße", "ǅemal", "ﬁne ﬂow", "e.g. 3.5 kg", "?!", "— wait —", "i want to , die",
     "मैं मर जाऊँ।", "क़ ख़ ग़ ज़ ड़ ढ़ फ़ य़", "न\u{093C} र\u{093C} ळ\u{093C}", "தற்கொலை", "আত্মহত্যা", "ਖ਼ੁਦਕੁਸ਼ੀ", "خودکشی",
     "Привет, мир", "Καλημέρα", "死にたい", "我想死", "죽고 싶다", "שָׁלוֹם", "สวัสดีครับ", "👩‍💻🏳️‍🌈❤️1️⃣",

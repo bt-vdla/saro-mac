@@ -143,8 +143,12 @@ extension SafetyGate {
     private static let negated = ["dont", "didnt", "doesnt", "never", "not"]
     private static let housing = ["in", "with", "near", "there", "here", "at", "on", "together", "alone", "by", "next", "so",
                                   "far", "somewhere", "abroad", "close"]
-    private static let wakeGuard = ["early", "at", "before", "for", "so", "too", "yet"]
-    private static let cutGuard = ["some", "a", "slack", "off", "loose", "free", "out", "in", "short", "up"]
+    // DRAFT: clinician review (SR-32), safety-2 — "late" onwards: "wake up the kids", "wake up with a headache".
+    private static let wakeGuard = ["early", "at", "before", "for", "so", "too", "yet", "late", "the", "my", "his", "her", "him",
+                                    "them", "everyone", "anyone", "you", "us", "with", "until", "till"]
+    // DRAFT: clinician review (SR-32), safety-2 — "in" dropped: it cancelled "cut myself in the bathroom" and
+    // "used to cut myself in college" to spare the rare "cutting myself in on the deal".
+    private static let cutGuard = ["some", "a", "slack", "off", "loose", "free", "out", "short", "up"]
 
     private static let phraseIndex = index([
         // safety.ts
@@ -152,7 +156,9 @@ extension SafetyGate {
         phrases(["end my life", "ending my life", "end my own life", "end it all", "ending it all"]),
         phrases(["take my own life", "taking my own life", "take my life", "taking my life"],
                 notAfter: ["back", "savings", "in", "into", "to", "more", "seriously", "apart"]),
-        phrases(["suicide"], notAfter: ["squad"]),
+        // DRAFT: clinician review (SR-32), safety-2 — guards after "squad".
+        phrases(["suicide"], notAfter: ["squad", "mission", "missions", "doors", "door", "sprint", "sprints", "drill", "drills",
+                                        "bomber", "bombers", "bombing", "bombings"]),
         phrases(["suicidal", "suicde", "sucide", "suiside", "suicid", "suicidle", "sucidal", "suisidal", "suicidial", "suicidel"]),
         phrases(["want to die", "wanna die", "wanting to die", "want to be dead", "wanna be dead"],
                 notBefore: negated, notAfter: ["of", "laughing"]),
@@ -163,10 +169,13 @@ extension SafetyGate {
         phrases(["don't want to wake up", "do not want to wake up"], notAfter: wakeGuard),
         phrases(["don't want to be here", "do not want to be here", "don't wanna be here"]),
         phrases(["no reason to live", "nothing to live for", "no point in living", "no point living", "no point anymore",
-                 "no point to anything", "no point in anything", "no point going on", "no point in going on",
+                 "no point to anything", "no point in anything",
                  "what's the point anymore", "what's the point of living", "what's the point of anything",
-                 "what's the point of being alive", "can't go on living", "tired of living", "tired of being alive",
+                 "what's the point of being alive", "can't go on living", "tired of being alive",
                  "sick of being alive"]),
+        // DRAFT: clinician review (SR-32), safety-2 — guarded: "no point going on about it", "tired of living out of a suitcase".
+        phrases(["no point going on", "no point in going on"], notAfter: ["about"]),
+        phrases(["tired of living"], notAfter: housing + ["out", "under", "paycheck", "off", "from"]),
         phrases(["self harm", "selfharm", "self harming", "self harmed", "self injury", "self injuring"]),
         phrases(["harm myself", "harming myself", "hurt myself on purpose", "want to hurt myself", "wanna hurt myself",
                  "going to hurt myself", "gonna hurt myself", "thinking about hurting myself", "thought about hurting myself",
@@ -183,7 +192,7 @@ extension SafetyGate {
                 notBefore: negated, notAfter: ["of", "from", "laughing"]),
         phrases(combos(["wish", "wish that"], ["i was dead", "i were dead"])),
         phrases(combos(["wish i"], ["could", ""], ["just", ""], ["die", "disappear forever"])),
-        phrases(combos(["no reason", "no point"], ["to", "in"], ["live", "living", "go on", "going on"])),
+        phrases(combos(["no reason", "no point"], ["to", "in"], ["live", "living", "go on", "going on"]), notAfter: ["about"]),
         phrases(["self harm", "selfharm", "self harming", "selfharming"]),
         phrases(combos(["want", "wanted", "wanting", "urge", "urges", "tempted", "thinking about", "thought about"], ["to", ""],
                        ["cut", "cutting", "hurt", "hurting", "harm", "harming"], ["myself", "my self"]), notAfter: cutGuard),
@@ -203,11 +212,95 @@ extension SafetyGate {
                  "ज़िंदा नहीं रहना", "जिंदा नहीं रहना", "ज़िन्दा नहीं रहना", "जिन्दा नहीं रहना", "जीना नहीं चाहता", "जीना नहीं चाहती",
                  "सब ख़त्म कर दूं", "सब खत्म कर दूँ", "सब ख़त्म कर दूँ", "सब खत्म कर दूं", "ख़ुद को ख़त्म", "खुद को खत्म",
                  "आत्महत्या", "ख़ुदकुशी", "खुदकुशी"]),
+        // DRAFT: clinician review (SR-32), safety-2 — English phrasings the synthetic corpus caught missing
+        phrases(["wish id never been born", "wish i hadnt been born", "wish i had not been born", "wish i never was born",
+                 "nothing left to live for", "dont wanna be alive", "dont wanna exist", "do not wanna be alive",
+                 "took an overdose", "taken an overdose", "take an overdose", "taking an overdose"]),
+        phrases(["dont wanna wake up", "do not wanna wake up"], notAfter: wakeGuard),
+        phrases(["want 2 die", "wanted 2 die"], notBefore: negated, notAfter: ["of", "laughing"]),
+        phrases(combos(["better off if i", "better off if i just", "happier if i", "better if i just"],
+                       ["was gone", "were gone", "wasnt here", "werent here", "wasnt around", "werent around", "didnt exist",
+                        "was dead", "were dead", "died"])),
+        phrases(combos(["no one", "nobody", "noone"], ["would", "will", "would even", "wouldnt even"], ["miss me", "notice", "care"],
+                       ["if i"], ["died", "was gone", "were gone", "was dead", "wasnt here", "wasnt around", "killed myself"])),
+        phrases(combos(["part of me"], ["wants to", "just wants to"], ["die", "be dead", "end it", "not exist", "disappear forever"])),
+        phrases(combos(["want to", "wanna", "wish i could", "wish i could just"], ["stop existing", "not exist", "not be alive"])),
+        phrases(["life isnt worth living", "life is not worth living", "lifes not worth living", "not worth living anymore"],
+                notBefore: ["unexamined"]),
+        phrases(combos(["i should", "i should just", "maybe i should", "maybe i should just", "i might as well", "i might as well just"],
+                       ["die", "be dead"]), notAfter: ["of", "laughing", "from", "trying"]),
+        phrases(combos(["i hope i", "i hope i just", "hoping i", "hoping i just", "i pray i"], ["die"]),
+                notAfter: ["before", "of", "laughing", "old", "first", "happy", "doing", "trying", "peacefully"]),
+        phrases(combos(["how many"], ["pills", "tablets", "sleeping pills"], ["it would take", "would it take"]), notAfter: ["to"]),
+        phrases(combos(["how many"], ["pills", "tablets", "sleeping pills"], ["it would take", "would it take", "it takes", "does it take"],
+                       ["to die", "to overdose", "to end it", "to not wake up"])),
+        phrases(combos(["stockpiling", "stockpile", "hoarding"], ["my", "the", ""],
+                       ["pills", "tablets", "meds", "sleeping pills", "painkillers"])),
+        phrases(combos(["taking", "swallowing"], ["all my", "all of my", "all the"], ["pills", "sleeping pills"])),
+        phrases(combos(["take", "taking", "swallow", "swallowing", "swallowed"], ["the whole", "a whole"], ["bottle", "packet"],
+                       ["of pills", "of sleeping pills", "of painkillers", "of tablets", "of paracetamol"])),
+        phrases(combos(["going to", "gonna", "want to", "wanna", "planning to", "plan to", "thinking about", "thought about",
+                        "thinking of"], ["overdose", "overdosing"])),
+        phrases(combos(["painless", "easiest", "quickest", "easy", "quick"], ["way", "ways"], ["to die", "to end it", "to end my life"])),
+        phrases(combos(["want to", "wanna", "going to", "gonna", "thinking about", "thinking of", "thought about", "planning to"],
+                       ["jump", "jumping"], ["off", "from", "in front of"], ["a", "the", "my"],
+                       ["bridge", "roof", "building", "balcony", "terrace", "cliff", "train", "bus"])),
+        phrases(combos(["throw", "throwing", "threw"], ["myself"], ["off", "from", "in front of", "under"], ["a", "the", "my"],
+                       ["bridge", "roof", "building", "balcony", "terrace", "cliff", "train", "bus", "car", "truck"])),
+        phrases(combos(["used to", "use to"], ["cut", "burn", "harm"], ["myself", "my self"]), notAfter: cutGuard),
+        phrases(combos(["want", "wanted", "wanting", "urge", "urges", "tempted", "thinking about", "thought about"], ["to", ""],
+                       ["burn", "burning"], ["myself", "my self"])),
+        phrases(combos(["cut", "cutting", "burn", "burning", "burned", "burnt", "hurt", "hurting", "hit", "hitting", "scratched",
+                        "scratching"], ["myself", "my self"], ["on purpose", "deliberately", "intentionally"])),
+        phrases(combos(["kill", "kil", "killing"], ["myslef", "mysef", "myslf", "mysefl"])),
+        phrases(combos(["want to", "wanna", "gonna", "going to", "about to", "ready to", "might", "might just", "should just", "imma"],
+                       ["kms"])),
+        phrases(combos(["want to", "wanna", "going to", "gonna", "thinking about", "thought about", "plan to", "planning to",
+                        "tried to"], ["unalive", "unaliving"]),
+                notAfter: ["him", "her", "them", "you", "everyone", "the", "this", "that", "his"]),
+        // DRAFT: clinician review (SR-32), safety-2 — Hinglish, romanised ("nhi" and "nai" are common typed spellings of "nahi")
+        phrases(["mujhe marna hai", "mujhe mar jaana hai", "mujhe mar jaana chahiye", "mujhe mar jana chahiye", "mujhe marna chahiye",
+                 "marjaun", "marjau", "marjaana hai", "marjana hai", "khudkhushi", "khud khushi", "khudakushi",
+                 "mere bina sab khush", "mere bagair behtar", "mere bagair sab behtar",
+                 "nas kaat", "nass kaat", "nas kat", "nasen kaat", "nasein kaat", "kalai kaat", "kalai kat"]),
+        phrases(combos(["jeena", "jina"], ["nahi", "nahin", "nhi", "nai"], ["chahta", "chahti"])),
+        phrases(combos(["zinda", "jinda"], ["nahi", "nahin", "nhi", "nai"], ["rehna", "rahna"])),
+        phrases(combos(["jeene ka", "jine ka"], ["man", "mann", "dil"], ["nahi", "nahin", "nhi", "nai"])),
+        phrases(combos(["jeene ki", "jine ki"], ["ichha", "icha", "iccha", "ichchha", "chahat"], ["nahi", "nahin", "nhi", "nai", "khatam"])),
+        phrases(combos(["jeene", "jine", "zinda rehne", "jinda rehne", "zinda rahne"], ["ka"], ["koi", ""],
+                       ["matlab", "fayda", "faida", "maksad"], ["nahi", "nahin", "nhi", "nai"])),
+        phrases(combos(["kaash main", "kash main", "kaash mai", "kash mai", "kaash me", "kash me"], ["paida"], ["hi", ""], ["na", "nahi"],
+                       ["hota", "hoti", "hua hota", "hui hoti"])),
+        phrases(combos(["mere bina"], ["sab", "sab log", ""], ["behtar", "better"])),
+        phrases(combos(["apni jaan"], ["le"], ["lun", "loon", "lu", "lunga", "lungi", "lena chahta", "lena chahti", "leni hai"])),
+        phrases(combos(["khud ko", "khudko", "apne aap ko", "apne ap ko"], ["maar", "mar", "maarna", "khatam", "khatm"])),
+        phrases(combos(["phaansi", "phansi", "faansi", "fansi", "phasi", "fasi"], ["laga", "lagaa"], ["lun", "loon", "lu", "lunga", "lungi"])),
+        phrases(combos(["kabhi", "dobara", "phir kabhi"], ["na"], ["uthun", "uthoon", "uthu", "jaagun", "jaagoon", "jagun"])),
+        phrases(combos(["chhat", "chat", "chhath", "terrace", "balcony", "building", "bridge", "pul"], ["se"], ["kood", "kud", "kooda"],
+                       ["jaun", "jau", "jaoon", "jaaun", "jaunga", "jaungi"])),
+        phrases(combos(["saari", "sari", "saare", "sare", "sab"], ["goliyan", "goliya", "golian", "dawaiyan", "dawaiya", "tablets", "pills"],
+                       ["kha", "khaa", "nigal"], ["lun", "loon", "lu", "lunga", "lungi", "jaun"])),
+        // DRAFT: clinician review (SR-32), safety-2 — Hinglish, Devanagari (nukta and chandrabindu fold, so one spelling covers both)
+        phrases(["मुझे मरना है", "मुझे मर जाना है", "मुझे मर जाना चाहिए", "मुझे मरना चाहिए", "मर जाउं", "मर जाउ", "खुदखुशी"]),
+        phrases(combos(["जीने की"], ["इच्छा", "चाहत"], ["नहीं", "नही", "खत्म"])),
+        phrases(combos(["जीने का", "जिंदा रहने का", "जिन्दा रहने का"], ["मन", "दिल", "कोई मतलब", "मतलब", "कोई फायदा", "फायदा"],
+                       ["नहीं", "नही"])),
+        phrases(combos(["काश मैं", "काश मै"], ["पैदा"], ["ही", ""], ["न", "ना", "नहीं"], ["होता", "होती", "हुआ होता", "हुई होती"])),
+        phrases(combos(["मेरे बिना"], ["सब", "सब लोग", ""], ["बेहतर"])),
+        phrases(combos(["अपनी जान"], ["ले"], ["लूं", "लूंगा", "लूंगी", "लू", "लेना चाहता", "लेना चाहती"])),
+        phrases(combos(["खुद को", "अपने आप को"], ["मार", "खत्म"])),
+        phrases(combos(["फांसी", "फासी"], ["लगा"], ["लूं", "लूंगा", "लूंगी", "लू"])),
+        phrases(combos(["नस", "नसें", "कलाई"], ["काट"])),
+        phrases(combos(["कभी", "दोबारा", "फिर कभी"], ["न", "ना"], ["उठूं", "उठू", "जागूं"])),
+        phrases(combos(["छत", "बिल्डिंग", "पुल", "बालकनी"], ["से"], ["कूद"], ["जाऊं", "जाउं", "जाऊ", "जाऊंगा", "जाऊंगी"])),
+        phrases(combos(["सारी", "सब"], ["गोलियां", "दवाइयां"], ["खा"], ["लूं", "लू", "लूंगा", "लूंगी", "जाऊं"])),
     ])
 
     // safety.py's one pattern with a gap: "wish I could just not wake up". Written in normalised form.
+    // DRAFT: clinician review (SR-32), safety-2 — the -ing and "pray" triggers, and "I don't / won't / wouldn't wake up".
     private static let wakeRegex = try! NSRegularExpression(
-        pattern: "\\b(?:wish|hope|want)\\b[^.]{0,30}\\b(?:not|never) wake up\\b(?! (?:\(wakeGuard.joined(separator: "|")))\\b)")
+        pattern: "\\b(?:wish|wishing|hope|hoping|want|wanting|pray|praying)\\b[^.]{0,30}"
+            + "\\b(?:not|never|i dont|i wont|i wouldnt|i didnt) wake up\\b(?! (?:\(wakeGuard.joined(separator: "|")))\\b)")
 
     // P0 draft (SR-06): broad on purpose. A hit only blocks quote-backs and heuristic questions until layer 2 reads the entry.
     private static let cautionIndex = index([
