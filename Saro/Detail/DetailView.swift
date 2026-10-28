@@ -492,7 +492,7 @@ struct StillBelow: View {
             guard let url = model.mediaURL(for: entry) else { return }
             pixels = await Task.detached { StillVision.pixelSize(at: url) }.value
         }
-        .task(id: "\(entry.processingStatus)\(entry.captionUser ?? "")\(verdict ?? "")\(model.verdicts[entry.id]?.id ?? "")\(model.annotations[entry.id]?.id ?? "")") {
+        .task(id: "\(model.isDayHeld)\(entry.processingStatus)\(entry.captionUser ?? "")\(verdict ?? "")\(model.verdicts[entry.id]?.id ?? "")\(model.annotations[entry.id]?.id ?? "")") {
             described = try? await model.ledger.stillCaption(entryId: entry.id)
             loaded = true
             if let a = asked, described?.runId != a { asked = nil }
@@ -584,8 +584,9 @@ struct StillBelow: View {
 
     private func save(quitting: Bool = false) {
         let c = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Saro's words left as they were stay Saro's (DR-04): only an edit becomes the user's caption.
-        let mine = c.isEmpty || yours == nil && c == saros ? nil : c
+        // Saro's words left as they were stay Saro's (DR-04): only an edit becomes the user's caption. Against the stored
+        // description, not the gated `saros`, so a day that became held while open never turns Saro's text into the user's.
+        let mine = c.isEmpty || yours == nil && c == described?.caption ? nil : c
         guard mine != yours else { return }
         if quitting { model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: mine); return }
         let e = entry
