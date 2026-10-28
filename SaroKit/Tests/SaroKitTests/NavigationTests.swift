@@ -348,11 +348,16 @@ private func terms(_ s: String) -> [String] { SearchText.tokenize(s).map(\.term)
     var built: SearchIndex?
     let build = (0..<3).map { _ in clock.measure { built = SearchIndex(docs) } }.min() ?? .zero
     guard let index = built else { return }
+    // ~5 ms a keystroke in release; a debug test build is several times slower, more so on a Mac busy with the rest of
+    // the suite, so there the bound only catches a blow-up.
+    #if DEBUG
+    let bound = Duration.milliseconds(250)
+    #else
+    let bound = Duration.milliseconds(60)
+    #endif
     for q in ["stilness", "sistr", "medit", "maya slep", "coffe at the cafe", "meditatoin breathng", "the", "m"] {
-        // The best of five, so a busy machine running the rest of the suite in parallel can't fail it: ~5 ms a keystroke
-        // in release, debug test builds several times slower.
         let t = (0..<5).map { _ in clock.measure { _ = index.search(q, limit: 50) } }.min() ?? .zero
-        #expect(t < .milliseconds(60), "\(q): \(t)")
+        #expect(t < bound, "\(q): \(t)")
     }
     #expect(build < .milliseconds(1500), "\(build)")
 }

@@ -171,7 +171,8 @@ private let partText = "Long day at work. Shipped the onboarding flow. Had chai 
     })
     let start = ContinuousClock.now
     let (f, run) = await ai.followUp(text: partText, verb: "said", exclude: [], seed: 1, localDay: nil, budget: .milliseconds(200))
-    #expect(ContinuousClock.now - start < .seconds(2))
+    // Well short of the model's 5 s, with room for a Mac busy with the rest of the suite.
+    #expect(ContinuousClock.now - start < .milliseconds(200) + .seconds(3))
     #expect(f.generator == "heuristic" && run.status == "timeout")
 }
 
