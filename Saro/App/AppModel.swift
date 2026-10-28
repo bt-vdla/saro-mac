@@ -656,7 +656,9 @@ final class AppModel {
             if ids.contains(openEntryID ?? "") { openEntryID = nil }
             if ids.contains(openVoiceID ?? "") { openVoiceID = nil }
             await reload()
-            rereadDay()
+            // Each trashed entry's own day: ⌘K trashes from any day.
+            for id in ids { if let d = try? await ledger.entry(id)?.localDay { unreadDays.insert(d) } }
+            drain()
             let restore: @MainActor () -> Void = { [weak self] in Task { await self?.restore(batch: batch) } }
             undoManager?.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { restore() } }
             undoManager?.setActionName("Move to Trash")
