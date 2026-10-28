@@ -114,7 +114,9 @@ extension AppModel {
         try await ledger.eraseAll()
         Reminders.shared.removeAll()
         PrefsStore.shared.eraseAll()
-        for key in ["daylight", "videoQuality"] { UserDefaults.standard.removeObject(forKey: key) }
+        // The quick-capture panel's half-written note is journal text too.
+        CapturePanelController.shared.draft = ""
+        for key in Self.erasedDefaults { UserDefaults.standard.removeObject(forKey: key) }
         Daylight.shared.mode = .clock
         profile = try await ledger.profile()
         starter = nil
@@ -125,6 +127,9 @@ extension AppModel {
         day = LocalDay.today()
         await reload()
     }
+
+    /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, and the capture devices.
+    static let erasedDefaults = ["captureDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID"]
 
     /// The Book of `year`, as HTML or PDF, saved where the person picks.
     func exportBook(year: Int, pdf: Bool) async throws -> Bool {
