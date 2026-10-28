@@ -177,12 +177,17 @@ struct DevNotes {
         case .settings:
             DevNotes(
                 name: "Settings",
-                does: "The Settings window (⌘,).",
-                built: ["Video quality: 720p default, 1080p option", "Intelligence: model, status, context size, macOS build",
-                        "Export Everything (.saroexport: JSON + Media)", "Show journal in Finder", "Take the tour again"],
-                stubbed: ["Name, tone, ritual and letter times (FR-SET-01)", "Comfort text size (FR-SET-02)", "Writing Tools opt-in (FR-SET-03)",
-                          "Touch ID lock (FR-SET-04)", "Privacy & Data and What Saro read (FR-SET-05)"],
-                issues: [],
+                does: "The Settings window (⌘,, ⌘K → Settings…, saro://settings/<section>): one page on the lit ground with a numbered rail (⌘1–⌘8) and Say it at the top.",
+                built: ["Say it: settings in your own words, a diff to Apply (⌘↵) and Undo (⌘Z), never applied without a yes",
+                        "01 You: name and what Saro calls you, where the journal lives, Replay onboarding, About",
+                        "02 How Saro talks: your own sentence said four ways (held days never used), focus picker up to three",
+                        "03 Rhythm: daily reminder with weekdays, preview and Send a test; letter time; rhythm strip and suggestion with Undo",
+                        "04 Appearance: palette and Preview the day", "05 Comfort: text size 90–150% everywhere, captions, Saro's own reduce motion and transparency, sounds, haptics on snap, Writing Tools opt-in",
+                        "07 Intelligence: readiness per reason, speech per language, details", "08 Your data: NFR-02 with proofs, storage by kind, recording quality, Export with progress and an iCloud warning, Import (idempotent), Book of the year as HTML or PDF, What Saro read, Erase everything",
+                        "On-device tone rewrite and Say it fallback: one call each, output gate and drift check, logged as tone-preview and settings-parse"],
+                stubbed: ["06 What Saro knows: pause works; the list arrives with memory", "Touch ID lock and Hide from screen sharing: saved, applied by shell (FR-SET-04)",
+                          "About Saro opens the standard About panel until shell's About window lands"],
+                issues: ["The tone preview's on-device rewrite and Say it's model fallback are untested against the real model: their checks are unit-tested with canned replies"],
                 brd: ["FR-SET-01", "FR-SET-02", "FR-SET-03", "FR-SET-04", "FR-SET-05"])
         case .onboardingWelcome:
             DevNotes(
