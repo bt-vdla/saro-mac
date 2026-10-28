@@ -181,15 +181,24 @@ public actor Ledger {
         }
     }
 
-    public func restore(batch: String) throws {
-        try db.run("UPDATE entry SET trashed_at=NULL, trash_batch_id=NULL, updated_at=? WHERE trash_batch_id=?",
-                   [.text(Date.now.iso), .text(batch)])
+    /// Returns the restored entries' ids.
+    @discardableResult
+    public func restore(batch: String) throws -> [String] {
+        let ids = try db.run("SELECT id FROM entry WHERE trash_batch_id=?", [.text(batch)]).compactMap { $0.str("id") }
+        try restore(ids: ids)
+        return ids
     }
 
+    /// A held entry coming back holds its day again, so what was read there while it was in Trash goes, as in
+    /// `insertVerdict` (SR-15).
     public func restore(ids: [String]) throws {
         try db.transaction {
             for id in ids {
                 try db.run("UPDATE entry SET trashed_at=NULL, trash_batch_id=NULL, updated_at=? WHERE id=?", [.text(Date.now.iso), .text(id)])
+                try db.run("""
+                    DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=(SELECT local_day FROM entry WHERE id=?)
+                      AND (SELECT verdict FROM safety_verdict WHERE entry_id=? ORDER BY rowid DESC LIMIT 1)='safety_hold'
+                    """, [.text(id), .text(id)])
             }
         }
     }
