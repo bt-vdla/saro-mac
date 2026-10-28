@@ -424,7 +424,7 @@ struct ResizeHandles: View {
     }
 }
 
-/// A poster frame for a moment or a downsampled still, cached for the session.
+/// A poster frame for a moment or a downsampled still, cached while recent.
 struct MediaThumb: View {
     let url: URL?
     let kind: EntryKind
@@ -451,14 +451,19 @@ struct MediaThumb: View {
 
 @MainActor
 enum ThumbCache {
-    private static var cache: [URL: NSImage] = [:]
+    /// The recent few hundred, about 1.2 MB each decoded; NSCache also lets them go under memory pressure.
+    private static let cache: NSCache<NSURL, NSImage> = {
+        let c = NSCache<NSURL, NSImage>()
+        c.countLimit = 200
+        return c
+    }()
 
     static func cached(_ url: URL?) -> NSImage? { url.flatMap { cache[$0] } }
     /// The aspect of a thumbnail already made, so an opened still can take the photo's shape at once.
-    static func aspect(_ url: URL?) -> CGFloat? { url.flatMap { cache[$0] }.map { $0.size.width / $0.size.height } }
+    static func aspect(_ url: URL?) -> CGFloat? { url.flatMap { cache.object(forKey: $0 as NSURL) }.map { $0.size.width / $0.size.height } }
 
     static func image(for url: URL, kind: EntryKind) async -> NSImage? {
-        if let hit = cache[url] { return hit }
+        if let hit = cache.object(forKey: url as NSURL) { return hit }
         let cg: CGImage? = if kind == .still {
             await Task.detached { thumbnail(url) }.value
         } else {
@@ -466,7 +471,7 @@ enum ThumbCache {
         }
         guard let cg else { return nil }
         let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        cache[url] = img
+        cache.setObject(img, forKey: url as NSURL)
         return img
     }
 

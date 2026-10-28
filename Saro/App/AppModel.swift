@@ -372,7 +372,7 @@ final class AppModel {
         let urls = panel.urls
         Task {
             for url in urls {
-                if let data = try? Data(contentsOf: url) { await importStill(data, origin: "picked", at: nil) }
+                if let data = try? await Task.detached(operation: { try Data(contentsOf: url) }).value { await importStill(data, origin: "picked", at: nil) }
             }
         }
     }
