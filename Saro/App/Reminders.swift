@@ -11,7 +11,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
 
     static let title = "A minute for today?"
     static let body = "Your minute is here whenever you are."
-    static let letterTitle = "Your letter is here."
+    static let letterTitle = "Your evening letter is here."
     static let letterBody = "It’s ready whenever you are."
 
     private static let ritualCategory = "ritual"

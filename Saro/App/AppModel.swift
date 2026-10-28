@@ -48,7 +48,8 @@ final class AppModel {
     /// Cards flying into the Undo toast, or out of it back to their places.
     var trashFlight: TrashFlight?
     enum Insight { case spine, panel, letter }
-    var insight: Insight = .spine
+    var insight: Insight = .spine { didSet { reflection.moved(to: insight) } }
+    let reflection = ReflectionModel()
     var showNoticed: Bool {
         get { insight != .spine }
         set { insight = newValue ? .panel : .spine }
@@ -97,6 +98,8 @@ final class AppModel {
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
     private var queue: [String] = []
+    /// Refreshes and gate checks waiting their turn behind the entries (§11.7: one model call at a time).
+    private var jobs: [@MainActor () async -> Void] = []
     /// Days to read once the queued entries are done (a trash, a restore, the inspector opening).
     private var unreadDays: Set<String> = []
     private(set) var working = false
@@ -273,6 +276,7 @@ final class AppModel {
         dayStatus = d.status
         dayReading = d.reading
         selection = selection.filter { id in entries.contains { $0.id == id } }
+        reflection.load(day: day, model: self)
     }
 
     func reload() async {
@@ -305,8 +309,7 @@ final class AppModel {
         var out: [(day: String, mood: Mood?)] = []
         for i in (0..<7).reversed() {
             let d = LocalDay.adding(-i, to: day)
-            let mood = await pipeline.dayStatus(d) == .ready ? await pipeline.latestDayReading(d)?.payload.reading.mood : nil
-            out.append((d, mood))
+            out.append((d, await pipeline.dayMood(d)))
         }
         return out
     }
@@ -326,6 +329,8 @@ final class AppModel {
                 slideDirection = target > self.day ? 1 : -1
                 self.day = target
                 pane = .day
+                // The letter belongs to the day it was opened on.
+                if insight == .letter { insight = .spine }
                 openEntryID = nil
                 openStackID = nil
                 openVoiceID = nil
@@ -465,7 +470,8 @@ final class AppModel {
                 }
                 current = nil
                 for d in days { await pipeline.readDay(d) }
-            } while !queue.isEmpty || !unreadDays.isEmpty
+                while !jobs.isEmpty { await jobs.removeFirst()() }
+            } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty
             working = false
             await reload()
         }
@@ -502,10 +508,27 @@ final class AppModel {
         drain()
     }
 
-    /// Reads the day when the inspector opens and nothing is stored yet (or the inputs changed).
-    func refreshDayReading() {
-        guard dayStatus == .ready else { return }
-        rereadDay()
+    /// Reads the day when the inspector opens and nothing is stored yet (or the inputs changed). `force` writes a new
+    /// reading (Refresh), sampled and past the `avoid` title, and returns it.
+    @discardableResult
+    func refreshDayReading(force: Bool = false, avoid: String? = nil) async -> DayPayload? {
+        guard dayStatus == .ready else { return nil }
+        guard force else {
+            rereadDay()
+            return nil
+        }
+        let day = self.day
+        let payload = await exclusive { await self.pipeline.readDay(day, force: true, avoid: avoid, seed: .random(in: 1 ... .max)) }
+        await reload()
+        return payload
+    }
+
+    /// Runs `work` in the queue, after whatever is under way (§11.7: one model call at a time).
+    func exclusive<T: Sendable>(_ work: @escaping @MainActor () async -> T) async -> T {
+        await withCheckedContinuation { c in
+            jobs.append { c.resume(returning: await work()) }
+            drain()
+        }
     }
 
     /// Launch sweep (DR-12): a turn that was recording when Saro quit is a finished file if it exists on disk
