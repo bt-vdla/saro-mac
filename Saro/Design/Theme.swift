@@ -139,7 +139,8 @@ enum Motion {
     static func pick(_ animation: Animation, reduce: Bool) -> Animation { reduce ? fade : animation }
 
     /// The frequency rule: what a key started doesn't animate. Read it inside the action (or the update) the input caused.
-    @MainActor static var byKey: Bool { NSApp.currentEvent?.type == .keyDown }
+    /// A key-up counts: Space's tap acts on it.
+    @MainActor static var byKey: Bool { NSApp.currentEvent.map { [.keyDown, .keyUp].contains($0.type) } ?? false }
 }
 
 /// Radii (`tailwind.config.js`): control 8, field 10, card 14, panel 20, sheet 28.

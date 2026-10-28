@@ -56,7 +56,7 @@ struct DayView: View {
             .overlayPreferenceValue(CaptureOriginKey.self) { origins in
                 if CaptureUI.shared.musicOpen {
                     MusicField(origin: CaptureUI.shared.musicGrows ? origins[.music] : nil)
-                        .transition(.opacity.animation(Motion.easeOut(0.16)))
+                        .transition(CaptureUI.shared.musicGrows ? .opacity.animation(Motion.easeOut(0.16)) : .identity)
                 }
             }
             .coordinateSpace(.named(Self.space))
