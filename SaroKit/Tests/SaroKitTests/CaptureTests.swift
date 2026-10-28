@@ -474,7 +474,16 @@ private func sampleBuffer(_ pcm: AVAudioPCMBuffer, at frame: Int64) throws -> CM
         #expect(kept.hasSuffix("?") && kept.first?.isUppercase == true, "\(kept)")
     }
     #expect(FollowUps.unquoted("You said “\(phrase)”. What’s underneath that?", seed: 0) == "What’s underneath that?")
-    #expect(FollowUps.unquoted("Thinking about “\(phrase)”, what would ‘enough’ look like here?", seed: 0) == "What would ‘enough’ look like here?")
+    // Any quote is the person's words: one left mid-sentence takes its question with it.
+    #expect(FollowUps.phraseless.contains(FollowUps.unquoted("Thinking about “\(phrase)”, what would ‘enough’ look like here?", seed: 0)))
+    #expect(FollowUps.unquoted("Thinking about “\(phrase)”, what’s the next step?", seed: 0) == "What’s the next step?")
+    // Other quote marks, as a model writing for another locale might use them; apostrophes stay.
+    for quoted in ["‘\(phrase)’", "'\(phrase)'", "« \(phrase) »", "„\(phrase)“", "「\(phrase)」"] {
+        #expect(FollowUps.unquoted("You said \(quoted). What’s underneath that?", seed: 0) == "What’s underneath that?", "\(quoted)")
+        #expect(FollowUps.phraseless.contains(FollowUps.unquoted("What did \(quoted) feel like?", seed: 2)), "\(quoted)")
+    }
+    #expect(FollowUps.unquoted("What's the part of the walk you'd keep?", seed: 0) == "What's the part of the walk you'd keep?")
+    #expect(FollowUps.unquoted("What’s the part of the walk you’d keep?", seed: 0) == "What’s the part of the walk you’d keep?")
     // The quote inside the question, or one left open: an open question in its place.
     #expect(FollowUps.phraseless.contains(FollowUps.unquoted("What did \"\(phrase)\" feel like?", seed: 2)))
     #expect(FollowUps.phraseless.contains(FollowUps.unquoted("What did “\(phrase) feel like?", seed: 2)))

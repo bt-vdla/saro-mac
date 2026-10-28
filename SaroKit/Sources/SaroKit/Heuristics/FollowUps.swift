@@ -85,6 +85,7 @@ public enum FollowUps {
     /// quote, so the clause holding the quote goes ("You said “…”. What’s underneath that?" keeps "What’s underneath
     /// that?"); when no whole question is left, an open one that quotes nothing.
     public static func unquoted(_ question: String, seed: Int) -> String {
+        let question = curlyQuoted(question)
         let marks: Set<Character> = ["“", "”", "\""]
         guard let close = question.lastIndex(where: { $0 == "”" || $0 == "\"" }) else {
             return question.contains("“") ? phraseless[abs(seed) % phraseless.count] : question
@@ -96,6 +97,16 @@ public enum FollowUps {
             return phraseless[abs(seed) % phraseless.count]
         }
         return rest.prefix(1).uppercased() + rest.dropFirst()
+    }
+
+    /// Quotes in ‘ ’, straight single quotes, « », „ “ and 「 」 as “ ”, so `unquoted` finds them too; an apostrophe
+    /// inside a word ("what’s", "it's") stays.
+    static func curlyQuoted(_ s: String) -> String {
+        s.replacing(/«\s?(.*?)\s?»/) { "“\($0.1)”" }
+            .replacing(/„(.*?)[“”]/) { "“\($0.1)”" }
+            .replacing(/「(.*?)」/) { "“\($0.1)”" }
+            .replacing(/‘(.*?)’(?!\p{L})/) { "“\($0.1)”" }
+            .replacing(/(^|[\s(])'(\S.*?)'(?!\p{L})/) { "\($0.1)“\($0.2)”" }
     }
 
     public static func seed(_ s: String) -> Int { Heuristics.seed(s) }
