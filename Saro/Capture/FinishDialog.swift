@@ -17,6 +17,9 @@ struct FinishDialog: View {
     let finish: () -> Void
     let keepRecording: () -> Void
     let discard: () -> Void
+    /// The save failed: record again, or see where Saro keeps recordings (the web's "Download a copy").
+    var retry: () -> Void = {}
+    var reveal: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var destination: String { day == LocalDay.today() ? "today’s canvas" : "your canvas for \(LocalDay.date(day)?.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) ?? day)" }
@@ -52,11 +55,17 @@ struct FinishDialog: View {
                     buttons
                 }
                 .padding(.top, 32)
-                if step == .confirm {
+                if step != .discard {
                     Rectangle().fill(.white.opacity(0.1)).frame(height: 1).padding(.top, 16)
-                    Button("Discard recording…") { withAnimation(swap) { step = .discard } }
-                        .buttonStyle(TertiaryStyle())
-                        .padding(.top, 12)
+                    Group {
+                        if step == .failed {
+                            Button("Close", action: keepRecording).keyboardShortcut(.cancelAction)
+                        } else {
+                            Button("Discard recording…") { withAnimation(swap) { step = .discard } }
+                        }
+                    }
+                    .buttonStyle(TertiaryStyle())
+                    .padding(.top, 12)
                 }
             }
             .padding(24)
@@ -86,9 +95,13 @@ struct FinishDialog: View {
             Button("Discard", action: discard)
                 .buttonStyle(CaptureButtonStyle(fill: Tok.danger, hover: Tok.danger.opacity(0.85), ink: Tok.onPrimary, padding: 20))
         case .failed:
-            Button("Close", action: keepRecording)
-                .buttonStyle(CaptureButtonStyle.ghost)
-                .keyboardShortcut(.cancelAction)
+            if let reveal {
+                Button("Show in Finder", action: reveal)
+                    .buttonStyle(CaptureButtonStyle.ghost)
+            }
+            Button("Try again", action: retry)
+                .buttonStyle(CaptureButtonStyle.primary)
+                .keyboardShortcut(.defaultAction)
         case .confirm:
             if !interrupted {
                 Button(paused ? "Keep recording" : "Not yet", action: keepRecording)

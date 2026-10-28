@@ -37,6 +37,8 @@ struct RecorderView: View {
     /// Finish in the window, saving under the frozen frame.
     @State private var saving = false
     @State private var finishing: FinishDialog.Step?
+    /// The part a failed Finish couldn't write, for Show in Finder.
+    @State private var unsaved: URL?
     @State private var checkpoint = Checkpoint()
     /// Where the moment frame sits in the day's space, for the frame's flight into its card.
     @State private var frameRect: CGRect = .zero
@@ -160,7 +162,9 @@ struct RecorderView: View {
             }
             if let step = finishing {
                 FinishDialog(day: model.day, paused: capture.state == .paused, interrupted: capture.interrupted, keptParts: capture.hasKept,
-                             step: Binding(get: { step }, set: { finishing = $0 }), finish: finish, keepRecording: keepRecording, discard: discard)
+                             step: Binding(get: { step }, set: { finishing = $0 }), finish: finish, keepRecording: keepRecording, discard: discard,
+                             retry: { finishing = nil; saving = false; unsaved = nil },
+                             reveal: unsaved.map { url in { NSWorkspace.shared.activateFileViewerSelecting([url.deletingLastPathComponent()]) } })
                     .transition(.opacity)
             }
         }
@@ -197,7 +201,7 @@ struct RecorderView: View {
                     .padding(.horizontal, 24)
                     .transition(.opacity)
             }
-            if !compact, inSession { captions.frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 124) }
+            if inSession { captions.frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, compact ? 68 : 124) }
             VStack(spacing: 0) {
                 topBar(dim: dim && !held)
                 Spacer(minLength: 0)
@@ -241,10 +245,10 @@ struct RecorderView: View {
             }
             CaptionStatus(text: capture.live.line(paused: capture.state == .paused, voice: false), connecting: capture.live == .connecting)
             if capture.live != .unavailable {
-                LiveCaptions(words: asking ? [] : capture.partWords, placeholder: placeholder, size: frameRect.width >= 640 ? 23 : 19)
+                LiveCaptions(words: asking ? [] : capture.partWords, placeholder: placeholder, size: compact ? 15 : frameRect.width >= 640 ? 23 : 19)
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, compact ? 16 : 24)
         .animation(CaptureMotion.out(0.3), value: checkpoint.hint)
         .allowsHitTesting(false)
     }
@@ -521,7 +525,11 @@ struct RecorderView: View {
         ritual = Task {
             let wrote = await capture.end(surface)
             guard !Task.isCancelled else { return }
-            guard wrote else { finishing = .failed; return }
+            guard wrote else {
+                unsaved = last?.url
+                finishing = .failed
+                return
+            }
             if kind == .moment, let last, let frame = await DevelopedFrame.lastFrame(of: last.url) {
                 withAnimation(reduceMotion ? .easeOut(duration: 0.2) : nil) { frozen = frame }
                 try? await Task.sleep(for: .seconds(reduceMotion ? 0.6 : 1.1))
