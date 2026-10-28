@@ -1,4 +1,5 @@
 import AppKit
+import Speech
 import UniformTypeIdentifiers
 import AVFoundation
 import ImageIO
@@ -257,7 +258,9 @@ final class AppModel {
         try? await ledger.setProcessingStatus(id: ticket.entryId, exists ? ProcessingStatus.pending : ProcessingStatus.failed)
         if let error, !exists { show(Toast("That recording couldn't be saved: \(error.localizedDescription)", style: .error)) }
         await reload()
-        if exists { process(ticket.entryId) }
+        guard exists else { return }
+        await askForSpeechOnce()
+        process(ticket.entryId)
     }
 
     /// A new, empty piece of writing on the current day.
@@ -301,6 +304,15 @@ final class AppModel {
             for d in days { await pipeline.readDay(d) }
             working = false
             await reload()
+        }
+    }
+
+    /// On-device transcription may need the Speech permission; ask once, when there is first something to transcribe.
+    /// A refusal doesn't stop anything: the recording is kept and shows "Transcript not ready" if Speech says no.
+    private func askForSpeechOnce() async {
+        guard SFSpeechRecognizer.authorizationStatus() == .notDetermined else { return }
+        _ = await withCheckedContinuation { (c: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
         }
     }
 
