@@ -790,6 +790,15 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         let run = try #require(try await l.run("SELECT guardrails, ladder_rung FROM ai_run WHERE feature='settings-parse'").first)
         #expect(run["guardrails"]?.string == "default" && run["ladder_rung"]?.string == "guided")
     }
+
+    /// The guided settings-parse call against the real model: one key of the closed list, on the default guardrails.
+    @Test(.enabled(if: liveModelAvailable), .liveModel) func liveSayIt() async {
+        let (result, run) = await SaroAI().parseSetting("please use the dark look from now on", current: values())
+        print("live say it:", result, run?.status ?? "-", run?.latencyMs ?? 0)
+        #expect(run?.status == "ok" && run?.guardrails == "default")
+        guard case .changes(let list, _, _) = result else { Issue.record("\(result)"); return }
+        #expect(list.map(\.key) == [.theme])
+    }
 }
 
 @MainActor @Suite struct AutosaveTests {
