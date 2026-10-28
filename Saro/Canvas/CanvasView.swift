@@ -20,10 +20,14 @@ struct DayView: View {
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .offset(x: pitch * model.slideDirection),
                                                                        removal: .offset(x: -pitch * model.slideDirection)))
                     .offset(x: -model.lean)
+                    // The world steps back while the moment frame is up (ease.drawer, 400 ms).
+                    .scaleEffect(model.recorderKind == .moment && !reduceMotion ? 0.98 : 1)
+                    .animation(.timingCurve(0.32, 0.72, 0, 1, duration: 0.4), value: model.recorderKind)
                 if model.openEntryID == nil { chrome(geo.size) }
                 if let kind = model.recorderKind {
-                    Color.black.opacity(0.45).ignoresSafeArea().transition(.opacity)
+                    // The voice pill sits 8 pt above the bar; the moment frame fills the canvas.
                     RecorderView(kind: kind) { model.recorderKind = nil }
+                        .padding(.bottom, kind == .voice ? 92 : 0)
                 }
                 ToastHost()
             }
