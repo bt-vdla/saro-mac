@@ -14,21 +14,33 @@ struct NoticedView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    content
-                    LetterEntry().padding(.top, 10)
-                    // A held day's SafetyCard stands alone (DailyInsightBar.tsx).
-                    if !model.isDayHeld { CommitmentsCard().padding(.top, 10) }
-                    provenance.padding(.top, 14)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        content
+                        LetterEntry().padding(.top, 10)
+                        // A held day's SafetyCard stands alone (DailyInsightBar.tsx).
+                        if !model.isDayHeld { CommitmentsCard().padding(.top, 10) }
+                        provenance.padding(.top, 14)
+                    }
+                    .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 18)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollIndicators(.automatic)
+                // Clicked, the panel takes focus, so ⌘C copies its summary and the arrows scroll it.
+                .focusable()
+                .focusEffectDisabled()
+                // The editor and its Save sit below the fold under a long reading: brought up, at once from the keyboard.
+                .onChange(of: editing, initial: true) { _, now in
+                    guard now else { return }
+                    let animation = NSApp.currentEvent?.type == .keyDown ? nil : Motion.pick(Motion.small, reduce: reduceMotion)
+                    // ponytail: a beat for the editor's height to reach the scroll view; follow the section's geometry if it misses.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(150))
+                        withAnimation(animation) { proxy.scrollTo("question", anchor: .bottom) }
+                    }
+                }
             }
-            .scrollIndicators(.automatic)
-            // Clicked, the panel takes focus, so ⌘C copies its summary and the arrows scroll it.
-            .focusable()
-            .focusEffectDisabled()
         }
         .contextMenu { PanelMenu() }
         .onCopyCommand(perform: model.reflection.summary.map { text in
@@ -165,6 +177,7 @@ struct NoticedView: View {
         MoodSection(reading: p.reading, open: open == .mood) { set(.mood) }
         rule
         QuestionSection(question: p.reading.question, open: open == .question, editing: $editing) { set(.question) }
+            .id("question")
     }
 
     private var rule: some View { Rectangle().fill(Tok.line.opacity(0.7)).frame(height: 1).padding(.vertical, 10) }

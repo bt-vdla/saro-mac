@@ -49,7 +49,8 @@ struct QuestionSection: View {
                             .accessibilityAddTraits(.updatesFrequently)
                     }
                 }
-                .padding(.top, 6)
+                // Room under Save, so the editor scrolled into view clears the panel's corner.
+                .padding(.top, 6).padding(.bottom, editing ? 12 : 0)
                 .transition(.opacity)
             }
         }
