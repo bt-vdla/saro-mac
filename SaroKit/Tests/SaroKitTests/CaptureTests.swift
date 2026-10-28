@@ -251,6 +251,73 @@ extension FollowUp {
     #expect(heard.allSatisfy { $0.final })
 }
 
+/// A capture-queue audio buffer: the PCM in a CMSampleBuffer, as AVCaptureAudioDataOutput delivers it.
+private func sampleBuffer(_ pcm: AVAudioPCMBuffer, at frame: Int64) throws -> CMSampleBuffer {
+    let rate = CMTimeScale(pcm.format.sampleRate)
+    var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: rate), presentationTimeStamp: CMTime(value: frame, timescale: rate),
+                                    decodeTimeStamp: .invalid)
+    var sample: CMSampleBuffer?
+    try #require(CMSampleBufferCreate(allocator: nil, dataBuffer: nil, dataReady: false, makeDataReadyCallback: nil, refcon: nil,
+                                      formatDescription: pcm.format.formatDescription, sampleCount: CMItemCount(pcm.frameLength),
+                                      sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleSizeEntryCount: 0, sampleSizeArray: nil,
+                                      sampleBufferOut: &sample) == noErr)
+    let s = try #require(sample)
+    try #require(CMSampleBufferSetDataBufferFromAudioBufferList(s, blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: 0,
+                                                                 bufferList: pcm.audioBufferList) == noErr)
+    return s
+}
+
+/// The capture queue hands the transcriber CMSampleBuffers, not PCM buffers: 16-bit interleaved here, at 48 kHz, so the
+/// conversion to the analyzer's format runs too.
+@Test func liveTranscriberHearsCaptureSampleBuffers() async throws {
+    let url = tempAudioURL("aiff")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let say = Process()
+    say.executableURL = URL(filePath: "/usr/bin/say")
+    say.arguments = ["-o", url.path, "I walked to the market this morning and the sky was grey."]
+    try say.run()
+    say.waitUntilExit()
+    let file = try AVAudioFile(forReading: url)
+    let mic = try #require(AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000, channels: 1, interleaved: true))
+    let converter = try #require(AVAudioConverter(from: file.processingFormat, to: mic))
+    var samples: [CMSampleBuffer] = []
+    var frame: Int64 = 0
+    while file.framePosition < file.length {
+        let chunk = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1024))
+        try file.read(into: chunk)
+        let out = try #require(AVAudioPCMBuffer(pcmFormat: mic, frameCapacity: 1024 * 48000 / AVAudioFrameCount(file.processingFormat.sampleRate) + 16))
+        var given = false
+        _ = converter.convert(to: out, error: nil) { _, state in
+            if given { state.pointee = .noDataNow; return nil }
+            given = true
+            state.pointee = .haveData
+            return chunk
+        }
+        guard out.frameLength > 0 else { continue }
+        samples.append(try sampleBuffer(out, at: frame))
+        frame += Int64(out.frameLength)
+    }
+    #expect(!samples.isEmpty)
+    for s in samples {
+        let pcm = try #require(LiveTranscriber.pcm(s))
+        #expect(Int(pcm.frameLength) == CMSampleBufferGetNumSamples(s))
+        #expect(pcm.format.sampleRate == 48000 && pcm.format.channelCount == 1 && pcm.format.commonFormat == .pcmFormatInt16)
+    }
+
+    guard let locale = await installedSpeechLocale(), locale.language.languageCode == "en" else { return }
+    let live = LiveTranscriber()
+    let words = try await live.start(locale: locale.identifier)
+    let collector = Task {
+        var last: [LiveWord] = []
+        for await w in words { last = w }
+        return last
+    }
+    for s in samples { live.append(s) }
+    await live.stop()
+    let heard = await collector.value.map(\.text).joined(separator: " ").lowercased()
+    #expect(heard.contains("market"), "\(heard)")
+}
+
 // MARK: Discarding a take
 
 @Test func discardTakeLeavesNothingOfTheTakeAndKeepsTheRest() async throws {

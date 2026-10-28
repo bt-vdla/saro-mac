@@ -61,14 +61,18 @@ public final class LiveTranscriber: @unchecked Sendable {
 
     /// A capture buffer, converted to the analyzer's format.
     public func append(_ sample: CMSampleBuffer) {
-        guard let desc = CMSampleBufferGetFormatDescription(sample) else { return }
-        let source = AVAudioFormat(cmAudioFormatDescription: desc)
+        if let pcm = Self.pcm(sample) { append(pcm) }
+    }
+
+    /// The capture queue's audio as a PCM buffer in its own format; nil for anything that isn't audio.
+    static func pcm(_ sample: CMSampleBuffer) -> AVAudioPCMBuffer? {
+        guard let desc = CMSampleBufferGetFormatDescription(sample), let source = AVAudioFormat(formatDescription: desc) else { return nil }
         let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sample))
-        guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: source, frameCapacity: frames) else { return }
+        guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: source, frameCapacity: frames) else { return nil }
         pcm.frameLength = frames
         guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(frames), into: pcm.mutableAudioBufferList) == noErr
-        else { return }
-        append(pcm)
+        else { return nil }
+        return pcm
     }
 
     public func append(_ pcm: AVAudioPCMBuffer) {
