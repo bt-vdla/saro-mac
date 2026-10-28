@@ -175,6 +175,40 @@ private func count(_ l: Ledger, _ sql: String) async throws -> Int? { try await 
     #expect(await p.latestDayReading(e.localDay) == nil)
 }
 
+/// SR-13: a hold outranks entries still in progress, so a page written straight after a held answer, or a held page
+/// edited and not yet checked again, never brings back the day's reading, mood, letter or carry-overs.
+@Test func aHoldOutranksEntriesStillInProgress() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let (yesterday, today) = ("2026-10-25", "2026-10-26")
+    let e = Entry(kind: .reflection, body: "Walked home through the park.", localDay: yesterday)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    try await l.addCommitment("Call Ravi", day: yesterday)
+    let pending = Entry(kind: .reflection, body: "A page still being checked.", localDay: yesterday, processingStatus: ProcessingStatus.pending)
+    try await l.insertEntry(pending)
+    #expect(await p.dayStatus(yesterday) == .working)
+    #expect(await p.carryOvers(to: today, list: []).count == 1)
+
+    let turn = ReflectionTurn(kind: .dailyQuestion, question: "What stood out?", generator: "heuristic", localDay: yesterday)
+    try await l.insertTurn(turn)
+    try await l.setTurnAnswer(id: turn.id, answer: "Some nights I just want to die.", verdict: "safety_hold")
+    #expect(await p.dayStatus(yesterday) == .held)
+    #expect(await p.carryOvers(to: today, list: []).isEmpty)
+
+    // An entry's own hold, its text edited since: it stands until the new text is checked.
+    let held = Entry(kind: .reflection, body: "Some nights I just want to die.", localDay: today)
+    try await l.insertEntry(held)
+    await p.process(entryId: held.id) {}
+    let other = Entry(kind: .reflection, body: "Walked home through the park.", localDay: today)
+    try await l.insertEntry(other)
+    await p.process(entryId: other.id) {}
+    try await l.updateEntryText(id: held.id, body: "Some nights are long.", titleUser: nil)
+    #expect(await p.dayStatus(today) == .held)
+    await p.process(entryId: held.id) {}
+    #expect(await p.dayStatus(today) == .ready)
+}
+
 // MARK: Narrative
 
 private func n(_ kind: EntryKind, _ text: String = "", day: String = "2026-10-26", label: String? = nil) -> NarrativeEntry {

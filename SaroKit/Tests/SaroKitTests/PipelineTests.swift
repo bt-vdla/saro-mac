@@ -60,9 +60,9 @@ import Testing
     let e = Entry(kind: .reflection, body: "I want to die.")
     try await l.insertEntry(e)
     await p.process(entryId: e.id) {}
-    // The newest verdict was made for other text; editing the body must not count as checked.
+    // The newest verdict was made for other text; editing the body must not count as checked, and the hold stands.
     try await l.updateEntryText(id: e.id, body: "A quiet walk home.", titleUser: nil)
-    #expect(await p.dayStatus(e.localDay) == .working)
+    #expect(await p.dayStatus(e.localDay) == .held)
     #expect(await p.readDay(e.localDay) == nil)
 }
 
