@@ -12,7 +12,7 @@ enum Snapshots {
     static let hold = Notification.Name("SaroSnapshotHold")
 
     static func runIfRequested(_ model: AppModel) {
-        guard let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
+        guard panel == nil, let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
         let p = NSPanel(contentRect: NSRect(x: -6000, y: 0, width: 1320, height: 860), styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.contentView = NSHostingView(rootView: RootView().environment(model))
@@ -119,9 +119,7 @@ enum Snapshots {
                     p.contentView = onboarding(.preview(step: .firstWeek, answers: Self.answers), model)
                 }),
             ]
-            // `-SaroSnapshotOnly <prefix>` runs only the states whose names start with it.
-            let only = UserDefaults.standard.string(forKey: "SaroSnapshotOnly")
-            for (name, apply) in steps where only.map(name.hasPrefix) ?? true {
+            for (name, apply) in steps + SettingsSnapshots.steps(p, model, dir) where only.map(name.hasPrefix) ?? true {
                 apply()
                 try? await Task.sleep(for: .seconds(2.5))
                 if let v = p.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
