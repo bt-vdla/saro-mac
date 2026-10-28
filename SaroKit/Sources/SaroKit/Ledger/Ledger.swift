@@ -144,10 +144,10 @@ public actor Ledger {
         try db.run("DELETE FROM transcript_word WHERE media_id=?", [.text(mediaId)])
     }
 
-    /// Days that have at least one live entry, newest first.
-    /// Every day with a live entry; a duplicate keeps its day listed but isn't counted (FR-DAY-07).
+    /// Days that have at least one live entry, newest first, with every card on them counted: a copy from Duplicate To is
+    /// on its day like any other card. FR-DAY-07 keeps copies out of the engines' counts only.
     public func days() throws -> [(day: String, count: Int)] {
-        try db.run("SELECT local_day, SUM(duplicated_from_id IS NULL) AS n FROM live_entry GROUP BY local_day ORDER BY local_day DESC")
+        try db.run("SELECT local_day, COUNT(*) AS n FROM live_entry GROUP BY local_day ORDER BY local_day DESC")
             .map { ($0.str("local_day") ?? "", $0.int("n") ?? 0) }
     }
 

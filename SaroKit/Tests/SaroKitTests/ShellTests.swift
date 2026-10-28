@@ -222,7 +222,7 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         #expect(try await l.summaryUser(id: e.id) == nil)
     }
 
-    @Test func aCopyKeepsItsDayListedButIsntCounted() async throws {
+    @Test func aCopyIsOnItsDayButOutOfTheEnginesCounts() async throws {
         let l = try tempLedger()
         let today = LocalDay.today()
         let yesterday = LocalDay.adding(-1, to: today)
@@ -232,8 +232,8 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         _ = try await l.duplicate(id: e.id, toDay: today)
 
         let days = try await l.days()
-        #expect(days.first { $0.day == today }?.count == 2)
-        #expect(days.first { $0.day == yesterday }?.count == 0)
+        #expect(days.first { $0.day == today }?.count == 3)
+        #expect(days.first { $0.day == yesterday }?.count == 1)
         let moments = try await l.storageSummary().kinds.first { $0.kind == .moment }
         #expect(moments?.count == 1)
         #expect(try await l.entryTimes(today: today).count == 2)
