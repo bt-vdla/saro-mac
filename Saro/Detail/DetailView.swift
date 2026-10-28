@@ -318,12 +318,20 @@ private struct WritingEditor: View {
     let entry: Entry
     @State private var text = ""
     @State private var loaded = false
+    /// The question the page answers (its prompt row), if it has one.
+    @State private var prompt: String?
 
     var body: some View {
         // The web's reading page: the user's words in Geist 17/1.7, at most ~62 characters a line.
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
                 Eyebrow(entry: entry)
+                // Never on a held day: an older hand-off could have kept the day's reading question here (SR-13).
+                if let prompt, !model.isDayHeld {
+                    Text(prompt).font(Typo.serif(22)).tracking(-0.22).lineSpacing(4).foregroundStyle(Tok.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Prompt: \(prompt)")
+                }
                 ZStack(alignment: .topLeading) {
                     if text.isEmpty {
                         Text("Write what's on your mind. The first line becomes the title.")
@@ -350,6 +358,7 @@ private struct WritingEditor: View {
             text = entry.body ?? ""
             loaded = true
         }
+        .task(id: entry.id) { prompt = try? await model.ledger.turns(entryId: entry.id).first { $0.kind == .prompt }?.question }
         .task(id: text) {
             guard loaded else { return }
             do { try await Task.sleep(for: .milliseconds(800)) } catch { return }

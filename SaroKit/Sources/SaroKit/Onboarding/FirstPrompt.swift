@@ -311,6 +311,14 @@ public enum FirstPrompt {
         return compose(answers: starter.answers, picks: starter.picks.filter { !starter.dropped.contains($0.dropKey) }, name: name, tone: tone,
                        fallback: fallback)
     }
+
+    /// The question the first reflection opens on (firstMode.ts, VideoReflectionScreen's seedPrompt): the first prompt
+    /// About you kept, on a replay too, else the tone's line, else the web's fallback. Never a day's reading: the page or
+    /// recording that keeps it may yet be held.
+    public static func opening(_ first: String?, tone: Tone?, name: String?) -> String {
+        if let first, !first.jsTrim.isEmpty { return first }
+        return tone?.previewLine(name: name) ?? "If you could freeze one second from today, which would it be?"
+    }
 }
 
 /// The gate's verdict on an About you answer, for the text it was given; nil when the gate deferred (unchecked).

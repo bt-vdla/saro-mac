@@ -194,6 +194,16 @@ enum Snapshots {
                     p.setContentSize(NSSize(width: 960, height: 860))
                     p.contentView = onboarding(.preview(step: .firstWeek, answers: Self.answers), model)
                 }),
+                // The first reflection's hand-off: the page under its question, then the recorder's two surfaces.
+                ("handoff-write", {
+                    p.setContentSize(NSSize(width: 1320, height: 860))
+                    p.contentView = NSHostingView(rootView: RootView().environment(model))
+                    Task { await model.startFirstReflection(.write) }
+                }),
+                ("handoff-recorder", {
+                    model.openEntryID = nil
+                    p.contentView = NSHostingView(rootView: HandoffGallery())
+                }),
             ]
             // `-SaroSnapshotOnly <prefix>` runs only the states whose names start with it.
             let only = UserDefaults.standard.string(forKey: "SaroSnapshotOnly")
@@ -332,6 +342,27 @@ private struct GrowGallery: View {
                 .background(.black, in: .rect(cornerRadius: 28))
                 .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
         }
+    }
+}
+
+/// The recorder's surfaces under the first reflection's question (no camera or microphone is asked for): the moment
+/// frame's top, and the voice pill with its card.
+private struct HandoffGallery: View {
+    private let prompt = "Bharat, the launch has been taking up a lot of room. How are you holding up?"
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 40) {
+            ZStack {
+                LinearGradient(colors: [Color(white: 0.3), Color(white: 0.12)], startPoint: .top, endPoint: .bottom)
+                MomentPrompt(prompt: prompt, dimmed: false)
+            }
+            .frame(width: 720, height: 460)
+            .clipShape(.rect(cornerRadius: 28))
+            VoicePill(notice: nil, inSession: false, grows: true, prompt: prompt, toggle: {}, done: {}, close: {}).frame(width: 380)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .background(Tok.bg)
     }
 }
 

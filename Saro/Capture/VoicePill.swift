@@ -8,6 +8,8 @@ struct VoicePill: View {
     let inSession: Bool
     /// Growing out of the Voice button, which is its entrance.
     var grows = false
+    /// The first reflection's question, on a card riding 16 pt above the pill (FirstEntry.tsx).
+    var prompt: String?
     let toggle: () -> Void
     let done: () -> Void
     let close: () -> Void
@@ -32,6 +34,7 @@ struct VoicePill: View {
         .clipShape(.rect(cornerRadius: 28))
         .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
         .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
+        .overlay(alignment: .top) { if let prompt { promptCard(prompt).alignmentGuide(.top) { $0[.bottom] + 16 } } }
         .environment(\.colorScheme, .dark)
         .offset(y: appeared || grows || reduceMotion ? 0 : 16)
         .scaleEffect(appeared || grows || reduceMotion ? 1 : 0.96, anchor: .bottom)
@@ -125,6 +128,22 @@ struct VoicePill: View {
         .accessibilityLabel(inSession ? "Done" : "Start recording")
         .help(inSession ? "Done (Return)" : "Record (Space)")
         .tourAnchor(.recordButton)
+    }
+
+    private func promptCard(_ prompt: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Today’s prompt").monoCaps(11, tracking: 0.12).foregroundStyle(Night.ink2)
+            Text(prompt).font(Typo.serif(22)).tracking(-0.22).lineSpacing(4).foregroundStyle(Night.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(Night.surface, in: .rect(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.1)))
+        .shadow(color: .black.opacity(0.24), radius: 40, y: 32)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
     }
 
     private func messageStep(_ message: RecorderNotice) -> some View {

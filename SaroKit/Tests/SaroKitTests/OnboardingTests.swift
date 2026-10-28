@@ -224,6 +224,15 @@ private let answers: [Int: String] = [
     #expect(FirstPrompt.compose(starter: s, name: "Bee", tone: .gentle) == [FirstPrompt.Candidate(text: "Bee, what moment still lingers?")])
 }
 
+@Test func theFirstReflectionOpensOnTheirOwnPromptElseTheirTonesLine() {
+    #expect(FirstPrompt.opening("What made the launch feel heavy today, Bee?", tone: .gentle, name: "Bee")
+        == "What made the launch feel heavy today, Bee?")
+    // A held answer leaves no first prompt: the tone's line, never anything read from the day.
+    #expect(FirstPrompt.opening(nil, tone: .direct, name: "Bee") == "Bee. One second you’d keep from today. Go.")
+    #expect(FirstPrompt.opening("  ", tone: .gentle, name: nil) == "What moment still lingers?")
+    #expect(FirstPrompt.opening(nil, tone: nil, name: nil) == "If you could freeze one second from today, which would it be?")
+}
+
 @Test func onlyGatedAnswersAreStoredOrComposedFrom() {
     var s = StarterContext(version: 1)
     s.answers = [1: "Bee", 2: "The launch, mostly.", 4: "More sleep"]

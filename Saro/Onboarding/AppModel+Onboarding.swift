@@ -11,23 +11,33 @@ extension AppModel {
 
     enum FirstMode { case moment, voice, write }
 
-    /// The first reflection, once onboarding is done: the moment recorder, the voice pill, or a writing page whose
-    /// prompt row is the question. The prompt is read first: the new page itself makes it a journal with entries.
+    var firstQuestion: String { FirstPrompt.opening(starter?.firstPrompt, tone: profile?.tone, name: profile?.address) }
+
+    /// The first reflection on today, once onboarding is done: the moment recorder or the voice pill under the question,
+    /// or a writing page whose prompt row is the question.
     func startFirstReflection(_ mode: FirstMode) async {
-        let prompt = todaysPrompt
+        let prompt = handoffPrompt ?? firstQuestion
         pane = .day
         switch mode {
-        case .moment: recorderKind = .moment
-        case .voice: recorderKind = .voice
+        case .moment, .voice:
+            handoffPrompt = prompt
+            recorderKind = mode == .moment ? .moment : .voice
         case .write:
+            // The page reads its prompt row; the question is held only until the page is open.
+            defer { handoffPrompt = nil }
             guard let e = await newWriting(day: LocalDay.today()) else { return }
-            let generator = prompt == starter?.firstPrompt ? "heuristic" : "curated"
-            do {
-                try await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: prompt, generator: generator, localDay: e.localDay, entryId: e.id))
-            } catch {
-                show(Toast("Couldn’t keep today’s prompt with your page: \(error.localizedDescription)", style: .error))
-            }
+            await keepPrompt(prompt, entryId: e.id, day: e.localDay)
             openEntryID = e.id
+        }
+    }
+
+    /// A prompted entry's prompt row: the question it answered, for the page's header and the Book.
+    func keepPrompt(_ question: String, entryId: String, day: String) async {
+        let generator = question == starter?.firstPrompt ? "heuristic" : "curated"
+        do {
+            try await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: question, generator: generator, localDay: day, entryId: entryId))
+        } catch {
+            show(Toast("Couldn’t keep today’s prompt: \(error.localizedDescription)", style: .error))
         }
     }
 }

@@ -49,7 +49,6 @@ extension AppModel {
     var todaysPrompt: String {
         if days.isEmpty, let first = starter?.firstPrompt, !first.isEmpty { return first }
         if isToday, !isDayHeld, dayStatus == .ready, let q = dayReading?.payload.reading.question, !q.isEmpty { return q }
-        if let profile { return profile.tone.previewLine(name: profile.address) }
-        return "If you could freeze one second from today, which would it be?"
+        return FirstPrompt.opening(nil, tone: profile?.tone, name: profile?.address)
     }
 }

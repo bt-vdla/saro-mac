@@ -77,13 +77,15 @@ final class AppModel {
         didSet {
             // Only the bar button that opens it sets this, just after.
             if recorderKind != oldValue { recorderGrows = false }
-            guard recorderKind != nil else { return }
+            guard recorderKind != nil else { handoffPrompt = nil; return }
             openVoiceID = nil
             replay.exit(animated: false)
         }
     }
     /// A click on the recorder's bar button opened it: it grows out of that button and closes back into it (morph.ts).
     var recorderGrows = false
+    /// The first reflection's question, from before onboarding closes until its recorder does (AppModel+Onboarding).
+    var handoffPrompt: String?
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false

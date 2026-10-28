@@ -232,10 +232,9 @@ struct DevNotes {
                 does: "The camera and mic check as a mirror on its own preview-only session: light, direction, framing (Vision) and mic. Nothing is recorded.",
                 built: ["Phases and copy from the web, rewritten for macOS", "64×36 readings every 166 ms with holds", "Oval, mic rim, light arc and eye-line marks",
                         "Status rows with Turn off and Esc", "Camera picker incl. Continuity Camera", "Readiness card: Apple Intelligence and speech download",
-                        "Hand-off: moment recorder, voice pill, or a writing page with the prompt as its question"],
+                        "Hand-off on today: moment recorder or voice pill under Today's prompt, or a writing page with the prompt as its question"],
                 stubbed: [],
-                issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras",
-                         "The first question shows in the recorder and voice pill once the capture package renders todaysPrompt"],
+                issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras"],
                 brd: ["FR-ONB-05", "FR-ONB-03"])
         case .knows:
             DevNotes(
