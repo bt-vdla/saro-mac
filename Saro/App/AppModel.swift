@@ -750,18 +750,25 @@ final class AppModel {
             for id in ids { if let d = try? await ledger.entry(id)?.localDay { unreadDays.insert(d) } }
             drain()
             let restore: @MainActor () -> Void = { [weak self] in Task { await self?.restore(batch: batch) } }
-            undoManager?.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { restore() } }
+            // Its own target, held by its own step, so the toast's Undo takes just this step off the Edit menu.
+            let token = TrashUndo()
+            undoManager?.registerUndo(withTarget: token) { _ in MainActor.assumeIsolated { withExtendedLifetime(token) { restore() } } }
             undoManager?.setActionName("Move to Trash")
-            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: restore, trashed: cards))
+            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: { [weak undoManager] in
+                undoManager?.removeAllActions(withTarget: token)
+                restore()
+            }, trashed: cards))
         } catch {
             if let flight, trashFlight?.id == flight.id { trashFlight = nil }
             show(Toast("Couldn't move to Trash: \(error.localizedDescription)", style: .error))
         }
     }
 
+    /// A batch already back (from the Trash pane, say) restores nothing and says nothing.
     func restore(batch: String) async {
-        await restored((try? await ledger.restore(batch: batch)) ?? [])
-        show(Toast("Restored"))
+        let ids = (try? await ledger.restore(batch: batch)) ?? []
+        await restored(ids)
+        if !ids.isEmpty { show(Toast("Restored")) }
     }
 
     /// The Trash pane's Restore.
@@ -828,6 +835,8 @@ final class AppModel {
         }
     }
 }
+
+private final class TrashUndo: Sendable {}
 
 struct CanvasItem: Identifiable {
     let id: String
