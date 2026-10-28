@@ -41,7 +41,7 @@ public struct GateResult: Sendable, Hashable {
 /// SR-01: every path's text passes this gate before any model or heuristic reads it.
 public actor SafetyGate {
     /// SAFETY_VERSION (SR-18). Bump on any change to patterns, lexicon, prompt or rules.
-    public static let version = "safety-1"
+    public static let version = "safety-2"
     /// Layer 0 floor on mean transcription confidence. // calibration knob: Spike A sets it from Bharat's 10 recordings.
     public static let confidenceFloor = 0.35
     /// About 3,000 tokens at 4.1 characters per token (§11.5).
