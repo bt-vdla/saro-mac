@@ -369,59 +369,174 @@ private struct WritingEditor: View {
 
 // MARK: Stills
 
+/// The photo, and beside it what Saro sees (P-STILLS): its description, tags and provenance, editable in place. An edit is
+/// the user's caption, gated like any typed text, and outranks Saro's (DR-04); clearing it brings Saro's back.
 private struct StillDetail: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     @State private var image: NSImage?
     @State private var caption = ""
+    @State private var described: StillCaption?
+    /// The run that stood when Describe again was pressed; the spinner shows until a newer one lands.
+    @State private var asked: String??
+    @FocusState private var editing: Bool
+
+    private var held: Bool { model.verdicts[entry.id]?.verdict == "safety_hold" }
+    private var yours: String? { entry.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } }
+    /// Saro's description, only while the still's newest check is a clear (a hold deletes it, SR-15).
+    private var saros: String? {
+        guard let v = model.verdicts[entry.id]?.verdict, v == "clear" || v == "unavailable_clear" else { return nil }
+        return described?.caption
+    }
+    private var showingSaros: Bool { yours == nil && saros != nil && caption.trimmingCharacters(in: .whitespaces) == saros }
+    private var working: Bool {
+        asked != nil || described == nil && [ProcessingStatus.pending, ProcessingStatus.reading].contains(entry.processingStatus)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             ZStack {
                 Tok.bg
-                if let image { Image(nsImage: image).resizable().scaledToFit().padding(24) }
+                Tok.still.opacity(0.06)
+                if let image {
+                    Image(nsImage: image).resizable().scaledToFit().padding(24)
+                        .accessibilityLabel(yours ?? saros ?? "Still")
+                } else if model.mediaURL(for: entry).map({ !FileManager.default.fileExists(atPath: $0.path) }) ?? true {
+                    ContentUnavailableView("Photo not found", systemImage: "photo", description: Text("The file for this still is missing."))
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: 14) {
-                Text("NOTE").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
-                TextField("Write a note…", text: $caption, axis: .vertical)
-                    .textFieldStyle(.plain).font(Typo.serif(16)).lineLimit(3...10)
-                    .onSubmit { save() }
+            VStack(alignment: .leading, spacing: 18) {
+                Eyebrow(entry: entry).padding(.trailing, 44)
+                captionBlock
                 Divider()
-                if let image {
-                    meta("SIZE", "\(Int(image.size.width)) × \(Int(image.size.height))")
+                VStack(spacing: 10) {
+                    if let image { meta("Size", "\(Int(image.size.width)) × \(Int(image.size.height))") }
+                    meta("Saved", entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
+                    meta("From", model.media[entry.mediaId ?? ""]?.origin ?? "—")
+                    meta("Location", "Removed")
                 }
-                meta("SAVED", entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                meta("FROM", model.media[entry.mediaId ?? ""]?.origin.uppercased() ?? "—")
-                meta("LOCATION", "REMOVED")
                 Spacer()
             }
-            .padding(20)
-            .frame(width: 280)
+            .padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 20)
+            .frame(width: 300)
         }
-        .onAppear { caption = entry.captionUser ?? "" }
         .onDisappear { save() }
         .task(id: entry.id) {
             guard let url = model.mediaURL(for: entry) else { return }
             image = NSImage(contentsOf: url)
         }
+        .task(id: "\(entry.processingStatus)\(entry.captionUser ?? "")\(model.verdicts[entry.id]?.id ?? "")\(model.annotations[entry.id]?.id ?? "")") {
+            described = try? await model.ledger.stillCaption(entryId: entry.id)
+            if let a = asked, described?.runId != a { asked = nil }
+            if !editing { caption = yours ?? saros ?? "" }
+        }
+    }
+
+    private var captionBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(showingSaros || working && yours == nil ? "Saro sees" : "Your caption")
+                    .monoCaps(10.5, tracking: 0.12).foregroundStyle(showingSaros ? Tok.voice : Tok.ink3)
+                Spacer()
+                if !held, image != nil {
+                    Button(action: describeAgain) {
+                        Label(described == nil ? "Describe" : "Describe again", systemImage: "arrow.clockwise")
+                            .font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink2)
+                            .padding(.horizontal, 10).frame(height: 26).background(Tok.ink.opacity(0.06), in: .capsule)
+                    }
+                    .buttonStyle(PressStyle())
+                    .disabled(working)
+                    .keyboardShortcut("r", modifiers: .command)
+                    .help("Describe this photo again on this Mac  ⌘R")
+                }
+            }
+            // Saro's words in Newsreader, the user's in Geist: typing over Saro's description makes it yours.
+            TextField("Caption", text: $caption, prompt: Text(saros ?? "Add a caption…").foregroundStyle(Tok.ink4), axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(showingSaros ? Typo.serif(18) : Typo.ui(15, .medium))
+                .lineSpacing(3)
+                .foregroundStyle(Tok.ink)
+                .lineLimit(1...8)
+                .writingToolsBehavior(.disabled)
+                .focused($editing)
+                .onSubmit(save)
+                .onChange(of: editing) { _, now in if !now { save() } }
+                .accessibilityLabel(showingSaros ? "Saro's description" : "Your caption")
+            below
+        }
+        .animation(Motion.fade, value: described?.runId)
+        .animation(Motion.fade, value: working)
+    }
+
+    @ViewBuilder private var below: some View {
+        if held {
+            SafetyNotice()
+        } else if working {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Saro is looking at this photo…").font(Typo.ui(13)).foregroundStyle(Tok.ink3)
+            }
+            .accessibilityElement(children: .combine)
+        } else if let saros, let d = described {
+            if yours != nil {
+                Text("Saro sees “\(saros)”").font(Typo.serif(14, italic: true)).foregroundStyle(Tok.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !d.tags.isEmpty {
+                Text(d.tags.joined(separator: "  ·  ")).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.stillInk)
+                    .accessibilityLabel("Tags: \(d.tags.joined(separator: ", "))")
+            }
+            Text(provenance(d)).font(Typo.mono(9)).foregroundStyle(Tok.ink4)
+                .accessibilityLabel(d.executor == "heuristic" ? "Described on this Mac by Vision" : "Described on this Mac by Apple Intelligence")
+        } else if yours == nil, let line = statusLine {
+            Text(line).font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The honest line when there is no description to show.
+    private var statusLine: String? {
+        switch described?.status {
+        case "guardrail", "refusal": "Saro didn't describe this photo. A caption of your own is always welcome."
+        case "unreadable": "Saro couldn't open this photo to describe it."
+        case StillCaption.caution: "Saro will describe this when Apple Intelligence is ready."
+        default: nil
+        }
+    }
+
+    /// "ON DEVICE · AFM 3 CORE ADVANCED · GUIDED · 940 MS", or Vision's.
+    private func provenance(_ d: StillCaption) -> String {
+        let parts = d.executor == "heuristic" ? ["Vision", "on this Mac"] : ["On device", d.variant, d.rung]
+        return (parts + [d.latencyMs.map { "\($0) ms" }]).compactMap { $0 }.joined(separator: " · ").uppercased()
     }
 
     private func meta(_ k: String, _ v: String) -> some View {
         HStack {
-            Text(k).font(Typo.mono(10)).foregroundStyle(Tok.ink3)
+            Text(k).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink3)
             Spacer()
-            Text(v.uppercased()).font(Typo.mono(10)).foregroundStyle(Tok.ink2)
+            Text(v).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink2)
+        }
+    }
+
+    private func describeAgain() {
+        save()
+        asked = .some(described?.runId)
+        Task {
+            await model.pipeline.describeAgain(entry.id)
+            model.process(entry.id)
         }
     }
 
     private func save() {
         let c = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard c != (entry.captionUser ?? "") else { return }
+        // Saro's words left as they were stay Saro's (DR-04): only an edit becomes the user's caption.
+        let mine = c.isEmpty || yours == nil && c == saros ? nil : c
+        guard mine != yours else { return }
         Task {
-            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: c.isEmpty ? nil : c)
+            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: mine)
             await model.reload()
-            if !c.isEmpty { model.process(entry.id) }
+            // Always: a cleared caption brings Saro's description back as the still's reading.
+            model.process(entry.id)
         }
     }
 }

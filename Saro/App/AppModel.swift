@@ -256,7 +256,8 @@ final class AppModel {
     private static func typedText(_ e: Entry) -> String? {
         switch e.kind {
         case .reflection, .music: e.body ?? ""
-        case .still: e.captionUser ?? ""
+        // Uncaptioned, a still's text is Saro's description, matched through its annotation like a recording's.
+        case .still: e.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         case .moment, .voice: nil
         }
     }
@@ -706,7 +707,7 @@ final class AppModel {
 
     /// Saves a dropped or pasted image as HEIC with no metadata but its orientation (DR-11: stills lose GPS).
     func importStill(_ data: Data, origin: String, at world: CGPoint?) async {
-        var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.done)
+        var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.pending)
         let asset = MediaAsset(fileName: "\(entry.localDay)/stills/\(entry.id).heic", kind: .image, origin: origin, state: "ready")
         entry.mediaId = asset.id
         let url = ledger.url(for: asset)
@@ -722,6 +723,7 @@ final class AppModel {
                 try await ledger.setLayouts([CardLayout(entryId: entry.id, x: world.x, y: world.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, userPlaced: true)])
             }
             await reload()
+            process(entry.id)
             show(Toast("Still saved to \(DayFormat.sidebar(entry.localDay))"))
         } catch {
             show(Toast("Couldn't save the still: \(error.localizedDescription)", style: .error))
