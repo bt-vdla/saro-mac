@@ -302,6 +302,11 @@ private func richMoment(_ l: Ledger, day: String = LocalDay.today()) async throw
         #expect(Double(px.height) <= wide.height * DayImageMath.scale(for: wide))
     }
 
+    @Test func simulatedUnavailableReadsAsOff() {
+        #expect(Readiness.model(.available, simulated: true) == .notEnabled)
+        #expect(Readiness.model(.available, simulated: false) == .ready)
+    }
+
     @Test func lockWaitsAsLongAsChosen() {
         #expect(Prefs.LockAfter.immediately.seconds == 0)
         #expect(Prefs.LockAfter.fiveMinutes.seconds == 300)
