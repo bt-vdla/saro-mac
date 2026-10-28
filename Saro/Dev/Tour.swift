@@ -12,8 +12,8 @@ enum Tour {
     }
 
     static let steps: [Step] = [
-        Step(targets: [.sidebar], title: "Your days",
-             body: "Every day you've journaled, with its entry count. Trash keeps deleted entries for undo, and Decisions holds the register to review."),
+        Step(targets: [.history], title: "History",
+             body: "History opens your days, Trash and Decisions: every day you've journaled with its entry count, deleted entries kept for undo, and the register to review."),
         Step(targets: [.dayNav], title: "Move between days",
              body: "⌘[ and ⌘] step a day back or forward, and Today (⌘T) brings you home. Capturing while a past day is open files the entry under that day."),
         Step(targets: [.canvas], title: "The day's canvas",

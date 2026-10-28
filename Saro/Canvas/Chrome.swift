@@ -38,6 +38,7 @@ struct BottomBar: View {
         HStack(spacing: 2) {
             barButton("History", "sidebar.left", tint: Tok.ink2) { model.sidebarVisible.toggle() }
                 .help("Days, Trash and Decisions")
+                .tourAnchor(.history)
             Divider().frame(height: 26).padding(.horizontal, 4)
             iconButton("chevron.left") { model.slide(-1) }.help("Previous day  ⌘[")
             VStack(spacing: 5) {

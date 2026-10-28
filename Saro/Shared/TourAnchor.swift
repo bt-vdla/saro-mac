@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Regions the guided tour can spotlight. Views mark themselves with `.tourAnchor(_:)`; the tour overlay reads the bounds.
 enum TourTarget: String, CaseIterable {
-    case sidebar, dayNav, canvas, captureBar, recordButton, toolbar, noticedButton, inspector, devNotes, helpMenu
+    case history, dayNav, canvas, captureBar, recordButton, toolbar, noticedButton, inspector, devNotes, helpMenu
 }
 
 struct TourAnchorKey: PreferenceKey {
