@@ -28,8 +28,9 @@ final class CapturePanelController {
         HotKey.register { CapturePanelController.shared.hotKeyPressed() }
     }
 
+    /// Nothing until onboarding ends: a note would land in the journal mid-onboarding, or the camera while Find your light holds it.
     func show(tab: CaptureTab) {
-        guard let model else { return }
+        guard let model, !model.showsOnboarding else { return }
         let panel = panel ?? makePanel()
         if !panel.isVisible {
             saved = false

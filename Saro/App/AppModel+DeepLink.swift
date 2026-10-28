@@ -13,6 +13,8 @@ extension AppModel {
             return
         }
         WindowActions.openMain()
+        // Onboarding's own test reminder carries Voice and Write: nothing lands in the journal until it ends.
+        guard !showsOnboarding else { return }
         Task { await follow(link) }
     }
 
