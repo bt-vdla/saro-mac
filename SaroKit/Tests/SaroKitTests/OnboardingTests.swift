@@ -419,6 +419,28 @@ private func time(_ text: String) -> FirstWeek.RitualSuggestion {
     #expect(ritual3("After the kids are down").source == .default)
 }
 
+@Test func spansAreReadDefensively() {
+    // The kit's picks are typed, so what's left to be defensive about is a pick with nothing usable in it.
+    let blank = Pick(kind: .time, text: "  ", value: "", start: 0, end: 2, q: 3)
+    let goal = Pick(kind: .goal, text: "", value: "", start: 0, end: 0, q: 4)
+    #expect(FirstWeek.ritualFromSpans([blank, goal]).source == .default)
+    #expect(FirstWeek.ritualFromSpans([blank, Pick(kind: .time, text: " evenings ", value: "evenings", start: 0, end: 10, q: 3)]).source == .answer)
+    #expect(FirstWeek.ritualFromSpans([]).minutes == FirstWeek.defaultMinutes)
+    #expect(FirstWeek.checkInNote(goal: "") == "How’s the week sitting?")
+}
+
+@Test func aStoredRitualIsCheckedBeforeItIsTrusted() {
+    let good = #"{"ritualMinutes": 450, "ritualWeekdays": 127, "ritualSource": "answer", "weekStartedOn": "2026-09-28""#
+    let ritual = { (json: String) in Prefs.decode(Data(json.utf8)) }
+    let p = ritual(good + "}")
+    #expect(p.ritualMinutes == 450 && p.ritualWeekdays == 127 && p.ritualSource == .answer && p.weekStartedOn == "2026-09-28")
+    #expect(ritual(good.replacingOccurrences(of: "450", with: "1440") + "}").ritualMinutes == Prefs().ritualMinutes)
+    #expect(ritual(good + #", "ritualSuggested": 1290}"#).ritualSuggested == 1290)
+    #expect(ritual(good + #", "ritualSuggested": "soon"}"#).ritualSuggested == nil)
+    #expect(ritual(good.replacingOccurrences(of: "2026-09-28", with: "Monday") + "}").weekStartedOn == nil)
+    #expect(ritual("{") == Prefs() && Prefs.decode(nil) == Prefs())
+}
+
 @Test func withoutANormalisedValueEveningAndMorningWordsDecideABareClock() {
     #expect(time("Around 9:30, after dinner").minutes == 21 * 60 + 30)
     #expect(time("in bed at 10:30").minutes == 22 * 60 + 30)
