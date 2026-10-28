@@ -81,6 +81,23 @@ public enum FollowUps {
                         question: followUp(text, verb: verb, exclude: exclude, seed: seed, phraseFrom: phraseFrom), generator: "heuristic")
     }
 
+    /// A checkpoint's question as it may be kept (FR-CAP-05, FR-REF-06): live words shape it but are never stored as a
+    /// quote, so the clause holding the quote goes ("You said “…”. What’s underneath that?" keeps "What’s underneath
+    /// that?"); when no whole question is left, an open one that quotes nothing.
+    public static func unquoted(_ question: String, seed: Int) -> String {
+        let marks: Set<Character> = ["“", "”", "\""]
+        guard let close = question.lastIndex(where: { $0 == "”" || $0 == "\"" }) else {
+            return question.contains("“") ? phraseless[abs(seed) % phraseless.count] : question
+        }
+        let after = question[question.index(after: close)...]
+        let gap = after.prefix { " .,;:—–-".contains($0) }, rest = after.dropFirst(gap.count)
+        // Only a clause of its own: what follows the quote mid-sentence ("What did “…” feel like?") isn't a question.
+        guard gap.contains(where: { ".,;:—–".contains($0) }), rest.count > 8, rest.hasSuffix("?"), !rest.contains(where: marks.contains) else {
+            return phraseless[abs(seed) % phraseless.count]
+        }
+        return rest.prefix(1).uppercased() + rest.dropFirst()
+    }
+
     public static func seed(_ s: String) -> Int { Heuristics.seed(s) }
 
     static func pick(_ pools: [[String]], seed: Int, exclude: [String]) -> String? {

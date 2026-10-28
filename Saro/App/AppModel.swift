@@ -102,6 +102,8 @@ final class AppModel {
     private var queue: [String] = []
     /// Refreshes and gate checks waiting their turn behind the entries (§11.7: one model call at a time).
     private var jobs: [@MainActor () async -> Void] = []
+    /// Jobs that can't wait for the whole queue (a checkpoint's question): each runs before the next entry or day reading.
+    private var soon: [@MainActor () async -> Void] = []
     /// Days to read once the queued entries are done (a trash, a restore, the inspector opening).
     private var unreadDays: Set<String> = []
     /// True while the queue is being worked, so a day that can be read but has no reading is still coming.
@@ -456,6 +458,7 @@ final class AppModel {
                 var days = unreadDays
                 unreadDays = []
                 while !queue.isEmpty {
+                    await runSoon()
                     let id = queue.removeFirst()
                     current = id
                     if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
@@ -464,11 +467,15 @@ final class AppModel {
                     await memory.learn(entryId: id)
                 }
                 current = nil
-                for d in days { await pipeline.readDay(d) }
+                for d in days {
+                    await runSoon()
+                    await pipeline.readDay(d)
+                }
+                await runSoon()
                 while !jobs.isEmpty { await jobs.removeFirst()() }
                 // Read back while still working, so a reading never shows as missing between landing and the reload.
-                if queue.isEmpty, unreadDays.isEmpty, jobs.isEmpty { await reload() }
-            } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty
+                if queue.isEmpty, unreadDays.isEmpty, jobs.isEmpty, soon.isEmpty { await reload() }
+            } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty || !soon.isEmpty
             working = false
             // A hold on a day hides its lines at once (SR-16), wherever What Saro knows is showing.
             await memory.load()
@@ -521,12 +528,18 @@ final class AppModel {
         return payload
     }
 
-    /// Runs `work` in the queue, after whatever is under way (§11.7: one model call at a time).
-    func exclusive<T: Sendable>(_ work: @escaping @MainActor () async -> T) async -> T {
+    /// Runs `work` in the queue, after whatever is under way (§11.7: one model call at a time); `soon`, ahead of the
+    /// entries and day readings still waiting.
+    func exclusive<T: Sendable>(soon: Bool = false, _ work: @escaping @MainActor () async -> T) async -> T {
         await withCheckedContinuation { c in
-            jobs.append { c.resume(returning: await work()) }
+            let job: @MainActor () async -> Void = { c.resume(returning: await work()) }
+            if soon { self.soon.append(job) } else { jobs.append(job) }
             drain()
         }
+    }
+
+    private func runSoon() async {
+        while !soon.isEmpty { await soon.removeFirst()() }
     }
 
     /// Launch sweep (DR-12): a turn that was recording when Saro quit is a finished file if it exists on disk

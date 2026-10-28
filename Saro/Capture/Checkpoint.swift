@@ -53,11 +53,18 @@ final class Checkpoint {
         var next = Phase.quiet
         var result: FollowUp?
         if !text.isEmpty {
-            switch await model.pipeline.check(text)?.state {
+            let day = source.flatMap { model.entry($0.entryId)?.localDay } ?? model.day
+            let (exclude, observations, seed) = (asked + [capture.prompt], observed, FollowUps.seed("\(text)\n\(count)"))
+            // The gate, then the question, as one turn in the model's queue, ahead of the parts still being read.
+            let answer = await model.exclusive(soon: true) { () async -> (state: EntryState?, question: (FollowUp, AIRun)?) in
+                let state = await model.pipeline.check(text)?.state
+                guard state == .clear || state == .modelUnavailable else { return (state, nil) }
+                return (state, await model.ai.followUp(text: text, verb: "said", exclude: exclude, excludeObservations: observations,
+                                                       seed: seed, localDay: day))
+            }
+            switch answer.state {
             case .clear?, .modelUnavailable?:
-                let day = source.flatMap { model.entry($0.entryId)?.localDay } ?? model.day
-                let (f, run) = await model.ai.followUp(text: text, verb: "said", exclude: asked + [capture.prompt], excludeObservations: observed,
-                                                       seed: FollowUps.seed("\(text)\n\(count)"), localDay: day)
+                guard let (f, run) = answer.question else { break }
                 // Layer 3 over what was generated, the twin's included (SR-08): a hit asks nothing.
                 if SafetyGate.phraseHit([f.observation ?? "", f.question].joined(separator: "\n")) {
                     next = .held
@@ -97,7 +104,9 @@ final class Checkpoint {
             try? await Task.sleep(for: .milliseconds(150))
             if !Task.isCancelled { saving = true }
         }
-        await CaptureController.shared.keepGoing(prompt: followUp?.question, generator: followUp?.generator ?? "heuristic", runId: followUp?.runId)
+        // Stored as the next part's prompt, so never with the live words it quoted (FR-CAP-05).
+        let prompt = followUp.map { FollowUps.unquoted($0.question, seed: count) }
+        await CaptureController.shared.keepGoing(prompt: prompt, generator: followUp?.generator ?? "heuristic", runId: followUp?.runId)
         slow.cancel()
         withAnimation(key ? nil : CaptureMotion.out(0.25)) {
             saving = false

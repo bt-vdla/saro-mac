@@ -395,3 +395,21 @@ extension FollowUp {
     #expect(try await l.entry(song.id)?.processingStatus == ProcessingStatus.done)
     #expect(await p.dayStatus(page.localDay) == .ready)
 }
+
+// MARK: A checkpoint's question is kept without the live words it quoted
+
+@Test func checkpointQuestionsAreKeptWithoutTheirQuote() {
+    let phrase = "the long walk home"
+    let all = FollowUps.templates.values.flatMap { $0 }.map { $0.replacingOccurrences(of: "{p}", with: phrase).replacingOccurrences(of: "{verb}", with: "said") }
+    for q in all {
+        let kept = FollowUps.unquoted(q, seed: 1)
+        #expect(!kept.contains("long walk") && !kept.contains("“") && !kept.contains("”"), "\(q)")
+        #expect(kept.hasSuffix("?") && kept.first?.isUppercase == true, "\(kept)")
+    }
+    #expect(FollowUps.unquoted("You said “\(phrase)”. What’s underneath that?", seed: 0) == "What’s underneath that?")
+    #expect(FollowUps.unquoted("Thinking about “\(phrase)”, what would ‘enough’ look like here?", seed: 0) == "What would ‘enough’ look like here?")
+    // The quote inside the question, or one left open: an open question in its place.
+    #expect(FollowUps.phraseless.contains(FollowUps.unquoted("What did \"\(phrase)\" feel like?", seed: 2)))
+    #expect(FollowUps.phraseless.contains(FollowUps.unquoted("What did “\(phrase) feel like?", seed: 2)))
+    #expect(FollowUps.unquoted("What made the walk feel long?", seed: 0) == "What made the walk feel long?")
+}
