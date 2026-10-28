@@ -31,7 +31,7 @@ extension AppModel {
                 prefs.ritualMinutes = v.reminderMinutes
                 prefs.ritualSource = .user
             }
-            await Reminders.shared.scheduleRitual()
+            Reminders.shared.scheduleRitual()
         case .letterTime:
             prefs.letterMinutes = v.letterMinutes
             await Reminders.shared.moveTodaysLetter(to: v.letterMinutes)

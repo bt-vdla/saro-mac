@@ -189,7 +189,7 @@ struct RhythmSection: View {
     }
 
     private func reschedule() {
-        save.run { await Reminders.shared.scheduleRitual() }
+        save.run { Reminders.shared.scheduleRitual() }
     }
 
     private func accept(_ s: Rhythm.Suggestion) {

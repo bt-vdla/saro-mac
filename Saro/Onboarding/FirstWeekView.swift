@@ -362,7 +362,7 @@ struct FirstWeekView: View {
 
     private func reschedule() {
         guard prefs.reminderOn else { return }
-        Task { await Reminders.shared.scheduleRitual() }
+        Reminders.shared.scheduleRitual()
     }
 }
 
@@ -722,7 +722,7 @@ private struct ReminderAsk: View {
         let ok = await Reminders.shared.request()
         if ok {
             prefs.reminderOn = true
-            await Reminders.shared.scheduleRitual()
+            Reminders.shared.scheduleRitual()
             await Reminders.shared.sendTest()
             state = .granted
             standing = .authorized
