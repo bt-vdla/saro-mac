@@ -40,10 +40,10 @@ struct LetterView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(letter.mood.rawValue.uppercased()).font(Typo.mono(10.5)).foregroundStyle(Tok.sageTeal)
-                Text(Letter.typeset(letter.mood.summary)).font(Typo.serif(17)).italic().foregroundStyle(Tok.ink2)
+                Text(Letter.typeset(letter.mood.summary)).font(Typo.serif(17, italic: true)).foregroundStyle(Tok.ink2)
             }
             if let q = letter.question {
-                Text(Letter.typeset(q)).font(Typo.serif(19)).italic().foregroundStyle(Tok.voice)
+                Text(Letter.typeset(q)).font(Typo.serif(19, italic: true)).foregroundStyle(Tok.voice)
             }
             Text(letter.signOff).font(Typo.serif(17)).foregroundStyle(Tok.ink2)
             HStack {

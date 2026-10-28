@@ -417,7 +417,7 @@ struct ReadingSection: View {
             Button { onQuote?(q) } label: {
                 HStack(alignment: .top, spacing: 8) {
                     Rectangle().fill(Tok.sageSoft).frame(width: 2)
-                    Text("“\(q)”").font(Typo.serif(14.5)).italic().foregroundStyle(Tok.ink2).multilineTextAlignment(.leading)
+                    Text("“\(q)”").font(Typo.serif(14.5, italic: true)).foregroundStyle(Tok.ink2).multilineTextAlignment(.leading)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }

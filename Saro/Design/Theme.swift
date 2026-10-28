@@ -49,7 +49,7 @@ extension Color {
     }
 }
 
-/// Geist for UI, Geist Mono for labels, New York (system serif) for Saro's voice.
+/// Geist for UI and the user's words, Geist Mono for times and labels, Newsreader for Saro's voice.
 enum Typo {
     static func registerFonts() {
         guard let dir = Bundle.main.url(forResource: "Fonts", withExtension: nil),
@@ -77,8 +77,25 @@ enum Typo {
         return .custom(weight == .regular ? "GeistMono-Regular" : "GeistMono-Medium", size: size)
     }
 
-    static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .serif)
+    static var newsreaderAvailable: Bool { NSFont(name: "Newsreader16pt-Regular", size: 12) != nil }
+
+    /// Newsreader is Saro's voice (questions, prompts, the letter, quotes); New York if it isn't registered.
+    static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular, italic: Bool = false) -> Font {
+        guard newsreaderAvailable else {
+            let f = Font.system(size: size, weight: weight, design: .serif)
+            return italic ? f.italic() : f
+        }
+        let name = switch (weight, italic) {
+        case (.medium, false): "NewsreaderRoman-Medium"
+        case (.semibold, false), (.bold, false): "NewsreaderRoman-SemiBold"
+        case (.light, false): "NewsreaderRoman-Light"
+        case (_, false): "Newsreader16pt-Regular"
+        case (.medium, true): "NewsreaderItalic-Medium"
+        case (.semibold, true), (.bold, true): "NewsreaderItalic-SemiBold"
+        case (.light, true): "NewsreaderItalic-Light"
+        case (_, true): "Newsreader16pt-Italic"
+        }
+        return .custom(name, size: size)
     }
 }
 
