@@ -62,7 +62,7 @@ struct FirstWeekView: View {
                             VStack(alignment: .leading, spacing: 0) {
                                 header(t)
                                 week(t, size: geo.size)
-                                rest(t).padding(.top, 28)
+                                rest(t, wide: min(geo.size.width, 1400) - 96 >= 1160).padding(.top, 28)
                             }
                             .padding(.horizontal, 48)
                             .padding(.top, 52)
@@ -270,9 +270,11 @@ struct FirstWeekView: View {
 
     // MARK: The ritual, the reminder and the way on
 
-    private func rest(_ t: Double) -> some View {
+    /// The ritual, the preview and the ask side by side; in a narrower window, one under the other.
+    private func rest(_ t: Double, wide: Bool) -> some View {
         let restAt = WeekLight.restAt(step: step)
-        return HStack(alignment: .top, spacing: 40) {
+        let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 40)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
+        return layout {
             ritual.frame(maxWidth: .infinity, alignment: .leading)
                 .entering(progress(t, at: restAt, duration: 0.35), y: 8)
             VStack(alignment: .leading, spacing: 10) {
@@ -569,8 +571,8 @@ private struct RitualTimePill: View {
         PillField(minutes: minutes, hour12: hour12, onCommit: onCommit, onRestore: onRestore, onEditing: onEditing)
             .frame(width: 104, height: 24)
             .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(Tok.surfaceAlt.opacity(hover ? 0.85 : 0.6), in: .rect(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(hover ? Tok.ink3 : Tok.borderStrong))
+            .background(Tok.surfaceAlt.opacity(hover ? 0.85 : 0.6), in: .capsule)
+            .overlay(Capsule().strokeBorder(hover ? Tok.ink3 : Tok.borderStrong))
             .onHover { hover = $0 }
             .animation(Motion.fade, value: hover)
             .accessibilityElement(children: .ignore)

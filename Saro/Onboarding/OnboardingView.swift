@@ -332,6 +332,8 @@ struct OnboardingView: View {
         }
         .background { shortcuts }
         .background(Tok.bg)
+        // Below this the week's columns and the ritual row can't hold their words.
+        .frame(minWidth: 800, minHeight: 600)
         .environment(flow)
         .task { await flow.load(model) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in flow.regate(model) }

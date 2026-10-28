@@ -148,7 +148,7 @@ private struct PromiseLine: View {
         }
         .font(Typo.ui(13))
         .foregroundStyle(hover ? Tok.ink : Tok.ink2)
-        .frame(minHeight: 40)
+        .frame(minHeight: 44)
         .contentShape(.rect)
         .onHover { hover = $0 }
         .animation(Motion.fade, value: hover)

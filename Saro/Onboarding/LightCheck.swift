@@ -31,17 +31,19 @@ final class LightCheck {
     let engine = LightEngine()
     @ObservationIgnored private var token = 0
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    /// Removed in deinit, so each replay's check doesn't leave its observers behind.
+    @ObservationIgnored nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
     var cameraName: String { cameras.first { $0.id == cameraID }?.name ?? "Camera" }
     var camera: Bool { phase == .live || phase == .settling }
 
     init() {
         let center = NotificationCenter.default
-        center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: engine.session, queue: .main) { [weak self] _ in
+        observers.append(center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: engine.session, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.ended() }
-        }
+        })
         for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 let id = (note.object as? AVCaptureDevice)?.uniqueID
                 MainActor.assumeIsolated {
                     guard let self else { return }
@@ -49,9 +51,11 @@ final class LightCheck {
                     self.refreshDevices()
                     if lost { self.ended() }
                 }
-            }
+            })
         }
     }
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
     /// Turn on camera and mic, or Try again: asks macOS on first use, then settles the exposure for 1.2 s.
     func start() {

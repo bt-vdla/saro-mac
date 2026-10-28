@@ -279,8 +279,8 @@ private struct ToneChip: View {
     var body: some View {
         Text(word).font(Typo.ui(15)).foregroundStyle(hover ? Tok.ink : Tok.ink2)
             .padding(.horizontal, 16).frame(minHeight: 44)
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(hover ? Tok.voice : Tok.line))
-            .contentShape(.rect(cornerRadius: 22))
+            .overlay(Capsule().strokeBorder(hover ? Tok.voice : Tok.line))
+            .contentShape(.capsule)
             .onHover { hover = $0 }
             .animation(Motion.fade, value: hover)
     }
