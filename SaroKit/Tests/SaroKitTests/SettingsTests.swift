@@ -1,5 +1,6 @@
 import Foundation
 @testable import SaroKit
+import Synchronization
 import Testing
 
 // Ports of parseIntent.test.ts, tonePreview.test.ts, rhythm.test.ts, exportBook.test.ts and aiLog.test.ts, plus the
@@ -569,6 +570,34 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         let again = try await b.importExport(from: dir)
         #expect(again.rows == 0 && again.files == 0)
         #expect(try await rows(b) == expected)
+    }
+
+    /// The media copy runs off the actor: a ledger call made while it copies answers before the copy finishes.
+    @Test func exportLeavesTheLedgerFreeWhileMediaCopies() async throws {
+        final class Seen: Sendable {
+            let started = Mutex(false)
+            let answeredInTime = Mutex(false)
+        }
+        let a = try freshLedger()
+        _ = try await seed(a)
+        let dir = URL.temporaryDirectory.appending(path: "SaroExport-\(UUID().uuidString).saroexport")
+        let copying = AsyncStream<Void>.makeStream()
+        let answered = DispatchSemaphore(value: 0)
+        let seen = Seen()
+        let export = Task {
+            try await a.exportEverything(to: dir, prefs: nil) { _ in
+                guard !seen.started.withLock({ was in defer { was = true }; return was }) else { return }
+                copying.continuation.yield()
+                // On the actor this waits out the timeout: the ledger can't answer until the copy returns.
+                let inTime = answered.wait(timeout: .now() + 3) == .success
+                seen.answeredInTime.withLock { $0 = inTime }
+            }
+        }
+        for await _ in copying.stream { break }
+        _ = try await a.aiRunCount()
+        answered.signal()
+        try await export.value
+        #expect(seen.answeredInTime.withLock { $0 })
     }
 
     @Test func importRefusesWhatIsntAnExport() async throws {

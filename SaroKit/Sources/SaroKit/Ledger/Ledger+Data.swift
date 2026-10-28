@@ -176,21 +176,21 @@ extension Ledger {
     // MARK: Export and import (DR-20, FR-EXP-02)
 
     /// Every row of every table as JSON (`saro.json`, with this Mac's prefs beside them), and every media file, into
-    /// `dir`. `progress` hears the share of media bytes copied.
-    public func exportEverything(to dir: URL, prefs: Data?, progress: @escaping @Sendable (Double) -> Void = { _ in }) throws {
+    /// `dir`. `progress` hears the share of media bytes copied. The copy runs off the actor, so the journal stays usable.
+    public func exportEverything(to dir: URL, prefs: Data?, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         let fm = FileManager.default
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         var out: [String: Any] = ["export_version": 1, "schema_version": try schemaVersion(), "exported_at": Date.now.iso]
         for t in try tableNames() { out[t] = try db.run("SELECT * FROM \(t)").map { $0.mapValues(\.json) } }
         if let prefs, let block = try? JSONSerialization.jsonObject(with: prefs) { out["prefs"] = block }
         try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appending(path: "saro.json"), options: .atomic)
-        try Self.copyTree(from: mediaURL, to: dir.appending(path: "Media", directoryHint: .isDirectory), progress: progress)
+        try await Self.copyTreeDetached(from: mediaURL, to: dir.appending(path: "Media", directoryHint: .isDirectory), progress: progress)
     }
 
     /// Adds an export's rows and files to this journal. Idempotent: a row whose id is already here is kept as it is,
-    /// and importing the same export twice adds nothing. A blank profile takes the export's.
+    /// and importing the same export twice adds nothing. A blank profile takes the export's. Media copies off the actor.
     @discardableResult
-    public func importExport(from url: URL, progress: @escaping @Sendable (Double) -> Void = { _ in }) throws -> ImportSummary {
+    public func importExport(from url: URL, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> ImportSummary {
         let folder = url.pathExtension == "json" ? url.deletingLastPathComponent() : url
         let json = url.pathExtension == "json" ? url : folder.appending(path: "saro.json")
         guard let data = try? Data(contentsOf: json),
@@ -225,7 +225,7 @@ extension Ledger {
             // An empty profile row, so the profile reads back even when the export had none.
             try db.run("INSERT OR IGNORE INTO profile (id, created_at, updated_at) VALUES (1, ?, ?)", [.text(Date.now.iso), .text(Date.now.iso)])
         }
-        summary.files = try Self.copyTree(from: folder.appending(path: "Media", directoryHint: .isDirectory), to: mediaURL, progress: progress)
+        summary.files = try await Self.copyTreeDetached(from: folder.appending(path: "Media", directoryHint: .isDirectory), to: mediaURL, progress: progress)
         return summary
     }
 
@@ -239,6 +239,12 @@ extension Ledger {
 
     func tableNames() throws -> [String] {
         try db.run("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").compactMap { $0.str("name") }
+    }
+
+    /// `copyTree` on a detached task: a large Media folder never holds up canvas loads or the pipeline meanwhile.
+    @discardableResult
+    static func copyTreeDetached(from source: URL, to dest: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> Int {
+        try await Task.detached(priority: .utility) { try copyTree(from: source, to: dest, progress: progress) }.value
     }
 
     /// Copies every file under `source` that `dest` doesn't have yet, keeping relative paths; returns how many.
