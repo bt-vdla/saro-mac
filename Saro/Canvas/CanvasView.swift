@@ -9,8 +9,10 @@ struct DayView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
     @FocusState private var focused: Bool
-    /// An ⌥-arrow nudge or ⇧⌥-arrow resize moved something not yet saved; the key's release saves it.
-    @State private var nudged = false
+    /// An ⌥-arrow nudge or ⇧⌥-arrow resize moved something not yet saved; the arrow's release saves it, whichever
+    /// modifier was let go first.
+    @State private var nudged: Nudge?
+    private enum Nudge { case moved(Set<String>), resized(String) }
     /// The chrome and the stage share it, so the letter's quotes can fly into their cards.
     nonisolated static let space = "day"
 
@@ -51,16 +53,17 @@ struct DayView: View {
         // Arrows walk to the nearest card that way, Tab and ⇧Tab through capture order; ⌥ nudges by 8 pt, saved once the
         // key is let go, and ⇧⌥ resizes by as much.
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow], phases: [.down, .repeat, .up]) { canvasKey($0) }
-        .onKeyPress(.tab) {
+        // ⇧Tab arrives as backtab (U+0019). Past the last card (or before the first) Tab goes on to the bar.
+        .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
             guard model.lens == nil, model.openEntryID == nil, !model.replay.active else { return .ignored }
-            walk(NSEvent.modifierFlags.contains(.shift) ? -1 : 1)
-            return .handled
+            return walk(press.key == .tab && !press.modifiers.contains(.shift) ? 1 : -1)
         }
         .onCommand(#selector(NSText.selectAll(_:))) {
             if model.openEntryID == nil, model.lens == nil { model.selection = Set(model.entries.map(\.id)) }
         }
         .onChange(of: model.lens == nil) { _, closed in if closed { focused = true } }
-        .onChange(of: model.datePickerOpen) { _, open in if !open { focused = true } }
+        // With keyboard navigation on, focus goes back to the date button instead (BottomBar).
+        .onChange(of: model.datePickerOpen) { _, open in if !open && !NSApp.isFullKeyboardAccessEnabled { focused = true } }
         .onDeleteCommand {
             let flies = !Motion.byKey && !reduceMotion
             Task { await model.trash(model.selection, undoManager: undoManager, flies: flies) }
@@ -96,6 +99,7 @@ struct DayView: View {
         .onChange(of: model.replayItems) { _, items in model.replay.update(items) }
         .onChange(of: model.replay.active) { _, on in if on { focused = true } }
         .onAppear { focused = true }
+        .onChange(of: focused) { _, on in if !on { saveNudge() } }
         // Leaving the journal ends the replay where it is.
         .onDisappear { model.replay.exit(animated: false) }
         .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
@@ -120,6 +124,11 @@ struct DayView: View {
     }
 
     private func canvasKey(_ press: KeyPress) -> KeyPress.Result {
+        if press.phase == .up {
+            guard nudged != nil else { return .ignored }
+            saveNudge()
+            return .handled
+        }
         guard model.lens == nil, model.openEntryID == nil, !model.replay.active, model.recorderKind == nil, model.openStackID == nil else { return .ignored }
         let dir: CGVector = switch press.key {
         case .leftArrow: CGVector(dx: -1, dy: 0)
@@ -130,27 +139,17 @@ struct DayView: View {
         let cards = model.stageCards
         switch press.modifiers.intersection([.command, .option, .shift, .control]) {
         case []:
-            guard press.phase != .up else { return .handled }
+            saveNudge()
             let current = cards.first { !$0.ids.isDisjoint(with: model.selection) }
             let next = current.map { c in DayLayout.neighbour(of: c.center, toward: dir, among: cards.map { ($0.id, $0.center) }) }
                 ?? Self.captureOrder(cards).first?.id
             if let next, let c = cards.first(where: { $0.id == next }) { model.selection = c.ids }
         case .option:
-            if press.phase == .up {
-                if nudged { model.move(model.selection, by: .zero) }
-                nudged = false
-            } else {
-                for id in model.selection { model.layouts[id]?.x += dir.dx * 8; model.layouts[id]?.y += dir.dy * 8 }
-                nudged = !model.selection.isEmpty
-            }
+            for id in model.selection { model.layouts[id]?.x += dir.dx * 8; model.layouts[id]?.y += dir.dy * 8 }
+            if !model.selection.isEmpty { nudged = .moved(model.selection) }
         case [.option, .shift]:
             guard model.selection.count == 1, let id = model.selection.first, let e = model.entry(id),
                   let spec = CanvasMath.resizeSpec(e.kind), var l = model.layouts[id] else { return .ignored }
-            if press.phase == .up {
-                if nudged { model.resize(id, to: CGRect(center: CGPoint(x: l.x, y: l.y), size: model.size(of: e)), height: l.h.map { CGFloat($0) }) }
-                nudged = false
-                return .handled
-            }
             // The top-left corner stays; a picture with no height of its own keeps its proportions.
             let s = model.size(of: e)
             let w = (s.width + dir.dx * 8).clamped(to: spec.minW...spec.maxW)
@@ -160,19 +159,37 @@ struct DayView: View {
             let after = model.size(of: e)
             model.layouts[id]?.x += (after.width - s.width) / 2
             model.layouts[id]?.y += (after.height - s.height) / 2
-            nudged = true
+            nudged = .resized(id)
         default:
             return .ignored
         }
         return .handled
     }
 
-    /// Tab and ⇧Tab walk the cards in the order they were captured.
-    private func walk(_ by: Int) {
+    /// Saves what an ⌥-arrow nudge or ⇧⌥-arrow resize moved, once.
+    private func saveNudge() {
+        switch nudged {
+        case .moved(let ids): model.move(ids, by: .zero)
+        case .resized(let id):
+            if let e = model.entry(id), let l = model.layouts[id] {
+                model.resize(id, to: CGRect(center: CGPoint(x: l.x, y: l.y), size: model.size(of: e)), height: l.h.map { CGFloat($0) })
+            }
+        case nil: break
+        }
+        nudged = nil
+    }
+
+    /// Tab and ⇧Tab walk the cards in the order they were captured; past either end the selection clears and the key
+    /// moves focus on, as the web's cards sit in the page's Tab order.
+    private func walk(_ by: Int) -> KeyPress.Result {
         let order = Self.captureOrder(model.stageCards)
-        guard !order.isEmpty else { return }
-        let i = order.firstIndex { !$0.ids.isDisjoint(with: model.selection) }.map { ($0 + by + order.count) % order.count } ?? (by > 0 ? 0 : order.count - 1)
+        let i = order.firstIndex { !$0.ids.isDisjoint(with: model.selection) }.map { $0 + by } ?? (by > 0 ? 0 : -1)
+        guard order.indices.contains(i) else {
+            model.selection = []
+            return .ignored
+        }
         model.selection = order[i].ids
+        return .handled
     }
 
     private static func captureOrder(_ cards: [StageCard]) -> [StageCard] {

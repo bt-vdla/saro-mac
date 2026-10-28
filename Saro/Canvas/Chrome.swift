@@ -41,6 +41,8 @@ struct BottomBar: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var cell
+    /// The date button, which takes the focus back when the date picker closes and keyboard navigation is on.
+    @FocusState private var dateFocused: Bool
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -111,6 +113,8 @@ struct BottomBar: View {
             .background {
                 if !model.replay.active { Color.clear.matchedGeometryEffect(id: reduceMotion ? "date" : "replayTrack", in: cell) }
             }
+            .focused($dateFocused)
+            .onChange(of: model.datePickerOpen) { _, open in if !open && NSApp.isFullKeyboardAccessEnabled { dateFocused = true } }
             .tourAnchor(.dayNav)
             .accessibilityLabel("Open date picker")
             .accessibilityValue(DayFormat.relative(model.day))
