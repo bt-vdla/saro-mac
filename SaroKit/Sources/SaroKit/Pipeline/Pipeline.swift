@@ -237,8 +237,9 @@ public actor Pipeline {
         let reading: DayReading
         let prov: Provenance
         if modelOK {
+            // §11.6: the drift check covers all the prose the day shows, the question and mood basis included.
             (reading, prov) = await ai.readDay(day: day, digests: digests, candidates: candidates, fallback: fallback) { r in
-                r.narrative.map { Heuristics.driftOK(generated: $0, source: source) } ?? true
+                [r.narrative, r.question, r.moodBasis].allSatisfy { $0.map { Heuristics.driftOK(generated: $0, source: source) } ?? true }
             }
         } else {
             (reading, prov) = (fallback, Provenance(executor: "heuristic", rung: .heuristic, guardrails: nil, variant: nil, osBuild: SaroAI.osBuild,

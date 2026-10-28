@@ -134,6 +134,21 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(await p.latestDayReading(e.localDay)?.generator == "on_device")
 }
 
+@Test func dayQuestionAndMoodBasisAreDriftChecked() async throws {
+    let drifted = [cleanDay.replacingOccurrences(of: "What did Ravi say?", with: "How is your sister settling in?"),
+                   cleanDay.replacingOccurrences(of: #""moodBasis": "chai""#, with: #""moodBasis": "the move to Pune""#)]
+    for day in drifted {
+        let l = try tempLedger()
+        let p = Pipeline(ledger: l, ai: answers(day: day))
+        let e = Entry(kind: .reflection, body: chai)
+        try await l.insertEntry(e)
+        await p.process(entryId: e.id) {}
+        let r = await p.readDay(e.localDay)?.reading
+        #expect(r != nil && r?.question != "How is your sister settling in?" && r?.moodBasis != "the move to Pune")
+        #expect(await p.latestDayReading(e.localDay)?.generator == "heuristic")
+    }
+}
+
 @Test func outputGateHitOnAnEntryReadingHoldsIt() async throws {
     let l = try tempLedger()
     let p = Pipeline(ledger: l, ai: answers(entry: cleanEntry.replacingOccurrences(of: "You had chai with Ravi.", with: "You said you want to end it all.")))
