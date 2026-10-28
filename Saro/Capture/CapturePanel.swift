@@ -132,6 +132,8 @@ struct CapturePanelView: View {
             }
         }
         .animation(CaptureMotion.small, value: panel.saved)
+        // Capture errors arrive as toasts, and the window's host is out of sight when the panel is in use.
+        .overlay { ToastHost() }
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 14)

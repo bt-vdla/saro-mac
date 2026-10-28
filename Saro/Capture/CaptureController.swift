@@ -53,8 +53,10 @@ final class CaptureController {
     @ObservationIgnored private var current: TurnTicket?
     @ObservationIgnored private var pending: [URL: TurnTicket] = [:]
     @ObservationIgnored private var banked: Duration = .zero
+    @ObservationIgnored private var savedTurns = 0
     @ObservationIgnored private var turnStarted: ContinuousClock.Instant?
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var ended: [CheckedContinuation<Void, Never>] = []
 
     private init() {
         for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
@@ -101,6 +103,13 @@ final class CaptureController {
         teardownIfDone()
     }
 
+    /// `finish`, then waits for every turn to save. True when at least one turn's file was written.
+    func end(_ surface: Surface) async -> Bool {
+        finish(surface)
+        if owner == surface { await withCheckedContinuation { ended.append($0) } }
+        return savedTurns > 0
+    }
+
     // MARK: Recording
 
     /// Space: record, pause, resume.
@@ -120,6 +129,7 @@ final class CaptureController {
             sessionId = UUID().uuidString
             day = owner == .panel ? LocalDay.today() : model.day
             banked = .zero
+            savedTurns = 0
         }
         turn += 1
         starting = true
@@ -174,6 +184,8 @@ final class CaptureController {
         let duration = try? await AVURLAsset(url: url).load(.duration)
         let ms = duration.flatMap { $0.isNumeric ? Int($0.seconds * 1000) : nil } ?? 0
         await model?.finishTurn(ticket, durationMs: ms, error: error)
+        // The test finishTurn uses to mark the turn ready rather than failed.
+        if FileManager.default.fileExists(atPath: url.path) { savedTurns += 1 }
         pending[url] = nil
         teardownIfDone()
     }
@@ -190,6 +202,8 @@ final class CaptureController {
         level = 0
         elapsed = .zero
         banked = .zero
+        for done in ended { done.resume() }
+        ended = []
     }
 
     // MARK: Devices

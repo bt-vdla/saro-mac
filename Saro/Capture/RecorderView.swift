@@ -18,7 +18,9 @@ struct RecorderView: View {
     @State private var appeared = false
     @State private var countdown: Int?
     @State private var developing = false
-    /// The countdown, or the develop flash before Done closes.
+    /// Done in the panel, waiting for the last turn to save.
+    @State private var ending = false
+    /// The countdown, the develop flash before Done closes, or that wait.
     @State private var ritual: Task<Void, Never>?
 
     private var capture: CaptureController { .shared }
@@ -36,8 +38,8 @@ struct RecorderView: View {
                 }
             }
         }
-        .task(id: available ? kind : nil) {
-            if available { await capture.prepare(kind, for: surface, model: model) }
+        .task(id: available && !ending ? kind : nil) {
+            if available, !ending { await capture.prepare(kind, for: surface, model: model) }
         }
         .onAppear { appeared = true }
         // A moment's 3-2-1 must not go on to start whatever kind replaced it.
@@ -280,6 +282,7 @@ struct RecorderView: View {
 
     /// What to show instead of the live recorder; nil once the preview runs. No icon means a spinner.
     private var notice: RecorderNotice? {
+        if ending { return RecorderNotice(title: "Saving your last recording…") }
         if !available {
             if capture.owner == surface { return RecorderNotice(title: "Saving your last recording…") }
             return RecorderNotice(icon: "record.circle",
@@ -350,8 +353,17 @@ struct RecorderView: View {
     }
 
     private func finish(_ saved: Bool) {
-        capture.finish(surface)
-        if saved, let onSaved { onSaved() } else { onClose() }
+        guard saved, let onSaved else {
+            capture.finish(surface)
+            return onClose()
+        }
+        // "Saved to today." only once the last turn is on disk, and only if some turn made it there.
+        ending = true
+        ritual = Task {
+            let wrote = await capture.end(surface)
+            guard !Task.isCancelled else { return }
+            if wrote { onSaved() } else { onClose() }
+        }
     }
 
     private func close() {
