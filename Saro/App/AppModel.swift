@@ -45,6 +45,8 @@ final class AppModel {
     /// The voice note open in place on its card (VoiceEchoCard.tsx), if any.
     var openVoiceID: String?
     var toast: Toast?
+    /// Cards flying into the Undo toast, or out of it back to their places.
+    var trashFlight: TrashFlight?
     enum Insight { case spine, panel, letter }
     var insight: Insight = .spine
     var showNoticed: Bool {
@@ -641,8 +643,13 @@ final class AppModel {
 
     // MARK: Trash
 
-    func trash(_ ids: Set<String>, undoManager: UndoManager? = nil) async {
+    /// `flies`: the cards fly into the Undo toast (Canvas.tsx). Set before the day reloads without them, so the stage
+    /// takes their faces while it still has them.
+    func trash(_ ids: Set<String>, undoManager: UndoManager? = nil, flies: Bool = false) async {
         guard !ids.isEmpty else { return }
+        let cards = stageCards.filter { !$0.ids.isDisjoint(with: ids) }
+        let flight = flies && !cards.isEmpty ? TrashFlight(cards: cards) : nil
+        if let flight { trashFlight = flight }
         do {
             let batch = try await ledger.trash(Array(ids))
             selection = []
@@ -653,8 +660,9 @@ final class AppModel {
             let restore: @MainActor () -> Void = { [weak self] in Task { await self?.restore(batch: batch) } }
             undoManager?.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { restore() } }
             undoManager?.setActionName("Move to Trash")
-            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: restore))
+            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: restore, trashed: cards))
         } catch {
+            if let flight, trashFlight?.id == flight.id { trashFlight = nil }
             show(Toast("Couldn't move to Trash: \(error.localizedDescription)", style: .error))
         }
     }
@@ -741,14 +749,29 @@ struct Toast: Identifiable, Equatable {
     let text: String
     let style: Style
     let undo: (@MainActor () -> Void)?
+    /// The cards a trash took off the canvas, which Undo flies back out of the toast.
+    let trashed: [StageCard]
 
-    init(_ text: String, style: Style = .info, undo: (@MainActor () -> Void)? = nil) {
+    init(_ text: String, style: Style = .info, undo: (@MainActor () -> Void)? = nil, trashed: [StageCard] = []) {
         self.text = text
         self.style = style
         self.undo = undo
+        self.trashed = trashed
     }
 
     static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
+}
+
+/// Trashed cards on their way into the Undo toast, or with `back`, out of it to their places again (Canvas.tsx).
+struct TrashFlight: Equatable {
+    let id = UUID()
+    let cards: [StageCard]
+    /// Undo: the toast they fly out of, and where it sat.
+    var back: (toast: Toast, frame: CGRect)?
+
+    var into: Bool { back == nil }
+
+    static func == (a: TrashFlight, b: TrashFlight) -> Bool { a.id == b.id }
 }
 
 /// Writes synthetic speech to a file for the demo journal.

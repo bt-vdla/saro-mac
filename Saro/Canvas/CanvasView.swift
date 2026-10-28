@@ -40,7 +40,10 @@ struct DayView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
-        .onDeleteCommand { Task { await model.trash(model.selection, undoManager: undoManager) } }
+        .onDeleteCommand {
+            let flies = !Motion.byKey && !reduceMotion
+            Task { await model.trash(model.selection, undoManager: undoManager, flies: flies) }
+        }
         .onExitCommand {
             if model.openEntryID != nil { model.openEntryID = nil }
             else if model.openStackID != nil { model.openStackID = nil }
@@ -129,6 +132,16 @@ struct StageCard: Identifiable {
     let radius: CGFloat
     var id: String { item.id }
     var ids: Set<String> { Set(item.entries.map(\.id)) }
+
+    /// The card drawn as it is now, at `scale` pixels per point.
+    @MainActor func face(_ model: AppModel, scheme: ColorScheme, scale: CGFloat) -> Image? {
+        let r = ImageRenderer(content: Group {
+            if item.isStack { StackFace(entries: item.entries) } else { CardFace(entry: item.top) }
+        }
+        .environment(model).environment(\.colorScheme, scheme))
+        r.scale = scale
+        return r.cgImage.map { Image(decorative: $0, scale: scale) }
+    }
 }
 
 extension AppModel {
@@ -175,6 +188,8 @@ extension Comparable {
 struct DayStage: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
     let day: String
     let cards: [StageCard]
     let size: CGSize
@@ -193,6 +208,8 @@ struct DayStage: View {
     @State private var userMoved = false
     /// Cards let go and still gliding, which keep their motion blur until they land.
     @State private var thrown: Set<String> = []
+    /// The faces of cards flying to or from the Undo toast, taken while the day still has them.
+    @State private var faces: [String: Image] = [:]
 
     init(day: String, cards: [StageCard], size: CGSize) {
         self.day = day
@@ -215,8 +232,21 @@ struct DayStage: View {
                     .frame(width: m.width, height: m.height).position(x: m.midX, y: m.midY).allowsHitTesting(false)
             }
             if let id = shownID, let entry = model.entry(id) { detail(entry) }
+            ForEach(flying) { c in
+                if let face = faces[c.id] {
+                    let r = screenRect(c)
+                    Color.clear.frame(width: r.width, height: r.height)
+                        .anchorPreference(key: TrashFlightKey.self, value: .bounds) { [c.id: FlyingCard(place: $0, face: face)] }
+                        .position(x: r.midX, y: r.midY)
+                        .allowsHitTesting(false)
+                }
+            }
         }
         .frame(width: size.width, height: size.height)
+        .onChange(of: flying.map(\.id)) { _, ids in
+            faces = faces.filter { ids.contains($0.key) }
+            for c in flying where faces[c.id] == nil { faces[c.id] = c.face(model, scheme: colorScheme, scale: displayScale * camera.zoom) }
+        }
         .onDrop(of: [.image], isTargeted: $dropTargeted) { providers, location in
             model.loadStills(providers, at: world(location), origin: "dropped")
             return true
@@ -227,8 +257,11 @@ struct DayStage: View {
             if isCurrent, let c = cards.first { hold(c, translation: CGSize(width: 37, height: 23), velocity: .zero) }
         }
         #endif
-        // Until the user pans, zooms or drags, the day stays framed as its cards arrive and settle.
-        .onChange(of: cards.map { "\($0.id)\($0.center)" }) { _, _ in if !userMoved { camera = Camera.fit(cards, in: size) } }
+        // Until the user pans, zooms or drags, the day stays framed as its cards arrive and settle; one flying into the
+        // Undo toast leaves the rest where they are, so Undo brings it back to the same spot.
+        .onChange(of: cards.map { "\($0.id)\($0.center)" }) { _, _ in
+            if !userMoved && model.trashFlight?.into != true { camera = Camera.fit(cards, in: size) }
+        }
         .onChange(of: model.camera) { _, cmd in
             guard isCurrent, let cmd else { return }
             switch cmd {
@@ -326,7 +359,7 @@ struct DayStage: View {
         .modifier(MotionBlurred(position: at, coverage: c.size.width * c.size.height * camera.zoom * camera.zoom / (size.width * size.height),
                                 enabled: !open && (moving || !thrown.isDisjoint(with: c.ids))))
         .position(at)
-        .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) ? 0 : 1)
+        .opacity(c.ids.contains(shownID ?? "") || (c.item.stackID != nil && c.item.stackID == model.openStackID) || inFlight(c) ? 0 : 1)
         .zIndex(moving ? 10 : open ? 5 : 0)
         .gesture(dragGesture(c))
         .onTapGesture { tap(c) }
@@ -431,6 +464,21 @@ struct DayStage: View {
                 model.selection = hit
             }
             .onEnded { _ in marquee = nil }
+    }
+
+    // MARK: Into the Undo toast and back out (Canvas.tsx)
+
+    /// The cards of a trash flight this stage draws: on the way in, the trashed cards where they were; on the way out,
+    /// the restored ones once the day has them again.
+    private var flying: [StageCard] {
+        guard isCurrent, let f = model.trashFlight else { return [] }
+        return f.into ? f.cards : cards.filter { c in f.cards.contains { $0.id == c.id } }
+    }
+
+    /// A card on its way in hides once its face flies in its place; one coming back waits hidden until it lands.
+    private func inFlight(_ c: StageCard) -> Bool {
+        guard let f = model.trashFlight, f.cards.contains(where: { $0.id == c.id }) else { return false }
+        return !f.into || faces[c.id] != nil
     }
 
     // MARK: The set, fanned out (VideoStackOverlay.tsx)
@@ -614,6 +662,7 @@ private struct EmptyDay: View {
 private struct SelectionToolbar: View {
     @Environment(AppModel.self) private var model
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
@@ -622,7 +671,10 @@ private struct SelectionToolbar: View {
                 .keyboardShortcut("s", modifiers: .command).disabled(model.selection.count < 2)
             tool("Grid", "rectangle.grid.1x2", "⌘G") { withAnimation(Motion.small) { model.grid(model.selection) } }
                 .keyboardShortcut("g", modifiers: .command)
-            tool("Delete", "trash", "⌫") { Task { await model.trash(model.selection, undoManager: undoManager) } }
+            tool("Delete", "trash", "⌫") {
+                let flies = !Motion.byKey && !reduceMotion
+                Task { await model.trash(model.selection, undoManager: undoManager, flies: flies) }
+            }
         }
         .font(Typo.ui(12.5, .medium))
         .foregroundStyle(Tok.ink)

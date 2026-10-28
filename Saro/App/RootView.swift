@@ -24,7 +24,7 @@ struct RootView: View {
                 case .knows: Color.clear
                 }
             }
-            .overlay { ToastHost() }
+            .overlayPreferenceValue(TrashFlightKey.self) { ToastHost(flying: $0) }
         }
         .background(Tok.bg)
         .tint(Tok.sage)

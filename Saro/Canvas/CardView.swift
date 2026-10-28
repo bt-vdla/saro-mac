@@ -333,7 +333,8 @@ struct MediaThumb: View {
     var body: some View {
         ZStack {
             Rectangle().fill(kind.tint.opacity(0.14))
-            if let image {
+            // The cache too, so a copy (a flight's face, drawn without running its task) has the picture from its first frame.
+            if let image = image ?? (ready ? ThumbCache.cached(url) : nil) {
                 Image(nsImage: image).resizable().scaledToFill().frame(minWidth: 0, minHeight: 0)
             } else {
                 Image(systemName: kind.symbol).font(.system(size: 22)).foregroundStyle(kind.tint)
@@ -350,6 +351,8 @@ struct MediaThumb: View {
 @MainActor
 enum ThumbCache {
     private static var cache: [URL: NSImage] = [:]
+
+    static func cached(_ url: URL?) -> NSImage? { url.flatMap { cache[$0] } }
 
     static func image(for url: URL, kind: EntryKind) async -> NSImage? {
         if let hit = cache[url] { return hit }
