@@ -52,6 +52,7 @@ enum Snapshots {
                         model.open(DeepLink.entry("gone").url)
                     }
                 }),
+                ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
             ]
             for (name, apply) in steps {
@@ -101,6 +102,43 @@ private struct FoundationGallery: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Tok.bg)
+    }
+}
+
+/// The recorder's flight out of its bar button and back, frozen at a few points of the way (the real one never sits
+/// still long enough to snapshot): the voice pill out, then back, then the moment frame out.
+private struct GrowGallery: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row(.voice, out: true)
+            row(.voice, out: false)
+            row(.moment, out: true)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Tok.bg)
+    }
+
+    private func row(_ kind: EntryKind, out: Bool) -> some View {
+        let rest = kind == .voice ? CGRect(x: 30, y: 100, width: 380, height: 98) : CGRect(x: 20, y: 16, width: 400, height: 250)
+        return HStack(spacing: 0) {
+            ForEach([0.12, 0.3, 0.6], id: \.self) { v in
+                surface(kind)
+                    .modifier(GrowFlight(v: v, from: CGRect(x: 56, y: 214, width: 68, height: 52), to: rest, outbound: out, face: .of(kind)))
+                    .offset(x: rest.minX, y: rest.minY)
+                    .frame(width: 440, height: 286, alignment: .topLeading)
+            }
+        }
+    }
+
+    @ViewBuilder private func surface(_ kind: EntryKind) -> some View {
+        if kind == .voice {
+            VoicePill(notice: nil, inSession: false, grows: true, toggle: {}, done: {}, close: {}).frame(width: 380)
+        } else {
+            Text("Getting your camera ready…").font(Typo.ui(13)).foregroundStyle(.white.opacity(0.8))
+                .frame(width: 400, height: 250)
+                .background(.black, in: .rect(cornerRadius: 28))
+                .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
+        }
     }
 }
 
