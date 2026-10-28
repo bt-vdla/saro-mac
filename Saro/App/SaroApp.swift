@@ -35,6 +35,8 @@ struct SaroApp: App {
             }
         }
         .defaultSize(width: 1320, height: 860)
+        // Always open the journal at launch: a window closed before quitting must not come back closed.
+        .restorationBehavior(.disabled)
         .windowStyle(.hiddenTitleBar)
         .commands {
             if case .success(let model) = boot {
