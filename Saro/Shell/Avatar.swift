@@ -84,8 +84,8 @@ struct ShellPanelLayer: View {
             }
         }
         .fixedSize()
-        // ponytail: the bar's height (64, its 52 pt captures in 6 pt of padding) as a constant, as ToastHost does.
-        .padding(.bottom, 72)
+        // Laid on the bar's top, so it clears the bar in one row or two.
+        .alignmentGuide(.top) { $0[.bottom] + 8 }
         .animation(panels.byKey ? nil : Motion.pick(Motion.small, reduce: reduceMotion), value: panels.panel)
     }
 

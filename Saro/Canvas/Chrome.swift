@@ -67,7 +67,7 @@ struct BottomBar: View {
         }
         .padding(6)
         .glassPanel(radius: Radius.sheet)
-        .overlay(alignment: .bottomLeading) { ShellPanelLayer() }
+        .overlay(alignment: .topLeading) { ShellPanelLayer() }
         .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: model.replay.active)
         // After the canvas takes the keys back, so a button that can't hold them (no Full Keyboard Access) leaves them there.
         .onChange(of: model.recorderKind) { old, new in if new == nil, let old { DispatchQueue.main.async { tile = old } } }
