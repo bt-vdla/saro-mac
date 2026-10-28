@@ -140,7 +140,7 @@ struct TonePicker: View {
                 return .handled
             }
             .accessibilityRepresentation {
-                Picker("How Saro talks", selection: Binding(get: { tone }, set: pick)) {
+                Picker("How Saro talks", selection: Binding(get: { tone }, set: { pick($0) })) {
                     ForEach(Tone.allCases, id: \.self) { t in Text("\(t.label): \(line(t) ?? "")").tag(t) }
                 }
                 .pickerStyle(.radioGroup)

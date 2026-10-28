@@ -227,7 +227,7 @@ struct SayItBar: View {
         switch result {
         case .changes(let changes, let note, let proposed):
             show(.changes(changes, note: note, proposed: proposed, checked: Set(changes.map(\.key))), instant: instant)
-        case .none: show(.none, instant: instant)
+        case .none: show(Result.none, instant: instant)
         case .needsYou: show(.needsYou(value.lowercased().contains("forget") ? .knows : .data), instant: instant)
         case .alreadySet(let message): show(.already(message), instant: instant)
         }
@@ -266,8 +266,13 @@ struct SayItBar: View {
         }
         text = ""
         show(.applied(keys: done, before: before), instant: instant)
+        let id = seq
         undoManager?.registerUndo(withTarget: model) { [done, before] model in
-            Task { @MainActor in for key in done.reversed() { try? await model.write(key, from: before) } }
+            Task { @MainActor in
+                for key in done.reversed() { try? await model.write(key, from: before) }
+                // ⌘Z did what the banner's Undo would, so the banner goes too.
+                if shown?.id == id { shown = nil }
+            }
         }
         undoManager?.setActionName("Change \(plural(done.count, "Setting", "Settings"))")
     }
