@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct SaroApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var boot = AppModel.boot()
 
     init() {
@@ -41,6 +42,23 @@ struct SaroApp: App {
         }
 
         SaroMenuBar()
+    }
+}
+
+/// Quitting mid-recording (⌘Q, the menu bar, logout) stops the turn first: AVFoundation writes the open movie fragment,
+/// up to the last 2 s or all of a short turn, only when recording stops.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let capture = CaptureController.shared
+        guard let owner = capture.owner else { return .terminateNow }
+        capture.finish(owner)
+        Task {
+            // ponytail: polls until the turn is saved and the camera is off; capped so a file that never finishes can't block quitting.
+            let deadline = ContinuousClock.now + .seconds(10)
+            while capture.owner != nil, .now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 }
 
