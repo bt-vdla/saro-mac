@@ -104,6 +104,7 @@ struct KnowledgeGraphView: View {
 
     @ViewBuilder private func stage(_ size: CGSize) -> some View {
         let lit = litIDs
+        let shown = labelled(lit)
         ZStack {
             CanvasEvents(enabled: model.pane == .knows && !model.searchOpen,
                          onPan: { d in
@@ -114,15 +115,14 @@ struct KnowledgeGraphView: View {
                              userMoved = true
                              zoom(by: f, at: p)
                          })
-            Canvas { ctx, _ in
-                for e in graph.edges {
-                    guard let a = layout[e.a], let b = layout[e.b] else { continue }
-                    var path = Path()
-                    path.move(to: screen(a))
-                    path.addLine(to: screen(b))
-                    let on = lit.map { $0.contains(e.a) && $0.contains(e.b) } ?? true
-                    ctx.stroke(path, with: .color(Tok.ink.opacity(on ? (lit == nil ? 0.13 : 0.34) : 0.04)),
-                               lineWidth: 0.75 + 1.1 * log2(1 + e.weight))
+            // Each edge is its own shape so its ends move in the nodes' transaction and settle with them.
+            ZStack {
+                ForEach(graph.edges, id: \.key) { e in
+                    if let a = layout[e.a], let b = layout[e.b] {
+                        let on = lit.map { $0.contains(e.a) && $0.contains(e.b) } ?? true
+                        EdgeLine(a: screen(a), b: screen(b))
+                            .stroke(Tok.ink.opacity(on ? (lit == nil ? 0.13 : 0.34) : 0.04), lineWidth: 0.75 + 1.1 * log2(1 + e.weight))
+                    }
                 }
             }
             .allowsHitTesting(false)
@@ -130,6 +130,7 @@ struct KnowledgeGraphView: View {
             ForEach(graph.nodes) { node in
                 if let p = layout[node.id] {
                     NodeDot(node: node, selected: selected == node.id, dimmed: !(lit?.contains(node.id) ?? true) || !matches(node),
+                            labelScale: max(1, NodeDot.labelFloor / camera.zoom), labelled: shown.contains(node.id),
                             onHover: { hovered = $0 ? node.id : (hovered == node.id ? nil : hovered) },
                             onTap: { select(selected == node.id ? nil : node.id) })
                         .scaleEffect(camera.zoom)
@@ -173,6 +174,25 @@ struct KnowledgeGraphView: View {
         return Set(graph.neighbours(of: id).map(\.node.id) + [id])
     }
 
+    /// The labels drawn, each at its readable size: the hovered or selected node first, then its neighbours, then the
+    /// busiest, leaving out one that would overlap a label already placed. Hovering a node brings its label back.
+    // ponytail: pairwise rectangle test, O(n²) a render; fine at 80 nodes.
+    private func labelled(_ lit: Set<String>?) -> Set<String> {
+        let scale = max(camera.zoom, NodeDot.labelFloor)
+        let rank = { (n: KnowledgeGraph.Node) in n.id == (hovered ?? selected) ? 0 : lit?.contains(n.id) == true ? 1 : 2 }
+        var placed: [CGRect] = []
+        var out = Set<String>()
+        for n in (0...2).flatMap({ r in graph.nodes.filter { rank($0) == r } }) {
+            guard let p = layout[n.id] else { continue }
+            let c = screen(p), w = NodeDot.labelWidth(n) * scale
+            let r = CGRect(x: c.x - w / 2, y: c.y + (NodeDot.diameter(n) / 2 + 5) * camera.zoom, width: w, height: NodeDot.labelHeight * scale)
+            guard !placed.contains(where: { $0.intersects(r) }) else { continue }
+            placed.append(r)
+            out.insert(n.id)
+        }
+        return out
+    }
+
     private func matches(_ node: KnowledgeGraph.Node) -> Bool {
         let q = memory.query.trimmingCharacters(in: .whitespaces)
         return q.isEmpty || node.label.localizedStandardContains(q) || node.mentions.contains { $0.quote.localizedStandardContains(q) }
@@ -212,7 +232,8 @@ struct KnowledgeGraphView: View {
             let ids = Set(g.nodes.map(\.id))
             g.edges.removeAll { !ids.contains($0.a) || !ids.contains($0.b) }
             let boxes = Dictionary(uniqueKeysWithValues: g.nodes.map { n in
-                (n.id, SIMD2(Double(max(NodeDot.diameter(n), NodeDot.labelWidth(n))) / 2 + 8, Double(NodeDot.diameter(n) + 30) / 2 + 4) / Double(Self.unit))
+                (n.id, SIMD2(Double(max(NodeDot.diameter(n), NodeDot.labelWidth(n))) / 2 + 8,
+                             Double(NodeDot.diameter(n) + 10 + 2 * NodeDot.labelHeight) / 2 + 4) / Double(Self.unit))
             })
             return (g, g.layout(from: start, extents: boxes))
         }.value
@@ -260,18 +281,25 @@ extension KnowledgeGraph.Node.Kind {
     }
 }
 
-/// One node: a disc sized by mentions with its label under it.
+/// One node: a disc sized by mentions with its label under it. The disc is the view's centre, where its edges meet.
 struct NodeDot: View {
     let node: KnowledgeGraph.Node
     let selected: Bool
     let dimmed: Bool
+    /// Over the camera's zoom, so a label far out stays readable.
+    let labelScale: CGFloat
+    let labelled: Bool
     let onHover: (Bool) -> Void
     let onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hover = false
 
     private var diameter: CGFloat { Self.diameter(node) }
     private var label: String { MemoryList.clip(node.label, 24) }
 
+    /// The smallest zoom a label is drawn at: Geist 11.5 there is the type scale's 10.5.
+    static let labelFloor: CGFloat = 0.92
+    nonisolated static let labelHeight: CGFloat = 20
     nonisolated static func diameter(_ n: KnowledgeGraph.Node) -> CGFloat { min(64, 14 + 9 * CGFloat(n.mentions.count).squareRoot()) }
     /// Near enough for layout: Geist at 12.5 pt averages under 7 pt a character, plus the capsule's padding.
     nonisolated static func labelWidth(_ n: KnowledgeGraph.Node) -> CGFloat { CGFloat(MemoryList.clip(n.label, 24).count) * 7 + 12 }
@@ -284,7 +312,7 @@ struct NodeDot: View {
                     .overlay(Circle().strokeBorder(Tok.rim.opacity(0.7), lineWidth: 1))
                     .frame(width: diameter, height: diameter)
                     .overlay(Circle().strokeBorder(Tok.sage.opacity(selected ? 0.7 : 0), lineWidth: 2).padding(-4))
-                    .scaleEffect(hover ? 1.08 : 1)
+                    .scaleEffect(hover && !reduceMotion ? 1.08 : 1)
                     .elevation(selected || hover ? .raise : .lift)
                 Text(label)
                     .font(Typo.ui(node.mentions.count > 2 ? 12.5 : 11.5, selected ? .semibold : .medium))
@@ -293,13 +321,16 @@ struct NodeDot: View {
                     .fixedSize()
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Tok.paper.opacity(0.75), in: .capsule)
+                    .scaleEffect(labelScale, anchor: .top)
+                    .opacity(labelled ? 1 : 0)
+                    .allowsHitTesting(labelled)
             }
-            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .opacity(dimmed ? 0.22 : 1)
         .animation(Motion.small, value: hover)
         .animation(Motion.easeOut(0.16), value: dimmed)
+        .animation(Motion.easeOut(0.16), value: labelled)
         .onHover { h in
             hover = h
             onHover(h)
@@ -308,5 +339,28 @@ struct NodeDot: View {
         .accessibilityLabel("\(node.label), \(node.kind.noun.lowercased()), \(node.mentions.count) \(node.mentions.count == 1 ? "mention" : "mentions")")
         .accessibilityHint("Shows where it comes up")
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .frame(height: diameter, alignment: .top)
     }
+}
+
+/// One edge, its ends animatable, so it settles on the same spring as the nodes it joins.
+private struct EdgeLine: Shape {
+    var a: CGPoint
+    var b: CGPoint
+
+    var animatableData: AnimatablePair<CGPoint.AnimatableData, CGPoint.AnimatableData> {
+        get { AnimatablePair(a.animatableData, b.animatableData) }
+        set { (a.animatableData, b.animatableData) = (newValue.first, newValue.second) }
+    }
+
+    func path(in _: CGRect) -> Path {
+        Path { p in
+            p.move(to: a)
+            p.addLine(to: b)
+        }
+    }
+}
+
+private extension KnowledgeGraph.Edge {
+    var key: String { "\(a)|\(b)" }
 }
