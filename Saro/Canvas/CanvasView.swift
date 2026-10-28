@@ -51,7 +51,7 @@ struct DayView: View {
             return .handled
         }
         .onPasteCommand(of: [.image, .png, .tiff, .heic, .jpeg]) { providers in model.loadStills(providers, at: nil, origin: "pasted") }
-        .onChange(of: screenID) { _, s in model.screen = s }
+        .onChange(of: screenID, initial: true) { _, s in model.screen = s }
         .onAppear { focused = true }
         .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
     }

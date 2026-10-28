@@ -51,6 +51,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("videoQuality") private var videoQuality = "720p"
     @AppStorage("tourSeen") private var tourSeen = false
+    @State private var previousScreen: ScreenID = .canvas
 
     var body: some View {
         TabView {
@@ -86,7 +87,12 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 520, height: 320)
-        .onAppear { model.screen = .settings }
+        .onAppear {
+            previousScreen = model.screen
+            model.screen = .settings
+        }
+        // Unless the main window moved on meanwhile, its screen is current again once Settings closes.
+        .onDisappear { if model.screen == .settings { model.screen = previousScreen } }
     }
 }
 
