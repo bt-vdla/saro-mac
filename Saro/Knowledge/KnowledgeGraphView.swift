@@ -250,9 +250,13 @@ struct KnowledgeGraphView: View {
         }
     }
 
+    /// After a key the panel and camera are just there. A nil animation alone isn't enough: the stage's
+    /// `.animation(value: selected)` replaces it, and only disabling animations stops that.
     private func select(_ id: String?) {
-        let keyboard = NSApp.currentEvent?.type == .keyDown
-        withAnimation(keyboard ? nil : Motion.pick(Motion.surface, reduce: reduceMotion)) {
+        let keyboard = Motion.byKey
+        var t = Transaction(animation: keyboard ? nil : Motion.pick(Motion.surface, reduce: reduceMotion))
+        t.disablesAnimations = keyboard
+        withTransaction(t) {
             selected = id
             if !userMoved { fit() }
         }
