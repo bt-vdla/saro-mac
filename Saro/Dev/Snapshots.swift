@@ -21,7 +21,6 @@ enum Snapshots {
                         backing: .buffered, defer: false)
         p.contentView = NSHostingView(rootView: RootView().environment(model))
         panel = p
-        Task { await MemoryDemo.seed(model) }
         let dark = UserDefaults.standard.bool(forKey: "SaroSnapshotDark")
         p.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
@@ -104,14 +103,22 @@ enum Snapshots {
                         await model.reload()
                     }
                 }),
+                // Three weeks of synthetic history, seeded here so the steps before see only the demo day.
                 ("knows", {
                     UserDefaults.standard.set("graph", forKey: "saro.knows.mode")
-                    model.pane = .knows
+                    Task {
+                        await MemoryDemo.seed(model)
+                        model.pane = .knows
+                    }
                 }),
                 ("knows-node", { NotificationCenter.default.post(name: pickNode, object: nil) }),
                 ("knows-list", { UserDefaults.standard.set("list", forKey: "saro.knows.mode") }),
                 ("knows-why", { NotificationCenter.default.post(name: showWhy, object: nil) }),
                 ("knows-search", { model.memory.query = "anxious" }),
+                ("knows-deleted", {
+                    model.memory.query = ""
+                    if let m = model.memory.memories.first(where: { $0.group == .people }) { model.memory.delete(m, undoManager: nil) }
+                }),
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
