@@ -149,14 +149,6 @@ extension AppModel {
     }
 }
 
-struct Guide: Equatable {
-    enum Axis { case x, y }
-    let axis: Axis
-    let at: CGFloat
-    let from: CGFloat
-    let to: CGFloat
-}
-
 /// The camera: screen = world × zoom + pan.
 struct Camera: Equatable {
     var zoom: CGFloat = 1
@@ -189,8 +181,7 @@ struct DayStage: View {
     @State private var marquee: CGRect?
     @State private var marqueeBase: Set<String> = []
     @State private var drag: (ids: Set<String>, offset: CGSize, tilt: Double)?
-    /// Snap guides while dragging, in world units: vertical lines at x (`axis == .x`) or horizontal at y.
-    @State private var guides: [Guide] = []
+    @State private var grid: DragGrid?
     @State private var dropTargeted = false
     @State private var shownID: String?
     @State private var flightFrom: (rect: CGRect, radius: CGFloat) = (.zero, 28)
@@ -211,8 +202,8 @@ struct DayStage: View {
     var body: some View {
         ZStack {
             background
+            if let grid { DragGridLayer(grid: grid, camera: camera) }
             ForEach(cards) { card($0) }
-            if !guides.isEmpty { guideLayer }
             if let sid = model.openStackID, isCurrent { fan(sid) }
             if let m = marquee {
                 RoundedRectangle(cornerRadius: 4).fill(Tok.ink.opacity(0.05))
@@ -227,6 +218,11 @@ struct DayStage: View {
             return true
         }
         .onChange(of: model.openEntryID) { _, id in if isCurrent { morph(to: id) } }
+        #if DOGFOOD
+        .onReceive(NotificationCenter.default.publisher(for: Snapshots.hold)) { _ in
+            if isCurrent, let c = cards.first { hold(c, translation: CGSize(width: 37, height: 23), velocity: .zero) }
+        }
+        #endif
         // Until the user pans, zooms or drags, the day stays framed as its cards arrive and settle.
         .onChange(of: cards.map { "\($0.id)\($0.center)" }) { _, _ in if !userMoved { camera = Camera.fit(cards, in: size) } }
         .onChange(of: model.camera) { _, cmd in
@@ -349,27 +345,29 @@ struct DayStage: View {
         }
     }
 
-    /// 4 pt of slop, then 1:1 tracking with a lift and a velocity tilt; a throw glides on (velocity × 0.12) and settles
-    /// on the release spring (useCardGesture.ts).
+    /// 4 pt of slop, then 1:1 tracking with a lift and a velocity tilt; a throw glides on (velocity × 0.12), lands on a
+    /// guide when one is close to where it would stop, and settles on the release spring (useCardGesture.ts).
     private func dragGesture(_ c: StageCard) -> some Gesture {
         DragGesture(minimumDistance: 4)
-            .onChanged { v in
-                userMoved = true
-                let ids = drag?.ids ?? memberIDs(model.selection.isDisjoint(with: c.ids) ? c.ids : model.selection.union(c.ids))
-                let tilt = (v.velocity.width * 0.0012).clamped(to: -3...3)
-                let (offset, found) = snap(ids, translation: v.translation)
-                if found.isEmpty != guides.isEmpty || found != guides { withAnimation(.easeOut(duration: 0.08)) { guides = found } }
-                drag = (ids, offset, tilt)
-            }
+            .onChanged { v in hold(c, translation: v.translation, velocity: v.velocity) }
             .onEnded { v in
-                guard let d = drag else { return }
-                let snapped = !guides.isEmpty
-                withAnimation(.easeOut(duration: 0.15)) { guides = [] }
+                guard let d = drag, var g = grid else { return }
                 let speed = hypot(v.velocity.width, v.velocity.height)
-                let glide = speed > 20 && !reduceMotion && !snapped
-                    ? CGSize(width: (v.velocity.width * 0.12).clamped(to: -360...360), height: (v.velocity.height * 0.12).clamped(to: -360...360))
-                    : .zero
-                let total = CGSize(width: d.offset.width + glide.width, height: d.offset.height + glide.height)
+                var total = d.offset
+                if speed > 20 && !reduceMotion {
+                    let glide = CGSize(width: (v.velocity.width * 0.12).clamped(to: -360...360), height: (v.velocity.height * 0.12).clamped(to: -360...360))
+                    let s = snaps(g.rect.offsetBy(dx: glide.width / camera.zoom, dy: glide.height / camera.zoom), g)
+                    total.width += glide.width + (s.x?.delta ?? 0) * camera.zoom
+                    total.height += glide.height + (s.y?.delta ?? 0) * camera.zoom
+                }
+                // ponytail: the grid retracts where the card was let go; the web's follows the glide until it lands.
+                let ended = Date.now
+                g.ended = ended
+                grid = g
+                Task {
+                    try? await Task.sleep(for: .seconds(DragGridLayer.retract))
+                    if grid?.ended == ended { grid = nil }
+                }
                 withAnimation(reduceMotion ? nil : speed > 1000 ? Motion.release : Motion.lift) {
                     model.move(d.ids, by: CGSize(width: total.width / camera.zoom, height: total.height / camera.zoom))
                     drag = nil
@@ -377,45 +375,31 @@ struct DayStage: View {
             }
     }
 
-    /// Snaps the moving cards' left/centre/right (and top/middle/bottom) to the other cards' within 6 screen points
-    /// (cardGeometry.ts). ⌥ turns snapping off. Returns the snapped screen offset and the guides to draw.
-    private func snap(_ ids: Set<String>, translation t: CGSize) -> (CGSize, [Guide]) {
-        let moving = cards.filter { !$0.ids.isDisjoint(with: ids) }.map { CGRect(center: $0.center, size: $0.size) }
-        guard !NSEvent.modifierFlags.contains(.option), var m = CanvasMath.bounds(moving) else { return (t, []) }
-        m = m.offsetBy(dx: t.width / camera.zoom, dy: t.height / camera.zoom)
-        let others = cards.filter { $0.ids.isDisjoint(with: ids) }.map { CGRect(center: $0.center, size: $0.size) }
-        let reach = 6 / camera.zoom
-        let best = { (mine: [CGFloat], theirs: [(CGFloat, CGRect)]) in CanvasMath.snap(mine, to: theirs, reach: reach) }
-        var out = t
-        var found: [Guide] = []
-        if let x = best([m.minX, m.midX, m.maxX], others.flatMap { r in [(r.minX, r), (r.midX, r), (r.maxX, r)] }) {
-            out.width += x.delta * camera.zoom
-            let span = x.rects.reduce(m.offsetBy(dx: x.delta, dy: 0)) { $0.union($1) }
-            found.append(Guide(axis: .x, at: x.at, from: span.minY - 12, to: span.maxY + 12))
+    /// The first move lifts the card(s) and draws the grid out from them; every move snaps.
+    private func hold(_ c: StageCard, translation t: CGSize, velocity: CGSize) {
+        userMoved = true
+        let ids = drag?.ids ?? memberIDs(model.selection.isDisjoint(with: c.ids) ? c.ids : model.selection.union(c.ids))
+        guard let box = CanvasMath.bounds(cards.filter { !$0.ids.isDisjoint(with: ids) }.map { CGRect(center: $0.center, size: $0.size) }) else { return }
+        if drag == nil {
+            grid = DragGrid(rect: box, others: cards.filter { $0.ids.isDisjoint(with: ids) }.map { CGRect(center: $0.center, size: $0.size) },
+                            zoom: camera.zoom)
         }
-        if let y = best([m.minY, m.midY, m.maxY], others.flatMap { r in [(r.minY, r), (r.midY, r), (r.maxY, r)] }) {
-            out.height += y.delta * camera.zoom
-            let span = y.rects.reduce(m.offsetBy(dx: 0, dy: y.delta)) { $0.union($1) }
-            found.append(Guide(axis: .y, at: y.at, from: span.minX - 12, to: span.maxX + 12))
-        }
-        return (out, found)
+        guard var g = grid else { return }
+        let m = box.offsetBy(dx: t.width / camera.zoom, dy: t.height / camera.zoom)
+        let s = snaps(m, g)
+        g.move(to: m.offsetBy(dx: s.x?.delta ?? 0, dy: s.y?.delta ?? 0), x: s.x, y: s.y)
+        grid = g
+        drag = (ids, CGSize(width: t.width + (s.x?.delta ?? 0) * camera.zoom, height: t.height + (s.y?.delta ?? 0) * camera.zoom),
+                (velocity.width * 0.0012).clamped(to: -3...3))
     }
 
-    /// Hairline guides with 2 pt dots at their ends, in the accent (moment green by day, echo violet at night).
-    private var guideLayer: some View {
-        Canvas { ctx, _ in
-            for g in guides {
-                var path = Path()
-                let a = g.axis == .x ? screen(CGPoint(x: g.at, y: g.from)) : screen(CGPoint(x: g.from, y: g.at))
-                let b = g.axis == .x ? screen(CGPoint(x: g.at, y: g.to)) : screen(CGPoint(x: g.to, y: g.at))
-                path.move(to: a)
-                path.addLine(to: b)
-                ctx.stroke(path, with: .color(Tok.guide.opacity(0.42)), lineWidth: 1)
-                for p in [a, b] { ctx.fill(Path(ellipseIn: CGRect(x: p.x - 2, y: p.y - 2, width: 4, height: 4)), with: .color(Tok.guide.opacity(0.55))) }
-            }
-        }
-        .allowsHitTesting(false)
-        .transition(.opacity)
+    /// Where a moving box snaps (cardGeometry.ts): its left/centre/right and top/middle/bottom to the other cards' within
+    /// 6 screen points, else an edge to the rhythm within 3. ⌥ turns snapping off.
+    private func snaps(_ m: CGRect, _ g: DragGrid) -> (x: CanvasMath.Snap?, y: CanvasMath.Snap?) {
+        guard !NSEvent.modifierFlags.contains(.option) else { return (nil, nil) }
+        let reach = 6 / camera.zoom, rhythm = 3 / camera.zoom
+        return (CanvasMath.snap([m.minX, m.midX, m.maxX], cards: g.cardX, reach: reach, axis: 0, level: g.level, rhythmReach: rhythm),
+                CanvasMath.snap([m.minY, m.midY, m.maxY], cards: g.cardY, reach: reach, axis: 1, level: g.level, rhythmReach: rhythm))
     }
 
     /// Every entry in the stacks the ids belong to, so a stack always moves as one.

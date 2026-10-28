@@ -8,6 +8,8 @@ import SwiftUI
 @MainActor
 enum Snapshots {
     private static var panel: NSPanel?
+    /// Holds the day's first card a little off its place, so the drag grid can be seen.
+    static let hold = Notification.Name("SaroSnapshotHold")
 
     static func runIfRequested(_ model: AppModel) {
         guard let dir = UserDefaults.standard.string(forKey: "SaroSnapshot") else { return }
@@ -32,6 +34,11 @@ enum Snapshots {
                     let items = model.replay.items
                     model.replay.scrub(to: items.isEmpty ? 12 : items[items.count / 2].hour)
                     model.replay.tip = .key
+                }),
+                ("held", {
+                    model.replay.exit(animated: false)
+                    model.openVoiceID = nil
+                    NotificationCenter.default.post(name: hold, object: nil)
                 }),
             ]
             for (name, apply) in steps {

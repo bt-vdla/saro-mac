@@ -28,6 +28,7 @@
 		8E06AB4E67A051E145F81371 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21905B32B376B19FAC8A09BF /* CardView.swift */; };
 		9237C41C4BABB8103283DA39 /* CapturePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D36681741638F4D012EDD1D /* CapturePanel.swift */; };
 		998518E03C5B843EC37619A2 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = D00D018E3D4830CC2D505F23 /* Fonts */; };
+		9A45F0112D7F08B4097A3F8D /* DragGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B261B10F5EF57AD7F371C9 /* DragGrid.swift */; };
 		A0DCBA6C28409E565B610BCC /* DevNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 865129438C25D44EE9A11CEF /* DevNotes.swift */; };
 		AA48556D55DC05CD0C350338 /* SearchPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DAB745ABA4CE416F4668E4 /* SearchPalette.swift */; };
 		B4BF028C44531D06A70B991D /* CanvasEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB9C112B5827AA481D05A87 /* CanvasEvents.swift */; };
@@ -64,6 +65,7 @@
 		6E1AD23BC016AD6E604A412F /* SafetyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyCardView.swift; sourceTree = "<group>"; };
 		7DCF4C77F0FB18F2BD6A95CF /* Snapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshots.swift; sourceTree = "<group>"; };
 		81644A536600F8AFD6FFD647 /* LitGround.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LitGround.swift; sourceTree = "<group>"; };
+		81B261B10F5EF57AD7F371C9 /* DragGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragGrid.swift; sourceTree = "<group>"; };
 		865129438C25D44EE9A11CEF /* DevNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevNotes.swift; sourceTree = "<group>"; };
 		89D651C6DDCA649B5F35280A /* Chrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome.swift; sourceTree = "<group>"; };
 		8B48C1E33BD8AEE5627768EA /* Saro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Saro.entitlements; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 				21905B32B376B19FAC8A09BF /* CardView.swift */,
 				89D651C6DDCA649B5F35280A /* Chrome.swift */,
 				C4C7DED65EDFFA345D4E774C /* DayReplay.swift */,
+				81B261B10F5EF57AD7F371C9 /* DragGrid.swift */,
 				ADBF8B47F2A9ECF52885DCB7 /* VoiceCard.swift */,
 			);
 			path = Canvas;
@@ -354,6 +357,7 @@
 				BBAC725F47B28896CDA6FB40 /* DevCommands.swift in Sources */,
 				A0DCBA6C28409E565B610BCC /* DevNotes.swift in Sources */,
 				ED15910DB783DAE798B5D808 /* DevNotesPanel.swift in Sources */,
+				9A45F0112D7F08B4097A3F8D /* DragGrid.swift in Sources */,
 				FEE6177C88287A5AC5AF2C46 /* HotKey.swift in Sources */,
 				64D8C0E8D73C1867E9785C56 /* LetterView.swift in Sources */,
 				7D727562FB35D57EBD055DA0 /* LitGround.metal in Sources */,
