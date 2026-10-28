@@ -8,9 +8,9 @@ import UniformTypeIdentifiers
 
 /// `-SaroScenario <dir>` (with -SaroDemo, in an unsandboxed build) drives the model as a user would: write, edit mid-reading,
 /// hold and unhold, trash and undo, restore, a still and its note, recorded turns, try again, stacks, yesterday and back,
-/// midnight, export. After each step it checks
-/// the ledger and the model, rewrites `<dir>/report.json` (`[{step, ok, details}]`), and quits at the end. It closes the
-/// main window, so launch with `-ApplePersistenceIgnoreState YES` or the next launch restores without one.
+/// midnight, export. After each step it checks the ledger and the model and rewrites `<dir>/report.json`
+/// (`[{step, ok, details}]`); it quits at the end. It makes the writing editor's calls without opening it: a live editor
+/// would write its own, older text back when it closed.
 @MainActor
 final class Scenarios {
     struct Step: Encodable {
@@ -22,8 +22,6 @@ final class Scenarios {
     static func runIfRequested(_ model: AppModel) {
         guard let dir = UserDefaults.standard.string(forKey: "SaroScenario"), model.isDemo else { return }
         let run = Scenarios(model: model, out: URL(fileURLWithPath: dir))
-        // No editor or player on screen: the run stands in for them, and a live editor would write its own stale text back.
-        for w in NSApp.windows where w.isVisible && !(w is NSPanel) { w.close() }
         Task {
             // ponytail: one watchdog for the whole run; a hung step reports as a timeout rather than per step.
             try? await Task.sleep(for: .seconds(UserDefaults.standard.double(forKey: "SaroScenarioTimeout").nonZero ?? 1200))
@@ -93,7 +91,6 @@ final class Scenarios {
             record("write-page", ["newWriting returned nil"])
             return nil
         }
-        model.openEntryID = e.id
         await type(e.id, Self.page1)
         await close(e.id)
         let caught = await wait(30, every: .milliseconds(20)) { [ledger] in
@@ -106,7 +103,6 @@ final class Scenarios {
 
     private func editWhileProcessing(_ id: String) async {
         var notes: [String] = []
-        model.openEntryID = id
         await type(id, Self.page2)
         await close(id)
         await settle(&notes)
@@ -115,7 +111,6 @@ final class Scenarios {
 
     private func editAgain(_ id: String) async {
         var notes: [String] = []
-        model.openEntryID = id
         await type(id, Self.page3)
         // A second autosave with the same text, as the editor's 800 ms debounce does when typing pauses twice.
         await type(id, Self.page3)
@@ -156,10 +151,8 @@ final class Scenarios {
     private func trashWhileQueued() async {
         var notes: [String] = []
         guard let a = await model.newWriting(), let b = await model.newWriting() else { return record("trash-while-queued", ["newWriting failed"]) }
-        model.openEntryID = a.id
         await type(a.id, "Long walk to the market for mangoes. The vendor remembered my name.")
         await close(a.id)
-        model.openEntryID = b.id
         await type(b.id, "Fixed the wobbly shelf in the hallway with a folded coaster.")
         await close(b.id)
         let undo = UndoManager()
@@ -180,7 +173,6 @@ final class Scenarios {
         var notes: [String] = []
         guard let e = await model.newWriting() else { return record("restore-from-trash", ["newWriting failed"]) }
         let text = "Repotted the basil and the mint. The mint is already taking over."
-        model.openEntryID = e.id
         await type(e.id, text)
         await close(e.id)
         // Trashed before its pass runs, then restored from the Trash pane.
@@ -207,7 +199,6 @@ final class Scenarios {
             record("hold", ["newWriting failed"])
             return nil
         }
-        model.openEntryID = e.id
         await type(e.id, Self.held)
         await close(e.id)
         await settle(&notes)
@@ -240,7 +231,6 @@ final class Scenarios {
     private func unholdByEditing(_ id: String) async {
         var notes: [String] = []
         let text = "Rough week at the studio, but the new kiln finally fired evenly."
-        model.openEntryID = id
         await type(id, text)
         await close(id)
         await settle(&notes)
@@ -254,12 +244,10 @@ final class Scenarios {
     private func emptyHeldPage() async {
         var notes: [String] = []
         guard let e = await model.newWriting() else { return record("empty-held-page", ["newWriting failed"]) }
-        model.openEntryID = e.id
         await type(e.id, Self.held)
         await close(e.id)
         await settle(&notes)
         var problems = model.isDayHeld ? [] : ["the held page didn't hold the day"]
-        model.openEntryID = e.id
         await type(e.id, "")
         await close(e.id)
         await settle(&notes)
@@ -387,7 +375,6 @@ final class Scenarios {
     private func emptyPage() async {
         var notes: [String] = []
         guard let e = await model.newWriting() else { return record("empty-page", ["newWriting failed"]) }
-        model.openEntryID = e.id
         await close(e.id)
         await settle(&notes)
         var problems = await check()
@@ -409,7 +396,6 @@ final class Scenarios {
         if model.isToday { problems.append("isToday on yesterday") }
         // Writing on a past day backdates (DR-10).
         if let e = await model.newWriting() {
-            model.openEntryID = e.id
             await type(e.id, "Backfilled: the plumber came at nine and fixed the kitchen tap.")
             await close(e.id)
             if let row = try? await ledger.entry(e.id), row.localDay != yesterday || !row.backdated {
@@ -511,7 +497,7 @@ final class Scenarios {
 
     // MARK: The editor's calls
 
-    /// What the writing editor's autosave does.
+    /// What the writing editor's autosave does, for a page the run treats as open.
     private func type(_ id: String, _ text: String) async {
         let e = try? await ledger.entry(id)
         try? await ledger.updateEntryText(id: id, body: text, titleUser: e?.titleUser)
@@ -520,7 +506,6 @@ final class Scenarios {
 
     /// What closing the writing editor does.
     private func close(_ id: String) async {
-        model.openEntryID = nil
         if (try? await ledger.entry(id))?.body?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
             try? await ledger.discardIfEmpty(id)
         }
