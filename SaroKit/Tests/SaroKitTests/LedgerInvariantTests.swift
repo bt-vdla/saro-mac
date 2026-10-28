@@ -219,6 +219,29 @@ private func fillEveryTable(_ l: Ledger) async throws -> Entry {
     #expect(try await count(l, "card_layout") == 3)
 }
 
+@Test func cardSizeMigrationKeepsPlacesAndStoresSizes() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "saro-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let db = try SQLite(path: root.appending(path: "saro.sqlite").path)
+    let before = try #require(Schema.migrations.firstIndex(of: Schema.cardSize))
+    for (i, sql) in Schema.migrations.prefix(before).enumerated() {
+        try db.exec(sql)
+        try db.exec("PRAGMA user_version = \(i + 1)")
+    }
+    let now = Date.now.iso
+    try db.run("INSERT INTO entry (id, kind, captured_at, tz_id, local_day, updated_at) VALUES ('e1','moment',?,'UTC','2026-10-28',?)", [.text(now), .text(now)])
+    try db.run("INSERT INTO card_layout (entry_id, x, y, z, user_placed, updated_at) VALUES ('e1', 12.5, -4, 2, 1, ?)", [.text(now)])
+
+    let l = try Ledger(rootURL: root)
+    #expect(try await l.schemaVersion() == Schema.migrations.count)
+    #expect(try await l.layouts(day: "2026-10-28") == ["e1": CardLayout(entryId: "e1", x: 12.5, y: -4, z: 2, userPlaced: true)])
+    try await l.setLayouts([CardLayout(entryId: "e1", x: 1, y: 2, w: 512.5, h: nil)])
+    #expect(try await l.layouts(day: "2026-10-28")["e1"] == CardLayout(entryId: "e1", x: 1, y: 2, w: 512.5))
+    try await l.setLayouts([CardLayout(entryId: "e1", x: 1, y: 2, w: 300, h: 410)])
+    #expect(try await Ledger(rootURL: root).layouts(day: "2026-10-28")["e1"] == CardLayout(entryId: "e1", x: 1, y: 2, w: 300, h: 410))
+    await #expect(throws: (any Error).self) { try await l.setLayouts([CardLayout(entryId: "e1", x: 1, y: 2, w: .nan)]) }
+}
+
 @Test func nonFinitePositionsAreRefusedSoExportCanRun() async throws {
     let l = try tempLedger()
     let a = try await page(l, "Lamp by the window."), b = try await page(l, "Tea gone cold.")
