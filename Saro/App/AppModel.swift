@@ -362,21 +362,6 @@ final class AppModel {
         go(to: day, animation: PrefsStore.shared.reduceMotionEffective ? Motion.fade : Motion.surface)
     }
 
-    /// Adds photos chosen in an open panel as stills on the day on screen.
-    func pickStill() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = true
-        panel.message = "Choose photos to keep as stills. Location data is removed."
-        guard panel.runModal() == .OK else { return }
-        let urls = panel.urls
-        Task {
-            for url in urls {
-                if let data = try? Data(contentsOf: url) { await importStill(data, origin: "picked", at: nil) }
-            }
-        }
-    }
-
     func goToday() { go(to: LocalDay.today()) }
     func goPrevious() { go(to: LocalDay.adding(-1, to: day)) }
     func goNext() {
@@ -388,8 +373,11 @@ final class AppModel {
 
     /// Creates the media and entry rows (state `recording`) and returns where the turn's file goes:
     /// `Media/<local_day>/<session>/part-<n>.mov` for moments, `Media/<local_day>/voice/<entry>.mov` for voice notes.
-    /// `day` defaults to the day on screen (a past day backdates); the floating panel passes today.
-    func beginTurn(kind: EntryKind, sessionId: String, turn: Int, day: String? = nil) async throws -> TurnTicket {
+    /// `day` defaults to the day on screen (a past day backdates); the floating panel passes today. The question the part
+    /// answers is kept with it as its prompt row.
+    func beginTurn(kind: EntryKind, sessionId: String, turn: Int, day: String? = nil, prompt: String = "", generator: String = "curated",
+                   aiRunId: String? = nil) async throws -> TurnTicket {
+        Task { await Self.askForSpeechOnce() }
         let entry = Entry(kind: kind, sessionId: sessionId, turnNumber: turn, localDay: day ?? self.day, processingStatus: ProcessingStatus.recording)
         let rel = kind == .moment ? "\(entry.localDay)/\(sessionId)/part-\(turn).mov" : "\(entry.localDay)/voice/\(entry.id).mov"
         let asset = MediaAsset(fileName: rel, kind: kind == .moment ? .video : .audio, origin: "recorded")
@@ -399,23 +387,22 @@ final class AppModel {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await ledger.insertMedia(asset)
         try await ledger.insertEntry(e)
+        if !prompt.isEmpty {
+            try? await ledger.insertTurn(ReflectionTurn(kind: .prompt, question: prompt, generator: generator, localDay: e.localDay, entryId: e.id,
+                                                        sessionId: sessionId, turnNumber: turn, aiRunId: aiRunId))
+        }
         return TurnTicket(entryId: e.id, mediaId: asset.id, url: url)
     }
 
-    /// Marks the turn's file ready (or failed) and starts processing it.
-    func finishTurn(_ ticket: TurnTicket, durationMs: Int, error: Error?) async {
+    /// Marks the turn's file ready (or failed) and, once kept, starts processing it.
+    func finishTurn(_ ticket: TurnTicket, durationMs: Int, error: Error?, process kept: Bool = true) async {
         let bytes = (try? ticket.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
         let exists = FileManager.default.fileExists(atPath: ticket.url.path)
         try? await ledger.updateMedia(id: ticket.mediaId, state: exists ? "ready" : "failed", durationMs: durationMs, bytes: bytes)
         try? await ledger.setProcessingStatus(id: ticket.entryId, exists ? ProcessingStatus.pending : ProcessingStatus.failed)
         if let error, !exists { show(Toast("That recording couldn't be saved: \(error.localizedDescription)", style: .error)) }
         await reload()
-        guard exists else { return }
-        // Don't hold the recorder (and the camera) open while the Speech prompt waits for an answer.
-        Task {
-            await Self.askForSpeechOnce()
-            process(ticket.entryId)
-        }
+        if exists, kept { process(ticket.entryId) }
     }
 
     /// A new, empty piece of writing on the current day.
@@ -472,6 +459,7 @@ final class AppModel {
                     current = id
                     if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
                     await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
+                    try? await ledger.dropFollowUps(heldFrom: id)
                     await memory.learn(entryId: id)
                 }
                 current = nil
@@ -753,46 +741,6 @@ final class AppModel {
     private func restored(_ ids: [String]) async {
         await reload()
         for id in ids { process(id) }
-    }
-
-    // MARK: Stills
-
-    /// Saves a dropped or pasted image as HEIC, at most 4096 px (FR-CAP-07), with no metadata but its orientation (DR-11:
-    /// stills lose GPS).
-    func importStill(_ data: Data, origin: String, at world: CGPoint?) async {
-        var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.pending)
-        let asset = MediaAsset(fileName: "\(entry.localDay)/stills/\(entry.id).heic", kind: .image, origin: origin, state: "ready")
-        entry.mediaId = asset.id
-        let url = ledger.url(for: asset)
-        do {
-            // Off the main actor: the HEIC encoder's setup and a large photo's encode stall the UI (a main-thread runtime issue).
-            guard try await Task.detached(operation: { try Self.writeHEIC(data, to: url) }).value else {
-                show(Toast("That file isn't an image Saro can read", style: .error))
-                return
-            }
-            try await ledger.insertMedia(asset)
-            try await ledger.insertEntry(entry)
-            if let world {
-                try await ledger.setLayouts([CardLayout(entryId: entry.id, x: world.x, y: world.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, userPlaced: true)])
-            }
-            await reload()
-            process(entry.id)
-            show(Toast("Still saved to \(DayFormat.sidebar(entry.localDay))"))
-        } catch {
-            show(Toast("Couldn't save the still: \(error.localizedDescription)", style: .error))
-        }
-    }
-
-    /// False when `data` isn't an image ImageIO can read.
-    private nonisolated static func writeHEIC(_ data: Data, to url: URL) throws -> Bool {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = StillVision.keepable(src) else { return false }
-        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
-        let orientation = props?[kCGImagePropertyOrientation] ?? 1
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.heic" as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
-        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85, kCGImagePropertyOrientation: orientation] as CFDictionary)
-        guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
-        return true
     }
 
     // MARK: Toasts

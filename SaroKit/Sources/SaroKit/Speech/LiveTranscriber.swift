@@ -8,6 +8,11 @@ public struct LiveWord: Sendable, Hashable {
     public var text: String
     /// Settled; a volatile word may still be revised.
     public var final: Bool
+
+    public init(text: String, final: Bool) {
+        self.text = text
+        self.final = final
+    }
 }
 
 /// Live captions (FR-CAP-05): SpeechAnalyzer's volatile results over the capture session's own audio buffers, on this

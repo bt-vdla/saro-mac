@@ -27,6 +27,11 @@ extension Ledger {
         for f in files { try? FileManager.default.removeItem(at: f) }
     }
 
+    /// A question left unanswered goes with nothing kept of it: Another question swaps it, and closing the page lets it go.
+    public func dropUnanswered(turnId: String) throws {
+        try db.run("DELETE FROM reflection_turn WHERE id=? AND answer IS NULL", [.text(turnId)])
+    }
+
     /// When the entry's row last changed, for the reading page's "Edited 4:20 PM".
     // ponytail: updated_at also moves when a pass re-reads the entry; an edited_at column if that misleads.
     public func updatedAt(entryId: String) throws -> Date? {
@@ -41,10 +46,11 @@ extension Ledger {
               AND rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id=?)
             """, [.text(entryId), .text(entryId)])
         guard !held.isEmpty else { return }
-        let runs = "SELECT ai_run_id FROM ai_run_input WHERE entry_id=?"
+        // Only capture's own questions: the day's question is the reflection pipeline's to keep or drop.
+        let derived = "kind IN ('prompt','reflect_deeper','reflect_further') AND ai_run_id IN (SELECT ai_run_id FROM ai_run_input WHERE entry_id=?)"
         try db.transaction {
-            try db.run("DELETE FROM reflection_turn WHERE answer IS NULL AND ai_run_id IN (\(runs))", [.text(entryId)])
-            try db.run("UPDATE reflection_turn SET question='', updated_at=? WHERE ai_run_id IN (\(runs))", [.text(Date.now.iso), .text(entryId)])
+            try db.run("DELETE FROM reflection_turn WHERE answer IS NULL AND \(derived)", [.text(entryId)])
+            try db.run("UPDATE reflection_turn SET question='', updated_at=? WHERE \(derived)", [.text(Date.now.iso), .text(entryId)])
         }
     }
 }

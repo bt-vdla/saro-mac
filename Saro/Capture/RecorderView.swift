@@ -5,7 +5,8 @@ import SwiftUI
 /// The recording ritual from the web build (VideoReflectionScreen, CountdownOverlay, VoiceEchoOverlay).
 /// In the window a moment records in a large frame over the dimmed, blurred canvas and a voice note in a night pill
 /// pinned to the bottom; in the capture panel either one fills the panel.
-/// Space records, pauses and resumes (and skips the countdown); Return is Done; Esc closes before anything is recorded.
+/// Space records, pauses and resumes (and cancels the countdown); R is Pause & reflect; Return or K is Keep going;
+/// Return is Finish; Esc closes before anything is recorded.
 struct RecorderView: View {
     let kind: EntryKind
     var surface: CaptureController.Surface = .window
@@ -29,21 +30,30 @@ struct RecorderView: View {
     /// The pill's height, measured (its recording step until then).
     @State private var pillHeight: CGFloat = 98
     @State private var countdown: Int?
-    @State private var developing = false
+    /// The last frame, frozen and developing as Finish saves.
+    @State private var frozen: CGImage?
     /// Done in the panel, waiting for the last turn to save.
     @State private var ending = false
-    /// The countdown, the develop flash before Done closes, or that wait.
+    /// Finish in the window, saving under the frozen frame.
+    @State private var saving = false
+    @State private var finishing: FinishDialog.Step?
+    @State private var checkpoint = Checkpoint()
+    /// Where the moment frame sits in the day's space, for the frame's flight into its card.
+    @State private var frameRect: CGRect = .zero
+    /// The countdown, the develop before Finish closes, or that wait.
     @State private var ritual: Task<Void, Never>?
+    @FocusState private var recordFocused: Bool
 
     private var capture: CaptureController { .shared }
     private var compact: Bool { surface == .panel }
     private var available: Bool { capture.isAvailable(to: surface) }
     private var inSession: Bool { capture.hasSession(surface) }
+    private var developing: Bool { frozen != nil }
 
     var body: some View {
         Group {
             if compact {
-                stage(radius: 20)
+                if kind == .voice { voicePill(compact: true) } else { stage(radius: 20) }
             } else {
                 GeometryReader { geo in
                     let button = from.map { geo[$0] }
@@ -51,8 +61,8 @@ struct RecorderView: View {
                 }
             }
         }
-        .task(id: available && !ending ? kind : nil) {
-            if available, !ending { await capture.prepare(kind, for: surface, model: model) }
+        .task(id: available && !ending && !saving ? kind : nil) {
+            if available, !ending, !saving { await capture.prepare(kind, for: surface, model: model) }
         }
         .onAppear {
             appeared = true
@@ -62,6 +72,11 @@ struct RecorderView: View {
         }
         // A moment's 3-2-1 must not go on to start whatever kind replaced it.
         .onChange(of: kind) { if countdown != nil { cancelCountdown() } }
+        .onChange(of: capture.interrupted) { _, now in if now, kind == .moment { finishing = .confirm } }
+        .onChange(of: notice == nil) { _, ready in if ready { recordFocused = true } }
+        .task(id: capture.state == .recording && capture.turn == 1 && kind == .moment) {
+            if capture.state == .recording { await checkpoint.hintIfDue() }
+        }
         .onDisappear {
             ritual?.cancel()
             capture.finish(surface)
@@ -100,6 +115,7 @@ struct RecorderView: View {
             stage(radius: 28)
                 .background(RoundedRectangle(cornerRadius: 28).fill(.black).shadow(color: .black.opacity(0.24), radius: 40, y: 32))
                 .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(DayView.space)) } action: { frameRect = $0 }
                 .modifier(flight(from: button, to: CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)))
                 .padding(inset)
                 .scaleEffect(appeared || reduceMotion || button != nil ? 1 : 0.96, anchor: .bottom)
@@ -111,7 +127,7 @@ struct RecorderView: View {
     /// min(380, width − 32) wide, 8 pt above the bottom of the canvas.
     private func voicePill(_ size: CGSize, from button: CGRect?) -> some View {
         let width = max(0, min(380, size.width - 32))
-        return VoicePill(notice: notice, inSession: inSession, grows: button != nil, toggle: primary, done: done, close: close)
+        return voicePill(compact: false)
             .frame(width: width)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pillHeight = $0 }
             .modifier(flight(from: button, to: CGRect(x: (size.width - width) / 2, y: size.height - 8 - pillHeight, width: width, height: pillHeight)))
@@ -119,82 +135,133 @@ struct RecorderView: View {
             .padding(.bottom, 8)
     }
 
+    private func voicePill(compact: Bool) -> some View {
+        VoicePill(notice: notice, grows: !compact && from != nil, compact: compact, kept: keptVoice, close: { close() }, shut: shut)
+    }
+
     /// The frame's content: the live camera (or, for a voice note in the panel, the meter) under the HUD, or a state card.
     private func stage(radius: CGFloat) -> some View {
         let notice = notice
         return ZStack {
-            if kind == .moment {
-                Color.black
-                if notice == nil { CameraPreview(session: capture.engine.session) }
-            } else {
-                Night.surface
-            }
+            Color.black
+            if notice == nil { CameraPreview(session: capture.engine.session) }
+            if let frozen { DevelopedFrame(image: frozen, day: model.day).transition(.opacity) }
             if notice == nil {
                 hud
                     .environment(\.colorScheme, .dark)
-                    .opacity(developing ? 0 : 1)
-                    .animation(CaptureMotion.out(0.2), value: developing)
+                    .opacity(developing || saving ? 0 : 1)
+                    .animation(CaptureMotion.out(0.2), value: developing || saving)
             }
-            if kind == .moment, !compact { flash }
             if let notice {
                 StateCard(notice: notice, compact: compact, close: close,
-                          voiceInstead: notice.voiceInstead ? { model.recorderKind = .voice } : nil)
+                          voiceInstead: notice.voiceInstead ? { model.recorderKind = .voice } : nil,
+                          retry: notice.retry ? { capture.retry() } : nil)
+                    .transition(.opacity)
+            }
+            if let step = finishing {
+                FinishDialog(day: model.day, paused: capture.state == .paused, interrupted: capture.interrupted, keptParts: capture.hasKept,
+                             step: Binding(get: { step }, set: { finishing = $0 }), finish: finish, keepRecording: keepRecording, discard: discard)
                     .transition(.opacity)
             }
         }
         .clipShape(.rect(cornerRadius: radius))
         // The brand card fades into the camera, as the web build's loading screen does.
         .animation(CaptureMotion.out(0.6), value: notice == nil)
+        .animation(CaptureMotion.out(0.2), value: finishing == nil)
     }
 
     private var hud: some View {
-        ZStack {
-            if kind == .moment {
-                // Legibility shades: 45% from the top, half from the bottom.
-                LinearGradient(stops: [
-                    .init(color: .black.opacity(0.55), location: 0), .init(color: .black.opacity(0.15), location: 0.225),
-                    .init(color: .clear, location: 0.45), .init(color: .clear, location: 0.5),
-                    .init(color: .black.opacity(0.2), location: 0.75), .init(color: .black.opacity(0.65), location: 1),
-                ], startPoint: .top, endPoint: .bottom)
-                .allowsHitTesting(false)
-            } else {
-                LevelMeter(height: 56, color: Night.echo, live: capture.state != .paused)
-                    .opacity(capture.state == .recording ? 1 : 0.4)
-                    .animation(CaptureMotion.out(0.24), value: capture.state)
-            }
+        let dim = checkpoint.isUp && checkpoint.phase != .reflecting
+        let held = checkpoint.phase == .held
+        return ZStack {
+            // Legibility shades: 45% from the top, half from the bottom.
+            LinearGradient(stops: [
+                .init(color: .black.opacity(0.55), location: 0), .init(color: .black.opacity(0.15), location: 0.225),
+                .init(color: .clear, location: 0.45), .init(color: .clear, location: 0.5),
+                .init(color: .black.opacity(0.2), location: 0.75), .init(color: .black.opacity(0.65), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            .allowsHitTesting(false)
+            // The video dims while Saro asks.
+            Color.black.opacity(dim ? 0.4 : 0).allowsHitTesting(false).animation(CaptureMotion.out(0.3), value: dim)
             if let countdown {
                 Countdown(count: countdown)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.96)),
                                                                      removal: .opacity.combined(with: .scale(scale: 1.04))))
             }
+            if !held {
+                SaroVoice(question: checkpoint.followUp?.question ?? capture.prompt, observation: checkpoint.followUp?.observation,
+                          followUp: checkpoint.followUp != nil, dimmed: countdown != nil, orb: orbState, compact: compact,
+                          instant: checkpoint.instant)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, compact ? 56 : 80)
+                    .padding(.horizontal, 24)
+                    .transition(.opacity)
+            }
+            if !compact, inSession { captions.frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 124) }
             VStack(spacing: 0) {
-                topBar
+                topBar(dim: dim && !held)
                 Spacer(minLength: 0)
                 bottomBar
+            }
+            if held && checkpoint.safetyShown {
+                NightSafetyCard { withAnimation(CaptureMotion.out(0.3)) { checkpoint.safetyShown = false } }
+                    .padding(12)
             }
             if !compact {
                 Image("Logo").resizable().scaledToFit()
                     .frame(width: 56, height: 56)
-                    .opacity(0.8)
+                    .opacity(dim ? 0.3 : 0.8)
+                    .animation(CaptureMotion.out(0.2), value: dim)
                     .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
         }
+        .animation(CaptureMotion.out(0.3), value: held)
     }
 
-    private var topBar: some View {
+    private var orbState: SaroOrb.State {
+        if checkpoint.phase == .reflecting { return .thinking }
+        if checkpoint.talking { return .talking }
+        return capture.state == .recording ? .listening : .idle
+    }
+
+    /// The status line, the one-time hint and two lines of live words; Saro asking hides the words unless Captions always on.
+    private var captions: some View {
+        let always = PrefsStore.shared.captionsAlways
+        let asking = checkpoint.isUp && !always
+        let placeholder = checkpoint.isUp ? "Captured." : capture.live == .listening ? "Your words will appear here as you speak." : nil
+        return VStack(spacing: 8) {
+            if checkpoint.hint {
+                GlassNotice(text: "Click Pause & reflect (or press R) when you want Saro to respond.")
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+            }
+            CaptionStatus(text: capture.live.line(paused: capture.state == .paused, voice: false), connecting: capture.live == .connecting)
+            if capture.live != .unavailable {
+                LiveCaptions(words: asking ? [] : capture.partWords, placeholder: placeholder, size: frameRect.width >= 640 ? 23 : 19)
+            }
+        }
+        .padding(.horizontal, 24)
+        .animation(CaptureMotion.out(0.3), value: checkpoint.hint)
+        .allowsHitTesting(false)
+    }
+
+    private func topBar(dim: Bool) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            if !compact { DatePill() }
+            if !compact { DatePill().opacity(dim ? 0.35 : 1) }
             devicePills
             Spacer(minLength: 8)
             if inSession {
-                Button("Done", action: done)
-                    .buttonStyle(CaptureButtonStyle.glass(padding: 24, compact: compact))
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(capture.starting || developing)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
+                if capture.state != .recording || checkpoint.isUp {
+                    Button("Finish") { finishing = .confirm }
+                        .buttonStyle(CaptureButtonStyle.glass(padding: 24, compact: compact))
+                        .keyboardShortcut(checkpoint.isUp ? nil : .defaultAction)
+                        .disabled(capture.starting || developing || checkpoint.phase == .reflecting)
+                        .opacity(dim ? 0.35 : 1)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
+                        .help("Finish  ↵")
+                }
             } else {
                 Button("Close") { countdown == nil ? close() : cancelCountdown() }
                     .buttonStyle(CaptureButtonStyle.glass(compact: compact))
@@ -206,38 +273,46 @@ struct RecorderView: View {
         }
         .padding(compact ? 12 : 24)
         .animation(reduceMotion ? Motion.fade : CaptureMotion.small, value: inSession)
+        .animation(reduceMotion ? Motion.fade : CaptureMotion.small, value: capture.state == .recording)
         .animation(CaptureMotion.out(0.2), value: countdown == nil)
+        .animation(CaptureMotion.out(0.2), value: dim)
     }
 
     private var bottomBar: some View {
-        HStack(alignment: .top, spacing: compact ? 8 : 24) {
-            // A stack, not a Group: the column must keep its width before the first turn.
-            VStack { if inSession { timer.transition(.opacity) } }
+        HStack(alignment: .center, spacing: compact ? 8 : 12) {
+            // Stacks, not Groups: each column keeps its width before the first part.
+            VStack { if inSession && !checkpoint.isUp { timer.transition(.opacity) } }
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.top, 20)
-            recordButton
-            Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+            if checkpoint.canKeepGoing || checkpoint.saving { keepGoing } else { recordButton }
+            VStack(alignment: .leading) {
+                if inSession && !checkpoint.canKeepGoing && !checkpoint.saving { pauseAndReflect.transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(x: -8))) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, compact ? 14 : 24)
         .animation(CaptureMotion.out(0.25), value: inSession)
+        .animation(checkpoint.instant ? nil : CaptureMotion.out(0.25), value: checkpoint.phase)
     }
 
-    /// Elapsed across turns in Geist Mono, with the turn count under it.
+    /// This part's time in Geist Mono, over Paused or the last part's length.
     private var timer: some View {
         let paused = capture.state == .paused
+        let under = paused ? "Paused" : capture.lastPart.map { "Last part \(Self.clock($0))" }
         return VStack(alignment: .trailing, spacing: 2) {
             ElapsedText()
                 .font(Typo.mono(12.5, .regular))
                 .tracking(0.75)
                 .foregroundStyle(.white.opacity(paused ? 0.6 : 1))
-            Text(paused ? "Paused · turn \(capture.turn)" : "Turn \(capture.turn)")
-                .font(Typo.ui(11, .medium))
-                .foregroundStyle(.white.opacity(0.6))
+            if let under {
+                Text(under).font(Typo.ui(11, .medium)).foregroundStyle(.white.opacity(0.6))
+            }
         }
         .legible()
         .accessibilityElement(children: .combine)
     }
+
+    static func clock(_ d: Duration) -> String { d.formatted(.time(pattern: .minuteSecond(padMinuteToLength: 2))) }
 
     private var recordButton: some View {
         let look: RecordLook = countdown != nil ? .armed
@@ -248,7 +323,8 @@ struct RecorderView: View {
                 .buttonStyle(CaptureButtonStyle(fill: wash, hover: look == .recording ? wash : .white.opacity(0.2),
                                                 ink: .white, diameter: 64))
                 .keyboardShortcut(.space, modifiers: [])
-                .disabled(!capture.canToggle || developing)
+                .focused($recordFocused)
+                .disabled(!(capture.canToggle || countdown != nil) || developing || checkpoint.phase == .reflecting)
                 .accessibilityLabel(look.label)
                 .help("\(look.label) (Space)")
                 .tourAnchor(.recordButton)
@@ -257,6 +333,55 @@ struct RecorderView: View {
                 .foregroundStyle(.white.opacity(0.8))
                 .legible()
                 .accessibilityHidden(true)
+        }
+    }
+
+    /// The glass pill 12 pt right of the record button; "Reflecting…" with a mint spinner while Saro reads the part.
+    private var pauseAndReflect: some View {
+        let busy = checkpoint.phase == .reflecting
+        return Button {
+            Task { await checkpoint.reflect(model) }
+        } label: {
+            HStack(spacing: 8) {
+                if busy {
+                    ProgressView().controlSize(.small).tint(Tok.mint)
+                    Text("Reflecting…")
+                } else {
+                    Image(systemName: "sparkles").font(.system(size: 13, weight: .medium))
+                    Text("Pause & reflect")
+                }
+            }
+        }
+        .buttonStyle(CaptureButtonStyle.glass(padding: 18, compact: compact))
+        .keyboardShortcut("r", modifiers: [])
+        .disabled(busy || capture.starting || !(capture.state == .recording || capture.state == .paused))
+        .help("Pause & reflect  R")
+        .accessibilityLabel(busy ? "Reflecting" : "Pause and reflect")
+    }
+
+    /// The mint pill that takes the record button's place after a checkpoint; Saving… only when the part is slow to close.
+    private var keepGoing: some View {
+        VStack(spacing: 6) {
+            Button {
+                Task { await checkpoint.keepGoing() }
+            } label: {
+                HStack(spacing: 8) {
+                    if checkpoint.saving {
+                        ProgressView().controlSize(.small).tint(Night.bg)
+                        Text("Saving…")
+                    } else {
+                        Text("Keep going")
+                    }
+                }
+                .font(Typo.ui(15, .semibold))
+            }
+            .buttonStyle(CaptureButtonStyle.mint)
+            .keyboardShortcut(.defaultAction)
+            .background { Button("") { Task { await checkpoint.keepGoing() } }.keyboardShortcut("k", modifiers: []).hidden() }
+            .disabled(checkpoint.saving || capture.interrupted)
+            .help("Keep going  ↵ or K")
+            .transition(checkpoint.instant || reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+            Text(" ").font(Typo.ui(11, .medium)).accessibilityHidden(true)
         }
     }
 
@@ -274,8 +399,8 @@ struct RecorderView: View {
                 }
             }
         }
-        .disabled(recording)
-        .opacity(recording ? 0.35 : 1)
+        .disabled(recording || capture.state == .paused)
+        .opacity(recording || checkpoint.isUp ? 0.35 : 1)
         .animation(CaptureMotion.out(0.2), value: recording)
     }
 
@@ -306,20 +431,11 @@ struct RecorderView: View {
         .accessibilityLabel("\(title): \(current)")
     }
 
-    /// A develop flash on Done: the frame washes bright and settles back, like a print, before it closes.
-    private var flash: some View {
-        Color(red: 1, green: 0.97, blue: 0.9)
-            .keyframeAnimator(initialValue: 0.0, trigger: developing) { view, value in view.opacity(value) } keyframes: { _ in
-                LinearKeyframe(0.55, duration: 0.12, timingCurve: CaptureMotion.outCurve)
-                LinearKeyframe(0, duration: 0.88, timingCurve: .easeInOut)
-            }
-            .allowsHitTesting(false)
-    }
-
     // MARK: State
 
     /// What to show instead of the live recorder; nil once the preview runs. No icon means a spinner.
     private var notice: RecorderNotice? {
+        if saving { return nil }
         if ending { return RecorderNotice(title: "Saving your last recording…") }
         if !available {
             if capture.owner == surface { return RecorderNotice(title: "Saving your last recording…") }
@@ -328,7 +444,7 @@ struct RecorderView: View {
                                   detail: "Finish there, then come back.", alarm: false)
         }
         switch capture.state {
-        case .previewing, .recording, .paused:
+        case .previewing, .recording, .paused, .checkpoint, .review:
             return nil
         case .needsAccess(let access):
             let camera = access == .camera
@@ -338,21 +454,22 @@ struct RecorderView: View {
                                   settings: access.settingsURL, voiceInstead: camera && !compact)
         case .failed(let text):
             // Mid-session the controller keeps recording the session's kind, so a switch would record video behind a voice pill.
-            return RecorderNotice(icon: "exclamationmark.triangle", title: text, voiceInstead: kind == .moment && !compact && !inSession)
+            return RecorderNotice(icon: "exclamationmark.triangle", title: text, voiceInstead: kind == .moment && !compact && !inSession, retry: true)
         default:
             return kind == .moment
-                ? RecorderNotice(title: "Getting your camera ready…", detail: "If macOS asks, allow the camera and microphone.")
+                ? RecorderNotice(title: "Getting your camera ready…", detail: "If macOS asks, allow the camera and microphone.",
+                                 prompt: capture.prompt.isEmpty ? nil : capture.prompt)
                 : RecorderNotice(title: "Starting the microphone…")
         }
     }
 
     // MARK: Actions
 
-    /// The record button: a moment's first turn waits for a 3-2-1, which the button (or Space) skips.
+    /// The record button: a moment's first part waits for a 3-2-1, which the button (or Space) cancels.
     private func primary() {
         // Space while it flies back into its button must not start a turn.
         guard !leaving else { return }
-        if countdown != nil { return startNow() }
+        if countdown != nil { return cancelCountdown() }
         if kind == .moment, capture.state == .previewing, !inSession { return startCountdown() }
         capture.toggle()
     }
@@ -365,13 +482,9 @@ struct RecorderView: View {
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { return }
             }
-            startNow()
+            withAnimation(reduceMotion ? Motion.fade : CaptureMotion.out(0.3)) { countdown = nil }
+            capture.toggle()
         }
-    }
-
-    private func startNow() {
-        cancelCountdown()
-        capture.toggle()
     }
 
     private func cancelCountdown() {
@@ -380,30 +493,67 @@ struct RecorderView: View {
         withAnimation(reduceMotion ? Motion.fade : CaptureMotion.out(0.3)) { countdown = nil }
     }
 
-    private func done() {
-        let saved = inSession
-        guard saved, kind == .moment, !compact, !reduceMotion else { return finish(saved) }
-        // Stop this turn now; the preview stays live under the flash.
-        if capture.state == .recording { capture.toggle() }
-        developing = true
-        ritual = Task {
-            try? await Task.sleep(for: .seconds(1))
-            if !Task.isCancelled { finish(saved) }
-        }
+    private func keepRecording() {
+        if finishing == .failed { return shut() }
+        finishing = nil
+        if capture.state == .paused { capture.toggle() }
     }
 
-    private func finish(_ saved: Bool) {
-        guard saved, let onSaved else {
-            capture.finish(surface)
-            return onClose()
+    /// Finish: every part is kept; the last frame freezes and develops for about a second, then (after a click) flies
+    /// into the session's card. A key closes without the flight; Reduce Motion fades.
+    private func finish() {
+        let key = Motion.byKey
+        finishing = nil
+        guard inSession else { return shut() }
+        let last = capture.take
+        if compact, let onSaved {
+            ending = true
+            ritual = Task {
+                let wrote = await capture.end(surface)
+                guard !Task.isCancelled else { return }
+                if wrote { onSaved() } else { onClose() }
+            }
+            return
         }
-        // "Saved to today." only once the last turn is on disk, and only if some turn made it there.
-        ending = true
+        saving = true
         ritual = Task {
             let wrote = await capture.end(surface)
             guard !Task.isCancelled else { return }
-            if wrote { onSaved() } else { onClose() }
+            guard wrote else { finishing = .failed; return }
+            if kind == .moment, let last, let frame = await DevelopedFrame.lastFrame(of: last.url) {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : nil) { frozen = frame }
+                try? await Task.sleep(for: .seconds(reduceMotion ? 0.6 : 1.1))
+                guard !Task.isCancelled else { return }
+                if !key, !reduceMotion, frameRect.width > 0 {
+                    CaptureUI.shared.landing = CaptureUI.Landing(image: frame, from: frameRect, entryId: last.entryId)
+                    gone = true
+                }
+            }
+            onSaved?() ?? onClose()
         }
+    }
+
+    /// Discard: the part not yet kept goes for good; parts kept stay on the canvas.
+    private func discard() {
+        finishing = nil
+        ritual = Task {
+            await capture.discardTake()
+            guard !Task.isCancelled else { return }
+            if capture.hasKept { shut() } else { close() }
+        }
+    }
+
+    /// The voice pill's Keep this: the note's card flies out of the pill, or, when it can't, "Your voice leaves a mark."
+    private func keptVoice(_ pill: CGRect?) -> Bool {
+        let key = Motion.byKey
+        guard let id = capture.take?.entryId else { return false }
+        capture.keepReview()
+        guard !compact, !key, !reduceMotion, let pill, let e = model.entry(id),
+              let image = ImageRenderer(content: CardFace(entry: e).environment(model)).cgImage else { return false }
+        CaptureUI.shared.landing = CaptureUI.Landing(image: image, from: pill, entryId: id)
+        gone = true
+        shut()
+        return true
     }
 
     private func close() {
@@ -433,7 +583,7 @@ struct RecorderView: View {
 
     private func shut() {
         capture.finish(surface)
-        onClose()
+        if inSession || capture.hasKept, let onSaved { onSaved() } else { onClose() }
     }
 }
 
@@ -445,6 +595,10 @@ struct RecorderNotice: Equatable {
     var voiceInstead = false
     /// Permission and failure states get the danger disc; a busy hand-off doesn't.
     var alarm = true
+    /// A failure Try again can mend.
+    var retry = false
+    /// Today's prompt, quoted under "Getting your camera ready…".
+    var prompt: String?
 }
 
 /// The flight between a bar button and the recorder surface it opened (morph.ts, MorphLayer.tsx): a box flying from the
@@ -572,7 +726,7 @@ extension View {
     }
 
     /// Glass over video for pills that aren't buttons.
-    fileprivate func frosted() -> some View {
+    func frosted() -> some View {
         background(.black.opacity(0.3), in: .capsule)
             .background(.frosted(solid: Night.surface), in: .capsule)
             .overlay(Capsule().strokeBorder(.white.opacity(0.2)))
@@ -580,14 +734,14 @@ extension View {
     }
 
     /// White text that stays readable on any frame of video.
-    fileprivate func legible() -> some View {
+    func legible() -> some View {
         shadow(color: .black.opacity(0.55), radius: 1, y: 1).shadow(color: .black.opacity(0.35), radius: 14)
     }
 }
 
 // MARK: - Parts
 
-/// Elapsed time across turns; re-renders at 20 Hz on its own.
+/// This part's elapsed time; re-renders at 20 Hz on its own.
 struct ElapsedText: View {
     var body: some View {
         let elapsed = CaptureController.shared.elapsed
@@ -602,7 +756,7 @@ private enum RecordLook: Equatable {
     var caption: String {
         switch self {
         case .idle: "Record"
-        case .armed: "Skip"
+        case .armed: "Cancel"
         case .recording: "Pause"
         case .paused: "Resume"
         }
@@ -611,7 +765,7 @@ private enum RecordLook: Equatable {
     var label: String {
         switch self {
         case .idle: "Start recording"
-        case .armed: "Skip the countdown"
+        case .armed: "Cancel countdown"
         case .recording: "Pause recording"
         case .paused: "Resume recording"
         }
@@ -711,6 +865,7 @@ private struct StateCard: View {
     let compact: Bool
     let close: () -> Void
     let voiceInstead: (() -> Void)?
+    var retry: (() -> Void)?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -740,10 +895,19 @@ private struct StateCard: View {
                         .foregroundStyle(Tok.ink2)
                         .padding(.top, 8)
                 }
-                if notice.settings != nil || voiceInstead != nil {
+                if let prompt = notice.prompt {
+                    Text("“\(prompt)”").font(Typo.serif(compact ? 15 : 18, italic: true)).foregroundStyle(Tok.voice)
+                        .padding(.top, compact ? 12 : 20)
+                }
+                if notice.settings != nil || voiceInstead != nil || retry != nil {
                     VStack(spacing: 12) {
                         if let url = notice.settings {
                             Button { NSWorkspace.shared.open(url) } label: { Text("Open System Settings").frame(maxWidth: .infinity) }
+                                .buttonStyle(CaptureButtonStyle.primary)
+                                .keyboardShortcut(.defaultAction)
+                        }
+                        if let retry {
+                            Button(action: retry) { Text("Try again").frame(maxWidth: .infinity) }
                                 .buttonStyle(CaptureButtonStyle.primary)
                                 .keyboardShortcut(.defaultAction)
                         }
@@ -771,14 +935,16 @@ private struct StateCard: View {
 }
 
 /// A 40 pt sage ring with one bright quarter, turning.
-private struct Spinner: View {
+struct Spinner: View {
+    var size: CGFloat = 37
+    var color: Color = Tok.sage
     @State private var turning = false
 
     var body: some View {
         Circle().trim(from: 0, to: 0.25)
-            .stroke(Tok.sage, lineWidth: 3)
-            .background(Circle().stroke(Tok.sage.opacity(0.25), lineWidth: 3))
-            .frame(width: 37, height: 37)
+            .stroke(color, lineWidth: 3)
+            .background(Circle().stroke(color.opacity(0.25), lineWidth: 3))
+            .frame(width: size, height: size)
             .rotationEffect(.degrees(turning ? 360 : 0))
             .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: turning)
             .onAppear { turning = true }
