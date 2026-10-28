@@ -27,12 +27,15 @@ final class MemoryModel {
     var reveal: String?
     /// A write that failed, for AppModel's error toast.
     @ObservationIgnored var showError: (String) -> Void = { _ in }
+    /// The SafetyGate in AppModel's queue (§11.7: one model call at a time); nil until AppModel wires it, so nothing is kept.
+    @ObservationIgnored var gate: (String) async -> GateResult? = { _ in nil }
     @ObservationIgnored private var timers: [String: Task<Void, Never>] = [:]
     /// Each pending delete's ⌘Z, so Undo or the window closing takes just that one off the Edit menu.
     @ObservationIgnored private var undoTokens: [String: UndoToken] = [:]
     /// A sighting opened from Why or the graph: the recording plays from here once its detail opens.
     @ObservationIgnored private var playFrom: (entryId: String, ms: Int)?
     @ObservationIgnored private var loads = 0
+    @ObservationIgnored private var writing = false
 
     static let undoSeconds = 6.0
 
@@ -193,10 +196,22 @@ final class MemoryModel {
                            done: "Renamed.", failed: "Couldn’t save that change. Try again.")
     }
 
-    /// The person's own words pass the phrase gate before they're kept (§13: user text stored outside an entry is gated
-    /// at save); a hit keeps nothing.
+    /// The person's own words pass the full SafetyGate before they're kept (§13: user text stored outside an entry is gated
+    /// at save; SR-01), the phrase layer first so a hit doesn't wait on the queue. Nothing re-gates a memory later, so only
+    /// a clear verdict keeps it: a hold keeps nothing, and a caution hit or a deferred classifier keeps nothing yet.
     private func write(_ o: MemoryObservation, done: String, failed: String) async -> Saved {
         if SafetyGate.phraseHit(o.label) { return .held }
+        // A second Return while the gate runs keeps its editor open, and adds nothing twice.
+        guard !writing else { return .failed }
+        writing = true
+        defer { writing = false }
+        switch await gate(o.label)?.state {
+        case .clear, .modelUnavailable: break
+        case .safetyHold: return .held
+        default:
+            fail("Saro couldn’t check that just now. Try again later.")
+            return .failed
+        }
         do {
             try await ledger.addUserMemory(o)
             await load(animation: Motion.small)

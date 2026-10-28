@@ -286,6 +286,15 @@ private func rows(_ entries: [String], now: Date = .now) -> [MemoryObservation] 
     #expect(try await work() == ["You’re working on “Call Maya back”."])
 }
 
+@Test func aLineThePhraseListMissesIsStillHeldByTheFullGate() async throws {
+    // What Saro knows gates the person's own lines and renames with check(), the classifier included (SR-01).
+    let line = "Everyone would honestly be fine if I just wasn't around anymore."
+    let p = Pipeline(ledger: try tempLedger(), ai: SaroAI(stub: { _ in "PASSIVE" }))
+    #expect(!SafetyGate.phraseHit(line))
+    #expect(await p.check(line)?.state == .safetyHold)
+    #expect(await Pipeline(ledger: try tempLedger(), ai: SaroAI(stub: { _ in "NONE" })).check("Maya likes long walks.")?.state == .clear)
+}
+
 @Test func carriedCommitmentsAreOneAndAboutYouReadsAsSentences() {
     let c = [OpenCommitment(text: "Call Maya back about the weekend", createdAt: ago(3)),
              OpenCommitment(text: "Call Maya back about the weekend.", createdAt: ago(1))]

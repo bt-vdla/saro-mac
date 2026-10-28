@@ -119,6 +119,7 @@ final class AppModel {
         pipeline = Pipeline(ledger: ledger, ai: ai)
         memory = MemoryModel(ledger: ledger, pipeline: pipeline)
         memory.showError = { [weak self] in self?.show(Toast($0, style: .error)) }
+        memory.gate = { [weak self, pipeline] text in await self?.exclusive { await pipeline.check(text) } }
         let center = NotificationCenter.default
         // The menu bar and ⌘K post this, sometimes before the window they open has a RootView to receive it.
         center.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
