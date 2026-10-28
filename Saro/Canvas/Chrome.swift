@@ -28,7 +28,7 @@ struct OrbitNav: View {
     }
 }
 
-/// The bottom glass bar (BottomLeftStatus.tsx): history, day, mood ribbon, capture, recenter.
+/// The bottom glass bar (BottomLeftStatus.tsx, one row): day and mood ribbon, capture, then History and Recenter.
 struct BottomBar: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -36,12 +36,8 @@ struct BottomBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            barButton("History", "sidebar.left", tint: Tok.ink2) { model.sidebarVisible.toggle() }
-                .help("Days, Trash and Decisions")
-                .tourAnchor(.history)
-            Divider().frame(height: 26).padding(.horizontal, 4)
-            iconButton("chevron.left") { model.slide(-1) }.help("Previous day  ⌘[")
-            VStack(spacing: 5) {
+            iconButton("chevron.left", "Previous day") { model.slide(-1) }.help("Previous day  ⌘[")
+            VStack(spacing: 4) {
                 Text(DayFormat.bar(model.day)).monoCaps(11.5, tracking: 0.04).foregroundStyle(Tok.sageDark)
                     .id(model.day)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .offset(x: 8 * dateDirection).combined(with: .opacity), removal: .opacity))
@@ -52,21 +48,24 @@ struct BottomBar: View {
             .contentShape(.rect)
             .onTapGesture { if !model.isToday { model.slide(to: LocalDay.today()) } }
             .help(model.isToday ? "Today" : "Back to today  ⌘T")
-            iconButton("chevron.right") { model.slide(1) }.help("Next day  ⌘]")
+            iconButton("chevron.right", "Next day") { model.slide(1) }.help("Next day  ⌘]")
             Divider().frame(height: 26).padding(.horizontal, 4)
-            barButton("Moment", "video", tint: Tok.moment) { model.recorderKind = .moment }
+            CaptureTile(title: "Moment", symbol: "video", tint: Tok.momentInk) { model.recorderKind = .moment }
                 .keyboardShortcut("n", modifiers: .command).help("Record a moment  ⌘N")
                 .tourAnchor(.recordButton)
-            barButton("Voice", "waveform", tint: Tok.echo) { model.recorderKind = .voice }
+            CaptureTile(title: "Voice", symbol: "waveform", tint: Tok.echoInk) { model.recorderKind = .voice }
                 .keyboardShortcut("n", modifiers: [.command, .shift]).help("Leave a voice note  ⇧⌘N")
-            barButton("Still", "photo", tint: Tok.still) { model.pickStill() }
+            CaptureTile(title: "Still", symbol: "photo", tint: Tok.stillInk) { model.pickStill() }
                 .help("Add a photo (or drop or paste one onto the canvas)")
-            barButton("Write", "text.alignleft", tint: Tok.reflection) {
+            CaptureTile(title: "Write", symbol: "text.alignleft", tint: Tok.reflectionInk) {
                 Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
             }
             .keyboardShortcut("w", modifiers: [.command, .option]).help("Write  ⌥⌘W")
             Divider().frame(height: 26).padding(.horizontal, 4)
-            barButton("Recenter", "scope", tint: Tok.ink2) { model.camera = .fit(UUID()) }
+            iconButton("clock.arrow.circlepath", "History") { model.sidebarVisible.toggle() }
+                .help("Days, Trash and Decisions")
+                .tourAnchor(.history)
+            iconButton("scope", "Recenter") { model.camera = .fit(UUID()) }
                 .keyboardShortcut("0", modifiers: .command).help("Fit the day  ⌘0")
         }
         .padding(6)
@@ -76,24 +75,36 @@ struct BottomBar: View {
         .tourAnchor(.captureBar)
     }
 
-    private func barButton(_ title: String, _ symbol: String, tint: Color, action: @escaping () -> Void) -> some View {
+    /// ICON_BUTTON: a sage-dark glyph in a 44 pt circle that fills on hover.
+    private func iconButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: symbol).font(.system(size: 17, weight: .regular)).foregroundStyle(tint).frame(height: 20)
-                Text(title).font(Typo.ui(11)).foregroundStyle(Tok.ink2)
-            }
-            .frame(width: 64, height: 48)
-            .contentShape(.rect(cornerRadius: 14))
+            Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(Tok.sageDark)
+                .frame(width: 44, height: 44).contentShape(.circle)
         }
-        .buttonStyle(PressStyle(hoverFill: true))
+        .buttonStyle(PressStyle(hoverFill: true, radius: 22))
+        .accessibilityLabel(label)
     }
+}
 
-    private func iconButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+/// A capture (CaptureDock.tsx): the type's ink glyph over an 11 pt label that turns ink on hover.
+private struct CaptureTile: View {
+    let title: String
+    let symbol: String
+    let tint: Color
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(Tok.ink2)
-                .frame(width: 36, height: 44).contentShape(.rect)
+            VStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(tint).frame(height: 20)
+                Text(title).font(Typo.ui(11, .medium)).foregroundStyle(hover ? Tok.ink : Tok.ink2)
+            }
+            .frame(width: 68, height: 52)
+            .contentShape(.rect(cornerRadius: Radius.panel))
         }
-        .buttonStyle(PressStyle(hoverFill: true))
+        .buttonStyle(PressStyle(hoverFill: true, radius: Radius.panel))
+        .onHover { hover = $0 }
     }
 }
 
@@ -121,14 +132,15 @@ enum MoodPalette {
     }
 }
 
-/// Press feedback on pointer-down (0.96 on the press spring), with an optional hover fill.
+/// Press feedback on pointer-down (0.96 on the press spring), with an optional ink/5 hover fill.
 struct PressStyle: ButtonStyle {
     var hoverFill = false
+    var radius: CGFloat = 14
     @State private var hover = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(hoverFill && hover ? Tok.ink.opacity(0.06) : .clear, in: .rect(cornerRadius: 14))
+            .background(hoverFill && hover ? Tok.ink.opacity(0.05) : .clear, in: .rect(cornerRadius: radius))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(Motion.press, value: configuration.isPressed)
             .onHover { hover = $0 }
