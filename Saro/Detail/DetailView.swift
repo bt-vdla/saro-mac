@@ -538,7 +538,7 @@ private struct ReflectFurther: View {
     let written: String
     let page: String
 
-    private enum Ask: Equatable { case idle, loading, failed, held }
+    private enum Ask: Equatable { case idle, loading, failed, held, waiting }
 
     @State private var turns: [ReflectionTurn] = []
     @State private var ask = Ask.idle
@@ -586,6 +586,8 @@ private struct ReflectFurther: View {
                     if ask == .failed {
                         Text("Couldn’t generate a question right now.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
                         Button("Retry") { Task { await reflect() } }.buttonStyle(.link).font(Typo.ui(13, .medium))
+                    } else if ask == .waiting {
+                        Text("Saro will ask once Apple Intelligence is ready.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
                     }
                 }
             }
@@ -631,8 +633,12 @@ private struct ReflectFurther: View {
         let all = ([written] + answers).joined(separator: "\n")
         switch await model.exclusive({ await model.pipeline.check(all) })?.state {
         case .clear?, .modelUnavailable?: break
-        case .safetyHold?, .awaitingCheck?:
+        case .safetyHold?:
             withAnimation(Motion.fade) { ask = .held }
+            return
+        // A caution word while the classifier can't run asks nothing, and doesn't show the resources by itself (SR-06).
+        case .awaitingCheck?:
+            withAnimation(Motion.fade) { ask = .waiting }
             return
         default:
             withAnimation(Motion.fade) { ask = .failed }

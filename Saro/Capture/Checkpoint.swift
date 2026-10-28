@@ -75,8 +75,9 @@ final class Checkpoint {
                 }
                 // Linked to the part it was asked from, by id only, so a hold on that part takes the question (SR-15).
                 try? await model.ledger.insertRun(run, inputs: source.map { [AIRunInput(entryId: $0.entryId, field: "live_caption", text: "")] } ?? [])
-            case .safetyHold?, .awaitingCheck?:
+            case .safetyHold?:
                 next = .held
+            // A caution word with the classifier unavailable asks nothing, and doesn't raise the card by itself (SR-06, SR-21).
             default:
                 next = .quiet
             }
