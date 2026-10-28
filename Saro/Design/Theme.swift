@@ -32,6 +32,8 @@ enum Tok {
     static let paper = Color(0xF1F1EC, 0x16201B)
     static let rim = Color(0xFFFFFF, 0x3F4F47)
     static let shadow = Color(0x13201A, 0x000000)
+    /// Drag guides: moment green by day, echo violet at night (DragGuides.tsx).
+    static let guide = Color(0x2F7A5A, 0xA7A2EC)
     static let line = Color(0xDDE1DA, 0x25312B)
 
     static let moment = Color(0x2F7A5A, 0x79C3A0)

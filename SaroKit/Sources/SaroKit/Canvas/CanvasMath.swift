@@ -48,6 +48,22 @@ public enum CanvasMath {
         return origin
     }
 
+    /// The nearest edge or centre alignment within `reach` on one axis: how far to move, the line it lands on, and the
+    /// cards that share that line (cardGeometry.ts snaps left/centre/right and top/middle/bottom to other cards).
+    public static func snap(_ mine: [CGFloat], to theirs: [(CGFloat, CGRect)], reach: CGFloat) -> (delta: CGFloat, at: CGFloat, rects: [CGRect])? {
+        var pick: (delta: CGFloat, at: CGFloat, rects: [CGRect])?
+        for a in mine {
+            for (b, r) in theirs where abs(b - a) <= reach {
+                if let p = pick, abs((b - a) - p.delta) < 0.5 {
+                    pick?.rects.append(r)
+                } else if pick == nil || abs(b - a) < abs(pick!.delta) {
+                    pick = (b - a, b, [r])
+                }
+            }
+        }
+        return pick
+    }
+
     /// The smallest rectangle around a set of cards (for fitting the camera to a day).
     public static func bounds(_ rects: [CGRect]) -> CGRect? {
         guard var u = rects.first else { return nil }
