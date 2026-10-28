@@ -641,31 +641,38 @@ final class AppModel {
 
     /// Saves a dropped or pasted image as HEIC with no metadata but its orientation (DR-11: stills lose GPS).
     func importStill(_ data: Data, origin: String, at world: CGPoint?) async {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
-            show(Toast("That file isn't an image Saro can read", style: .error))
-            return
-        }
-        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
-        let orientation = props?[kCGImagePropertyOrientation] ?? 1
         var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.done)
         let asset = MediaAsset(fileName: "\(entry.localDay)/stills/\(entry.id).heic", kind: .image, origin: origin, state: "ready")
         entry.mediaId = asset.id
         let url = ledger.url(for: asset)
         do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.heic" as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
-            CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85, kCGImagePropertyOrientation: orientation] as CFDictionary)
-            guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
+            // Off the main actor: the HEIC encoder's setup and a large photo's encode stall the UI (a main-thread runtime issue).
+            guard try await Task.detached(operation: { try Self.writeHEIC(data, to: url) }).value else {
+                show(Toast("That file isn't an image Saro can read", style: .error))
+                return
+            }
             try await ledger.insertMedia(asset)
             try await ledger.insertEntry(entry)
             if let world {
                 try await ledger.setLayouts([CardLayout(entryId: entry.id, x: world.x, y: world.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, userPlaced: true)])
             }
             await reload()
-            show(Toast("Still saved to \(DayFormat.sidebar(day))"))
+            show(Toast("Still saved to \(DayFormat.sidebar(entry.localDay))"))
         } catch {
             show(Toast("Couldn't save the still: \(error.localizedDescription)", style: .error))
         }
+    }
+
+    /// False when `data` isn't an image ImageIO can read.
+    private nonisolated static func writeHEIC(_ data: Data, to url: URL) throws -> Bool {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return false }
+        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
+        let orientation = props?[kCGImagePropertyOrientation] ?? 1
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.heic" as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
+        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85, kCGImagePropertyOrientation: orientation] as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
+        return true
     }
 
     // MARK: Toasts
