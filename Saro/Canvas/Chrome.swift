@@ -40,6 +40,8 @@ struct BottomBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dateDirection: CGFloat = 0
     @Namespace private var cell
+    /// The capture button with the keys (Full Keyboard Access); a closed recorder or music field hands them back to it.
+    @FocusState private var tile: EntryKind?
 
     var body: some View {
         let replaying = model.replay.active
@@ -66,6 +68,10 @@ struct BottomBar: View {
         .animation(model.replay.animated ? Motion.pick(Motion.small, reduce: reduceMotion) : nil, value: replaying)
         .animation(Motion.pick(Motion.small, reduce: reduceMotion), value: model.day)
         .onChange(of: model.day) { old, new in dateDirection = new > old ? 1 : -1 }
+        .onChange(of: tile) { _, t in CaptureUI.shared.tileFocused = t != nil }
+        // After the canvas takes the keys back, so a button that can't hold them (no Full Keyboard Access) leaves them there.
+        .onChange(of: model.recorderKind) { old, new in if new == nil, let old { DispatchQueue.main.async { tile = old } } }
+        .onChange(of: CaptureUI.shared.musicOpen) { _, open in if !open { DispatchQueue.main.async { tile = .music } } }
         .tourAnchor(.captureBar)
     }
 
@@ -96,15 +102,18 @@ struct BottomBar: View {
                 recorderTile(.voice)
                     .keyboardShortcut("n", modifiers: [.command, .shift]).help("Leave a voice note  ⇧⌘N")
                 CaptureTile(face: CaptureFace(title: "Still", symbol: "photo", tint: Tok.stillInk)) { model.pickStill() }
+                    .focused($tile, equals: .still)
                     .help("Add a photo (or drop or paste one onto the canvas)")
                 CaptureTile(face: CaptureFace(title: "Reflection", symbol: "text.alignleft", tint: Tok.reflectionInk)) {
                     Task { if let e = await model.newWriting() { model.openEntryID = e.id } }
                 }
+                .focused($tile, equals: .reflection)
                 .keyboardShortcut("w", modifiers: [.command, .option]).help("Write a reflection  ⌥⌘W")
                 CaptureTile(face: CaptureFace(title: "Music", symbol: "opticaldisc", tint: Tok.music)) {
                     CaptureUI.shared.musicGrows = !Motion.byKey
                     CaptureUI.shared.musicOpen = true
                 }
+                .focused($tile, equals: .music)
                 .opacity(CaptureUI.shared.musicOpen && CaptureUI.shared.musicGrows ? 0 : 1)
                 .anchorPreference(key: CaptureOriginKey.self, value: .bounds) { [.music: $0] }
                 .help("Add a song from a link")
@@ -121,6 +130,7 @@ struct BottomBar: View {
             model.recorderKind = kind
             model.recorderGrows = !Motion.byKey
         }
+        .focused($tile, equals: kind)
         .opacity(hidden ? 0 : 1)
         .animation(nil, value: hidden)
         .anchorPreference(key: CaptureOriginKey.self, value: .bounds) { [kind: $0] }

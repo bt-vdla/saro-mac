@@ -62,14 +62,14 @@ struct DayView: View {
             else { model.selection = [] }
         }
         .onKeyPress(.return) {
-            guard model.openEntryID == nil, model.selection.count == 1, let id = model.selection.first else { return .ignored }
+            guard !CaptureInput.typing, model.openEntryID == nil, model.selection.count == 1, let id = model.selection.first else { return .ignored }
             if model.entry(id)?.kind == .voice { model.openVoiceID = id } else { model.openEntryID = id }
             return .handled
         }
         // While the day replays (DayReplay.tsx): ← → step entry to entry, Home and End go to the ends of the day, Space plays.
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end, .space]) { press in
             let replay = model.replay
-            guard replay.active, model.openEntryID == nil, press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return .ignored }
+            guard replay.active, !CaptureInput.typing, model.openEntryID == nil, press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return .ignored }
             switch press.key {
             case .rightArrow, .upArrow: replay.step(1)
             case .leftArrow, .downArrow: replay.step(-1)
@@ -91,6 +91,8 @@ struct DayView: View {
         // Leaving the journal ends the replay where it is.
         .onDisappear { model.replay.exit(animated: false) }
         .onChange(of: model.searchOpen) { _, open in if !open { focused = true } }
+        // A closed recorder or music field leaves no field holding the keys; the bar's button may take them next.
+        .onChange(of: model.recorderKind == nil && !CaptureUI.shared.musicOpen) { _, idle in if idle { focused = true } }
     }
 
     private var screenID: ScreenID {

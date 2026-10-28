@@ -57,9 +57,13 @@ enum CaptureInput {
         return true
     }
 
-    /// Space: the voice pill, with no growing (it came from a key). Never while something else holds the keys.
+    /// A text field, an editor or a capture button has the keys: an ancestor's key handler sees them first and must let
+    /// them through.
+    static var typing: Bool { NSApp.keyWindow?.firstResponder is NSText || CaptureUI.shared.tileFocused }
+
+    /// Space: the voice pill, with no growing (it came from a key). Never inside a field, or while something else holds the keys.
     static func space(_ model: AppModel) -> KeyPress.Result {
-        guard canCapture(model), model.openVoiceID == nil, !model.replay.active else { return .ignored }
+        guard !typing, canCapture(model), model.openVoiceID == nil, !model.replay.active else { return .ignored }
         model.recorderKind = .voice
         return .handled
     }

@@ -13,6 +13,8 @@ final class CaptureUI {
     /// The music field is up; `musicGrows` when a click opened it, so it grows out of its button.
     var musicOpen = false
     var musicGrows = false
+    /// A capture button has the keys (Full Keyboard Access), so Space presses it rather than opening the voice pill.
+    var tileFocused = false
     /// The reflection card whose title or body is being typed into, and which.
     var editing: (id: String, field: CardField)?
     /// The entry the Edit details sheet is open on.
