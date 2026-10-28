@@ -184,6 +184,47 @@ struct DevNotes {
                           "Touch ID lock (FR-SET-04)", "Privacy & Data and What Saro read (FR-SET-05)"],
                 issues: [],
                 brd: ["FR-SET-01", "FR-SET-02", "FR-SET-03", "FR-SET-04", "FR-SET-05"])
+        case .onboardingWelcome:
+            DevNotes(
+                name: "Welcome door",
+                does: "First launch of a real journal: the lit door with the hour's greeting, the three NFR-02 privacy lines word for word, Begin, and 'You're in.'.",
+                built: ["Clock eyebrow and greeting band on the minute", "NFR-02 lines verbatim, no account", "Promise pages in place with proofs (Esc returns focus)",
+                        "Rise-in stagger (y 10, 0.4 s)", "'You're in.' word reveal, 2.5 s, skippable by click or any key, shown once",
+                        "Steps resume after a quit (onboarding.step, .furthest, .aboutStep); demo and snapshot runs skip it (-SaroOnboarding YES shows it)"],
+                stubbed: [],
+                issues: ["Promise copy points at Settings → Your data, which the settings package builds"],
+                brd: ["FR-ONB-01", "NFR-02"])
+        case .onboardingAboutYou:
+            DevNotes(
+                name: "About you",
+                does: "Five questions, with what Saro picks up underlined in the answer as it's typed, then a first question made from the answers.",
+                built: ["extract.ts ported, plus NLTagger personal names on top of the lists", "NSTextView field: Return commits, Shift-Return new line, ⌥← at the start goes back, IME-safe",
+                        "Live marks as layout-manager temporary attributes (400 ms settle near the caret, 160 ms fade)", "'Saro heard' toggles; Q5 tone chips after 1.5 s",
+                        "Every answer through SafetyGate before it's saved; a held answer shows the SafetyCard instead of a personal prompt",
+                        "First prompt (firstPrompt.ts) with their words set in sans; Ask me something else", "Q1 prefilled from this Mac's user name"],
+                stubbed: ["On-device model drafts of the first prompt (templates only, by design for the alpha)", "Onboarding observations for What Saro knows (memory package)"],
+                issues: [],
+                brd: ["FR-ONB-02", "FR-ONB-03", "SR-01", "SR-17"])
+        case .onboardingFirstWeek:
+            DevNotes(
+                name: "First week",
+                does: "The week at the ritual hour: seven days on one horizon, each a reminder toggle, the ritual time, the reminder word for word, then the ask.",
+                built: ["Ritual time from the answers (ritualFromSpans), typed or ↑↓ by 15 min, Esc restores", "Week row: one tab stop, arrows, Home/End, Space toggles; today stays on",
+                        "Milestones and VoiceOver change lines (weekChange)", "Seven Sunrises entrance on one clock (WeekLight timings), landing on a click or key",
+                        "Content-free NotificationPreview; Allow → test notification; denied → System Settings", "Palette follows the ritual hour while open"],
+                stubbed: ["The WeekSky Metal shader: the light is drawn in a SwiftUI Canvas instead"],
+                issues: [],
+                brd: ["FR-ONB-04", "R-03"])
+        case .onboardingFindLight:
+            DevNotes(
+                name: "Find your light",
+                does: "The camera and mic check as a mirror on its own preview-only session: light, direction, framing (Vision) and mic. Nothing is recorded.",
+                built: ["Phases and copy from the web, rewritten for macOS", "64×36 readings every 166 ms with holds", "Oval, mic rim, light arc and eye-line marks",
+                        "Status rows with Turn off and Esc", "Camera picker incl. Continuity Camera", "Readiness card: Apple Intelligence and speech download",
+                        "Hand-off: moment recorder, voice pill, or a writing page with the prompt as its question"],
+                stubbed: [],
+                issues: ["Light thresholds (LightRead.Light) are the web's; tune against Bharat's cameras"],
+                brd: ["FR-ONB-05", "FR-ONB-03"])
         }
     }
 }

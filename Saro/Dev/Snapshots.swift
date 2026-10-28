@@ -102,8 +102,21 @@ enum Snapshots {
                 ("reflection-pieces", { p.contentView = NSHostingView(rootView: ReflectionGallery().environment(model)) }),
                 ("grow", { p.contentView = NSHostingView(rootView: GrowGallery()) }),
                 ("foundation", { p.contentView = NSHostingView(rootView: FoundationGallery(profile: model.profile)) }),
+                // Onboarding, each step hosted on its own flow (the demo journal itself skips onboarding).
+                ("onboarding-welcome", { p.contentView = onboarding(.preview(step: .welcome), model) }),
+                ("onboarding-q2", {
+                    p.contentView = onboarding(.preview(step: .about, about: .question(2), answers: [1: "Bharat"],
+                                                        text: "The launch. My sister Maya. Sleep, honestly."), model)
+                }),
+                ("onboarding-q5", { p.contentView = onboarding(.preview(step: .about, about: .question(5), answers: Self.answers, text: ""), model) }),
+                ("onboarding-prompt", { p.contentView = onboarding(.preview(step: .about, about: .prompt, answers: Self.answers), model) }),
+                ("onboarding-held", { p.contentView = onboarding(.preview(step: .about, about: .prompt, answers: Self.answers, held: [2]), model) }),
+                ("onboarding-week", { p.contentView = onboarding(.preview(step: .firstWeek, answers: Self.answers), model) }),
+                ("onboarding-light", { p.contentView = onboarding(.preview(step: .findLight, answers: Self.answers), model) }),
             ]
-            for (name, apply) in steps {
+            // `-SaroSnapshotOnly <prefix>` runs only the states whose names start with it.
+            let only = UserDefaults.standard.string(forKey: "SaroSnapshotOnly")
+            for (name, apply) in steps where only.map(name.hasPrefix) ?? true {
                 apply()
                 try? await Task.sleep(for: .seconds(2.5))
                 if let v = p.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
@@ -238,6 +251,15 @@ private struct GrowGallery: View {
                 .background(.black, in: .rect(cornerRadius: 28))
                 .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.1)))
         }
+    }
+}
+
+extension Snapshots {
+    static let answers = [1: "Bharat", 2: "The launch. My sister.", 3: "Late, usually. Around 10:40", 4: "More sleep, less rehearsing conversations",
+                          5: "Straight to it"]
+
+    static func onboarding(_ flow: OnboardingFlow, _ model: AppModel) -> NSView {
+        NSHostingView(rootView: OnboardingView(flow: flow).environment(model).environment(PrefsStore.shared))
     }
 }
 
