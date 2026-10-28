@@ -185,13 +185,13 @@ public actor Ledger {
     /// Removes a never-written page (no text, no media, nothing derived). Anything with content goes to Trash instead.
     public func discardIfEmpty(_ id: String) throws {
         try db.transaction {
-            let empty = try db.run("""
-                SELECT 1 FROM entry WHERE id=? AND media_id IS NULL
-                  AND trim(COALESCE(body,'')||COALESCE(title_user,'')||COALESCE(caption_user,''), ' '||char(9)||char(10)||char(13))=''
-                  AND NOT EXISTS (SELECT 1 FROM safety_verdict WHERE entry_id=entry.id)
-                  AND NOT EXISTS (SELECT 1 FROM entry_annotation WHERE entry_id=entry.id)
-                """, [.text(id)])
-            guard !empty.isEmpty else { return }
+            // Empty as the editor and the gate see it (any Unicode space), which SQL's trim can't say.
+            guard let e = try entry(id), e.mediaId == nil,
+                  ((e.body ?? "") + (e.titleUser ?? "") + (e.captionUser ?? "")).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  try db.run("""
+                      SELECT 1 FROM safety_verdict WHERE entry_id=? UNION ALL SELECT 1 FROM entry_annotation WHERE entry_id=? LIMIT 1
+                      """, [.text(id), .text(id)]).isEmpty
+            else { return }
             try db.run("DELETE FROM reflection_turn WHERE entry_id=? AND answer IS NULL", [.text(id)])
             try db.run("DELETE FROM card_layout WHERE entry_id=?", [.text(id)])
             try db.run("DELETE FROM entry WHERE id=?", [.text(id)])

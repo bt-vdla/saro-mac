@@ -169,6 +169,18 @@ func tempLedger() throws -> Ledger {
     #expect(try await l.allEntries(includeTrashed: true).map(\.id) == [full.id])
 }
 
+/// Empty as the editor and the gate see it: a page of Option-Space or another Unicode space is discarded too.
+@Test(arguments: ["\u{00A0}", "\u{2028}", "\u{3000}", "\u{000B}"])
+func discardIfEmptyAgreesWithTheEditorOnWhatIsEmpty(space: String) async throws {
+    let l = try tempLedger()
+    let page = Entry(kind: .reflection, body: "")
+    try await l.insertEntry(page)
+    try await l.updateEntryText(id: page.id, body: space, titleUser: nil, captionUser: nil)
+    #expect(try await l.entry(page.id)?.processingStatus == ProcessingStatus.done)
+    try await l.discardIfEmpty(page.id)
+    #expect(try await l.entry(page.id) == nil)
+}
+
 /// A journal a newer Saro migrated is refused, not written to with a schema this build doesn't know.
 @Test func aNewerJournalIsRefused() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "saro-test-\(UUID().uuidString)")
