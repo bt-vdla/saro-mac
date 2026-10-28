@@ -239,7 +239,8 @@ final class CaptureController {
                                            preset: hd ? .hd1920x1080 : .hd1280x720)
         guard owner != nil, !closing else { return }
         if let error { state = .failed(error); return }
-        if state != .paused { state = .previewing }
+        // A device back mid-session resumes the same session (and day), never a new one.
+        if state != .paused { state = turn > 0 ? .paused : .previewing }
         startTicker()
     }
 
