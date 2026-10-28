@@ -66,6 +66,47 @@ func exported(_ l: Ledger) async throws -> String {
     #expect(StillVision.caption(labels: [("sky", 0.8), ("apple", 0.6), ("rocks", 0.5), ("people", 0.4)], words: [])?.caption
         == "A photo of the sky, an apple and rocks.")
     #expect(StillVision.caption(labels: [("outdoor", 0.9), ("dog", 0.2)], words: []) == nil)
+    // Labels that end in "s" but name one thing, and ones that take no article.
+    #expect(StillVision.caption(labels: [("bus", 0.9), ("cactus", 0.6), ("shoes", 0.5)], words: [])?.caption
+        == "A photo of a bus, a cactus and shoes.")
+    #expect(StillVision.caption(labels: [("chess", 0.9), ("wedding_dress", 0.6), ("stained_glass", 0.5)], words: [])?.caption
+        == "A photo of chess, a wedding dress and stained glass.")
+}
+
+@Test func aLargeStillIsKeptAt4096PixelsUpright() throws {
+    func png(_ w: Int, _ h: Int) throws -> CGImageSource {
+        let ctx = try #require(CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let data = NSMutableData()
+        let dest = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, try #require(ctx.makeImage()), nil)
+        #expect(CGImageDestinationFinalize(dest))
+        return try #require(CGImageSourceCreateWithData(data, nil))
+    }
+    let big = try #require(StillVision.keepable(try png(5000, 100)))
+    #expect(big.width == 4096 && (81...82).contains(big.height))
+    let small = try #require(StillVision.keepable(try png(64, 48)))
+    #expect(small.width == 64 && small.height == 48)
+
+    // A photo turned on its side (EXIF 6) reports its upright size.
+    let url = FileManager.default.temporaryDirectory.appending(path: "saro-still-\(UUID().uuidString).jpg")
+    let dest = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil))
+    CGImageDestinationAddImage(dest, small, [kCGImagePropertyOrientation: 6] as CFDictionary)
+    #expect(CGImageDestinationFinalize(dest))
+    #expect(StillVision.pixelSize(at: url) == CGSize(width: 48, height: 64))
+}
+
+@Test func theOpenedStillTakesThePhotosShape() {
+    let window = CGSize(width: 1320, height: 860)
+    for aspect: CGFloat in [1.5, 0.75, 4, 1] {
+        let f = CanvasMath.stillFrame(in: window, aspect: aspect, below: 170)
+        #expect(abs(f.width / f.height - aspect) < 0.001)
+        #expect(f.width <= window.width * 0.86 + 0.001 && f.height <= window.height * 0.74 + 0.001)
+        #expect(abs(f.midX - window.width / 2) < 0.001 && f.minY >= 24 && f.maxY + 170 <= window.height)
+    }
+    #expect(CanvasMath.stillFrame(in: window, aspect: 1.5, below: 170).width > CanvasMath.stillFrame(in: window, aspect: 0.75, below: 170).width)
+    let unknown = CanvasMath.stillFrame(in: window, aspect: nil, below: 170)
+    #expect(abs(unknown.width / unknown.height - 4 / 3) < 0.001)
 }
 
 @Test func describePixelsSaysWhatTheWebSays() {

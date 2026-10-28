@@ -98,6 +98,24 @@ public enum StillVision {
         ] as CFDictionary)
     }
 
+    /// FR-CAP-07: the image a still is kept as, at most `maxPixels` on its long side; its orientation stays metadata.
+    public static func keepable(_ src: CGImageSource, maxPixels: Int = 4096) -> CGImage? {
+        guard let full = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        guard max(full.width, full.height) > maxPixels else { return full }
+        return CGImageSourceCreateThumbnailAtIndex(src, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+        ] as CFDictionary)
+    }
+
+    /// The photo's size upright, read from its header.
+    public static func pixelSize(at url: URL) -> CGSize? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = p[kCGImagePropertyPixelWidth] as? Int, let h = p[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return (p[kCGImagePropertyOrientation] as? Int ?? 1) >= 5 ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+    }
+
     /// The text the gate reads and the hash a description's verdict is keyed by: the caption, then its tags.
     public static func gatedText(_ caption: String, _ tags: [String]) -> String {
         tags.isEmpty ? caption : caption + "\n" + tags.joined(separator: ", ")
@@ -129,7 +147,11 @@ public enum StillVision {
     /// Labels Vision gives every photo, or that say nothing on their own.
     static let vague: Set<String> = ["outdoor", "indoor", "structure", "land", "material", "art", "cloudy", "sunny", "night_sky",
                                      "consumable", "conveyance", "machine", "liquid", "water_body", "plant", "animal", "mammal"]
-    static let massNouns: Set<String> = ["water", "grass", "snow", "sand", "food", "foliage", "greenery", "people", "text", "fog"]
+    static let massNouns: Set<String> = ["water", "grass", "snow", "sand", "food", "foliage", "greenery", "people", "text", "fog",
+                                         "asparagus", "hummus", "moss", "lemongrass", "raw glass", "stained glass", "chess", "tennis",
+                                         "athletics", "billiards", "gymnastics", "motocross", "santa claus"]
+    /// Vision labels that end in "s" but name one thing.
+    static let singularS: Set<String> = ["abacus", "bus", "cactus", "circus", "hippopotamus", "walrus", "rhinoceros", "thermos", "malinois"]
 
     /// "A photo of a blue sky, a hill and a road, with the words “OPEN LATE”." from labels at confidence 0.3 or more and
     /// recognised lines. Nil when neither says anything.
@@ -151,7 +173,7 @@ public enum StillVision {
     }
 
     static func article(_ noun: String) -> String {
-        if massNouns.contains(noun) || noun.hasSuffix("s") && !noun.hasSuffix("ss") { return noun }
+        if massNouns.contains(noun) || noun.hasSuffix("s") && !noun.hasSuffix("ss") && !singularS.contains(noun) { return noun }
         if ["sky", "sea", "ocean", "sun", "moon", "horizon"].contains(noun) { return "the " + noun }
         return ("aeiou".contains(noun.first ?? "x") ? "an " : "a ") + noun
     }
