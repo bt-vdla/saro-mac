@@ -102,7 +102,7 @@ public actor SaroAI {
                 try await Self.ask(model, instructions, full, GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 8), stub)
             }
             guard let reply else { return .uncertain(reason: "timeout") }
-            return Ladder.label(reply)
+            return SafetyGate.parseLabel(reply)
         } catch {
             let reason = Ladder.reason(error)
             if reason == "rate_limited" { return .deferred(reason: reason) }

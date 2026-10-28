@@ -157,12 +157,12 @@ func walk(permissive: @escaping @Sendable (Int) async throws -> String,
 }
 
 @Test func classifierLabels() {
-    #expect(Ladder.label(" none.") == .label(.none))
-    #expect(Ladder.label("PASSIVE\n") == .label(.passive))
-    #expect(Ladder.label("Label: ACTIVE") == .label(.active))
-    #expect(Ladder.label("I can't help with that.") == .uncertain(reason: "unparsed"))
-    #expect(Ladder.label("") == .uncertain(reason: "unparsed"))
-    #expect(Ladder.label("Sorry, I cannot say. None") == .uncertain(reason: "unparsed"))
+    #expect(SafetyGate.parseLabel(" none.") == .label(.none))
+    #expect(SafetyGate.parseLabel("PASSIVE\n") == .label(.passive))
+    #expect(SafetyGate.parseLabel("Label: ACTIVE") == .label(.active))
+    #expect(SafetyGate.parseLabel("I can't help with that.") == .uncertain(reason: "unparsed"))
+    #expect(SafetyGate.parseLabel("") == .uncertain(reason: "unparsed"))
+    #expect(SafetyGate.parseLabel("Sorry, I cannot say. None") == .uncertain(reason: "unparsed"))
 }
 
 @Test func truncatesAtASentenceBoundary() {

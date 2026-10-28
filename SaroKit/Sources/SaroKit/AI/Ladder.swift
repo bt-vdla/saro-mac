@@ -86,15 +86,6 @@ enum Ladder {
         return mood
     }
 
-    /// First classifier label among the reply's first three words; anything else is uncertain.
-    // ponytail: three words, so a chatty refusal that later says "none" can't clear an entry.
-    static func label(_ reply: String) -> ClassifierOutcome {
-        for word in reply.uppercased().split(whereSeparator: { !$0.isLetter }).prefix(3) {
-            if let label = ClassifierLabel(rawValue: String(word)) { return .label(label) }
-        }
-        return .uncertain(reason: "unparsed")
-    }
-
     /// Cuts to `maxChars`, ending on a sentence boundary when that keeps at least half, else on a word boundary.
     static func truncated(_ text: String, maxChars: Int) -> String {
         guard text.count > maxChars else { return text }

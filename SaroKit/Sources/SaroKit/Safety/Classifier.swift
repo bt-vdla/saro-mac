@@ -40,10 +40,15 @@ extension SafetyGate {
 
     public static func classifierPrompt(for text: String) -> String { "Entry: \(text)\nLabel:" }
 
-    /// The first NONE, PASSIVE or ACTIVE word in the reply; anything else (a refusal, garbage) is uncertain (SR-02).
+    /// The first NONE, PASSIVE or ACTIVE among the reply's first three words, so a chatty refusal that later says "none"
+    /// can't clear an entry. Anything else is uncertain (SR-02): a refusal, garbage, a hedge naming two labels, "not NONE".
     public static func parseLabel(_ reply: String) -> ClassifierOutcome {
-        let words = reply.uppercased().split { !$0.isLetter }
-        return words.lazy.compactMap { ClassifierLabel(rawValue: String($0)) }.first.map { .label($0) }
-            ?? .uncertain(reason: "unparseable")
+        let words = reply.uppercased().split { !$0.isLetter }.map(String.init)
+        guard let i = words.prefix(3).firstIndex(where: { ClassifierLabel(rawValue: $0) != nil }),
+              let label = ClassifierLabel(rawValue: words[i]) else { return .uncertain(reason: "unparsed") }
+        guard Set(words.compactMap(ClassifierLabel.init)).count == 1, words.prefix(i).last != "NOT" else {
+            return .uncertain(reason: "ambiguous")
+        }
+        return .label(label)
     }
 }
