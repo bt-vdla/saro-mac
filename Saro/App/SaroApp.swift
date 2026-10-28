@@ -4,10 +4,18 @@ import SwiftUI
 @main
 struct SaroApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var boot = AppModel.boot()
+    @State private var boot: Result<AppModel, Error>
 
     init() {
         Daylight.shared.start()
+        let boot = AppModel.boot()
+        _boot = State(initialValue: boot)
+        // At launch, not when the window appears: Saro can start without it (macOS restores a window closed at quit),
+        // and ⌃⌘J, the menu bar's capture and the launch sweep mustn't wait until it opens.
+        if case .success(let model) = boot {
+            CapturePanelController.shared.install(model)
+            Task { await model.sweep() }
+        }
     }
 
     var body: some Scene {
@@ -17,7 +25,6 @@ struct SaroApp: App {
                 RootView()
                     .environment(model)
                     .task { await model.sweep() }
-                    .task { CapturePanelController.shared.install(model) }
                     #if DOGFOOD
                     .task { Snapshots.runIfRequested(model) }
                     .task { Scenarios.runIfRequested(model) }
