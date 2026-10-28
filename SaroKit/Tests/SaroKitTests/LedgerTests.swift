@@ -76,6 +76,22 @@ func tempLedger() throws -> Ledger {
     #expect(try await l.latestSnapshot(kind: "letter", day: held.localDay) != nil)
 }
 
+@Test func onlyReadingsMadeWithoutTheModelAreReadAgain() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: "x")
+    try await l.insertEntry(e)
+    // (status, model calls, read again once the model can run)
+    for (status, calls, again) in [("ok", 0, true), ("assetsUnavailable", 1, true), ("too_long", 0, false), ("ok", 4, false), ("guardrail", 1, false)] {
+        var run = AIRun(feature: "entry_reading", executor: "heuristic", status: status)
+        run.inputHash = "h"
+        run.modelCalls = calls
+        try await l.insertRun(run)
+        try await l.insertAnnotation(EntryAnnotation(entryId: e.id, aiRunId: run.id, generator: "heuristic"))
+        #expect(try await l.hasAnnotation(entryId: e.id, inputHash: "h", needsModel: true) == !again)
+        #expect(try await l.hasAnnotation(entryId: e.id, inputHash: "h"))
+    }
+}
+
 @Test func trashAndRestoreByBatch() async throws {
     let l = try tempLedger()
     let a = Entry(kind: .reflection, body: "a"), b = Entry(kind: .reflection, body: "b")

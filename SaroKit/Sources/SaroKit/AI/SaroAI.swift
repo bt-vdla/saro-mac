@@ -119,10 +119,11 @@ public actor SaroAI {
                           validate: @escaping @Sendable (EntryReading) -> Bool) async -> (EntryReading, Provenance) {
         let start = ContinuousClock.now
         let shown = candidates.filter { $0.entryId == entryId }
-        guard status == .available,
-              let fitted = await fit(text, instructions: Self.entryInstructions, schema: EntryOut.generationSchema,
+        guard status == .available else { return (fallback, provenance(.heuristic, 0, nil, Self.entryPromptVersion, start)) }
+        // Text that can't be fitted never will be (§11.5): marked, so a later pass doesn't read it again.
+        guard let fitted = await fit(text, instructions: Self.entryInstructions, schema: EntryOut.generationSchema,
                                      prompt: { Self.entryTask($0, shown, json: true, retry: true) })
-        else { return (fallback, provenance(.heuristic, 0, nil, Self.entryPromptVersion, start)) }
+        else { return (fallback, provenance(.heuristic, 0, nil, Self.entryPromptVersion, start, "too_long")) }
 
         let text = fitted.text
         let indexes = Set(shown.map(\.index))

@@ -243,6 +243,29 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(try await l.run("SELECT COUNT(*) AS n FROM insight_snapshot").first?["n"]?.int == 1)
 }
 
+@Test func readingsLeftByMissingModelAssetsGiveWay() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    // The assets go missing mid-ladder: one call, then "In your words".
+    func missing(at stage: Ask) -> SaroAI {
+        stubAI { ask in
+            if ask == stage { throw assetsMissing }
+            return ask == .classify ? "NONE" : ask == .entry ? cleanEntry : cleanDay
+        }
+    }
+    await Pipeline(ledger: l, ai: missing(at: .entry)).process(entryId: e.id) {}
+    #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "heuristic")
+    let p = Pipeline(ledger: l, ai: answers())
+    await p.process(entryId: e.id) {}
+    #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "on_device")
+    // The day's inputs are the same both times, so only the stop tells the two readings apart.
+    await Pipeline(ledger: l, ai: missing(at: .day)).readDay(e.localDay)
+    #expect(await p.latestDayReading(e.localDay)?.generator == "heuristic")
+    await p.readDay(e.localDay)
+    #expect(await p.latestDayReading(e.localDay)?.generator == "on_device")
+}
+
 @Test func refusedEntryNeverReachesThePermissiveDayRung() async throws {
     let l = try tempLedger()
     let permissiveDay = CallLog()

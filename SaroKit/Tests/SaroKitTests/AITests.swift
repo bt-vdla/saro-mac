@@ -14,6 +14,7 @@ let fallbackReading = EntryReading(title: "In your words", summary: "", mood: .n
 let guidedReading = EntryReading(title: "Guided", summary: "You wrote.", mood: .reflective)
 let guardrail = LanguageModelError.guardrailViolation(.init(debugDescription: "test"))
 let rateLimited = LanguageModelError.rateLimited(.init(resetDate: nil, debugDescription: "test"))
+let assetsMissing = SystemLanguageModel.Error.assetsUnavailable(.init(debugDescription: "test"))
 
 func walk(permissive: @escaping @Sendable (Int) async throws -> String,
           guided: @escaping @Sendable (Int) async throws -> EntryReading,

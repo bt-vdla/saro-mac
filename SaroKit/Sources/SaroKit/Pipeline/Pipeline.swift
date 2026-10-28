@@ -275,7 +275,8 @@ public actor Pipeline {
             return nil
         }
 
-        let inputHash = modelOK ? marked : unmarked
+        // Stored unmarked when the model's assets went missing mid-ladder: the model never read this day.
+        let inputHash = modelOK && prov.status != "assetsUnavailable" ? marked : unmarked
         let picked = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
         let payload = DayPayload(reading: reading, quotes: picked, entryIds: digests.map(\.entryId))
         var run = AIRun(feature: "day_reading", executor: prov.executor, status: prov.status)
