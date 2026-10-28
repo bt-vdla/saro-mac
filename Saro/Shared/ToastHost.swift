@@ -142,11 +142,17 @@ private struct TrashFlightLayer: View {
         .accessibilityHidden(true)
         .onChange(of: ready, initial: true) { _, ready in
             guard ready else { return }
+            #if DOGFOOD
+            if let frozen = Snapshots.trashFreeze { return v = frozen }
+            #endif
             withAnimation(big ? Motion.surface : Motion.small) { v = 1 } completion: { end() }
         }
         // MorphLayer.tsx's watchdog: a flight that can't land (the day changed under it) ends rather than hold a card hidden.
         .task {
             try? await Task.sleep(for: .seconds(1.2))
+            #if DOGFOOD
+            if Snapshots.trashFreeze != nil { return }
+            #endif
             end()
         }
     }
