@@ -62,7 +62,7 @@ struct FirstWeekView: View {
                             VStack(alignment: .leading, spacing: 0) {
                                 header(t)
                                 week(t, size: geo.size)
-                                rest(t, wide: min(geo.size.width, 1400) - 96 >= 1160).padding(.top, 28)
+                                rest(t, wide: min(geo.size.width, 1400) - 96 >= 1160 * PrefsStore.shared.textScale).padding(.top, 28)
                             }
                             .padding(.horizontal, 48)
                             .padding(.top, 52)
@@ -204,7 +204,9 @@ struct FirstWeekView: View {
                     .frame(width: width + 188, height: sky + numH)
                     .offset(x: -48)
                     .animation(Motion.small, value: weekdays)
-                HStack(spacing: 0) {
+                // Top-aligned: at larger Text sizes the milestones outgrow their 70 pt, and a centred row would drop the
+                // shorter days' numerals off the horizon.
+                HStack(alignment: .top, spacing: 0) {
                     ForEach(plan, id: \.index) { day in
                         WeekDay(day: day, date: dates[day.index], day0: day0, column: column, sky: sky, numH: numH,
                                 silhouette: scheme == .dark && day.on, focused: weekFocused && focusDay == day.index, pressed: pressed == day.index,
@@ -302,6 +304,7 @@ struct FirstWeekView: View {
                     }
                     .buttonStyle(PressStyle(hoverFill: true, radius: Radius.control, scale: 0.97))
                 }
+                .fixedSize()
                 .entering(progress(t, at: restAt + 0.12, duration: 0.35), y: 8)
             }
             .frame(width: 300, alignment: .leading)
@@ -422,9 +425,12 @@ private struct WeekDay: View {
         .accessibilityValue(day.on ? "On" : "Off")
     }
 
+    /// Sized by the column, not Text size: the strip's geometry already holds it, and scaling it again clips the dates.
+    private var numeralFont: Font { Typo.serif(column * 0.77 / PrefsStore.shared.textScale, .light) }
+
     private var numeral: some View {
         Text(date.formatted(.dateTime.day()))
-            .font(Typo.serif(column * 0.77, .light))
+            .font(numeralFont)
             .tracking(-column * 0.77 * 0.05)
             .monospacedDigit()
             .foregroundStyle(silhouette ? Tok.bg : Tok.ink)
@@ -432,7 +438,7 @@ private struct WeekDay: View {
             .overlay {
                 // The foot catches the flash as the light ignites, then cools.
                 Text(date.formatted(.dateTime.day()))
-                    .font(Typo.serif(column * 0.77, .light))
+                    .font(numeralFont)
                     .tracking(-column * 0.77 * 0.05)
                     .monospacedDigit()
                     .foregroundStyle(scheme == .dark ? Color(0xFFF6EC, 0xFFF6EC) : Tok.voiceBright)
