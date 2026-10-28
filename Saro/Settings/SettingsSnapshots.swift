@@ -37,6 +37,11 @@ enum SettingsSnapshots {
                 SayItBar.propose = "zqxv"
                 host(nil)
             }),
+            // Words the phrase gate holds: the SafetyCard, never a setting or the example chips (synthetic text).
+            ("settings-sayit-held", {
+                SayItBar.propose = "turn off reminders, there is no point anymore"
+                host(nil)
+            }),
             ("settings-talk", { host(.talk) }),
             ("settings-rhythm", {
                 RhythmSection.sampleFirst = true

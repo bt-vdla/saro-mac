@@ -1,12 +1,22 @@
 import Foundation
 import FoundationModels
 
+/// What the model may answer for Say it: one key of the closed list, or none, and its value.
+@Generable
+struct SettingOut {
+    @Guide(.anyOf(ParseIntent.Key.allCases.map(\.rawValue) + ["none"]))
+    var key: String
+    @Guide(description: "HH:MM (24-hour) for reminder or letterTime, on or off, a percentage for textScale, a tone (gentle, neutral, direct, contemplative), auto, light or dark for theme, or comma-separated focus areas")
+    var value: String
+}
+
 /// Settings' two optional on-device touchpoints. Neither writes anything: the tone preview is display text, and a
-/// parsed setting is a proposal the person still has to Apply. Each is one permissive call, checked as strictly as
-/// the rules it stands in for, and logged as a content-free ai_run.
+/// parsed setting is a proposal the person still has to Apply. The tone preview is one permissive call on gate-cleared
+/// text; Say it is one guided call on words the whole gate cleared. Each is checked as strictly as the rules it stands
+/// in for, and logged as a content-free ai_run.
 extension SaroAI {
     static let tonePromptVersion = "tone-preview-1"
-    static let settingsPromptVersion = "settings-parse-1"
+    static let settingsPromptVersion = "settings-parse-2"
 
     /// The sentence in all four tones, in one call (tone-preview). Every line that fails the output gate or the drift
     /// check, or doesn't come back, is the rules' version instead.
@@ -33,24 +43,21 @@ extension SaroAI {
     }
 
     /// When the rules match nothing (settings-parse): the person's words about settings mapped to one key of the same
-    /// closed list. Words that trip the phrase gate are never sent.
+    /// closed list, on the default guardrails. Callers gate the words first (`Pipeline.parseSetting`); words that trip
+    /// the phrase gate are never sent.
     public func parseSetting(_ text: String, current: SettingsValues) async -> (result: ParseIntent.Result, run: AIRun?) {
         let start = ContinuousClock.now
         guard status == .available, !SafetyGate.phraseHit(text) else { return (.none, nil) }
         let prompt = """
         Someone typed this in a journal app's settings: "\(text)"
-        Which one setting do they want to change, and to what?
-
-        Reply with only a JSON object, no markdown, with exactly these keys:
-        "key": one of \(ParseIntent.Key.allCases.map(\.rawValue).joined(separator: ", ")), or none
-        "value": the new value: HH:MM (24-hour) for reminder or letterTime, on or off, a percentage for textScale, a tone \
-        (gentle, neutral, direct, contemplative), auto, light or dark for theme, or comma-separated focus areas \
-        (\(FocusArea.allCases.map(\.rawValue).joined(separator: ", ")))
+        Which one setting do they want to change, and to what? The key is none if it isn't a setting.
+        Focus areas are \(FocusArea.allCases.map(\.rawValue).joined(separator: ", ")).
         """
         do {
-            let reply = try await Self.ask(SystemLanguageModel(guardrails: .permissiveContentTransformations), Self.voice, prompt, Self.options, nil)
-            let result = SafetyGate.phraseHit(reply) ? .none : ParseIntent.fromModel(reply, current: current)
-            return (result, run("settings-parse", start, calls: 1, status: SafetyGate.phraseHit(reply) ? "output_gate" : "ok", nil))
+            let out = try await Self.ask(SettingOut.self, base, Self.voice, prompt, Self.options, stub)
+            let held = SafetyGate.phraseHit("\(out.key) \(out.value)")
+            let result = held ? .none : ParseIntent.fromModel(key: out.key, value: out.value, current: current)
+            return (result, run("settings-parse", start, calls: 1, status: held ? "output_gate" : "ok", nil))
         } catch {
             return (.none, run("settings-parse", start, calls: 1, status: Ladder.reason(error), nil))
         }
@@ -58,8 +65,9 @@ extension SaroAI {
 
     private func run(_ feature: String, _ start: ContinuousClock.Instant, calls: Int, status: String, _ localDay: String?) -> AIRun {
         var r = AIRun(feature: feature, executor: calls == 0 ? "heuristic" : "on_device", status: status)
-        r.ladderRung = calls == 0 ? Rung.heuristic.rawValue : Rung.permissiveJSON.rawValue
-        r.guardrails = calls == 0 ? nil : "permissive"
+        let rung: Rung = calls == 0 ? .heuristic : feature == "settings-parse" ? .guided : .permissiveJSON
+        r.ladderRung = rung.rawValue
+        r.guardrails = rung == .heuristic ? nil : rung == .guided ? "default" : "permissive"
         r.variant = variant
         r.osBuild = Self.osBuild
         r.contextSize = contextSize
@@ -99,8 +107,14 @@ extension ParseIntent {
     static func fromModel(_ reply: String, current: SettingsValues) -> Result {
         guard let json = Ladder.jsonObject(in: reply),
               let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
-              let key = (object["key"] as? String).flatMap(Key.init), let value = (object["value"] as? String)?.lowercased().jsTrim
+              let key = object["key"] as? String, let value = object["value"] as? String
         else { return .none }
+        return fromModel(key: key, value: value, current: current)
+    }
+
+    static func fromModel(key: String, value: String, current: SettingsValues) -> Result {
+        guard let key = Key(rawValue: key) else { return .none }
+        let value = value.lowercased().jsTrim
         var next = current
         let on = ["on", "true", "yes"].contains(value), off = ["off", "false", "no"].contains(value)
         func minutes(_ s: String) -> Int? {
@@ -143,5 +157,17 @@ extension ParseIntent {
         if same(key, current, next) { return .alreadySet(already(key, next)) }
         return .changes([Change(key: key, label: label(key), why: "Read by the on-device model; check it before you apply", from: from, to: to)],
                         note: nil, proposed: next)
+    }
+}
+
+extension Pipeline {
+    /// Say it's words when the rules match nothing: they pass the whole SafetyGate first (SR-01), and only words it clears
+    /// reach the model. `held` when the gate held them, so the bar offers the SafetyCard instead of a setting.
+    public func parseSetting(_ text: String, current: SettingsValues) async -> (result: ParseIntent.Result, held: Bool) {
+        guard let verdict = await check(text)?.verdict else { return (.none, false) }
+        guard verdict == "clear" else { return (.none, verdict == "safety_hold") }
+        let (result, run) = await ai.parseSetting(text, current: current)
+        if let run { try? await ledger.insertRun(run) }
+        return (result, false)
     }
 }

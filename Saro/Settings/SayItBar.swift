@@ -21,6 +21,8 @@ struct SayItBar: View {
         case already(String)
         case failed
         case applied(keys: [ParseIntent.Key], before: SettingsValues)
+        /// The SafetyGate held the words: the SafetyCard, never a setting (SR-19).
+        case held
     }
 
     struct Shown: Equatable {
@@ -132,6 +134,13 @@ struct SayItBar: View {
             Text("Reading that on this Mac…").font(Typo.ui(14)).foregroundStyle(Tok.ink3).padding(.top, 12)
         case .failed:
             Text("Something didn’t change. Try again.").font(Typo.ui(14)).foregroundStyle(Tok.danger).padding(.top, 12)
+        case .held:
+            VStack(alignment: .leading, spacing: 10) {
+                Text("You don’t have to carry this alone. These lines are free and confidential, and someone will listen.")
+                    .font(Typo.ui(14)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
+                SafetyCardView(compact: true).frame(maxWidth: 440)
+            }
+            .padding(.top, 12)
         case .applied(let keys, let before):
             HStack(spacing: 4) {
                 Text("Changed \(plural(keys.count, "setting", "settings")) ·")
@@ -211,14 +220,18 @@ struct SayItBar: View {
     }
 
     private func run(_ value: String, instant: Bool) {
+        if SafetyGate.phraseHit(value) { return show(.held, instant: instant) }
         let rules = ParseIntent.parse(value, current: model.settingsValues)
         guard rules == .none, Readiness.model().isReady else { return present(rules, value, instant: instant) }
-        // The rules matched nothing: the on-device model maps it to the same closed list, and it's still only a proposal.
+        // The rules matched nothing: words the gate clears go to the on-device model, in the one-job queue (§11.7),
+        // mapped to the same closed list, and it's still only a proposal.
         show(.reading, instant: instant)
+        let id = seq
         Task {
-            let (result, run) = await model.ai.parseSetting(value, current: model.settingsValues)
-            if let run { try? await model.ledger.insertRun(run) }
-            guard case .reading? = shown?.result else { return }
+            let (result, held) = await model.exclusive { await model.pipeline.parseSetting(value, current: model.settingsValues) }
+            // Only the latest words' answer is shown: an edit or a newer request replaced this one.
+            guard shown?.id == id else { return }
+            if held { return show(.held, instant: instant) }
             present(result, value, instant: instant)
         }
     }
@@ -294,6 +307,7 @@ struct SayItBar: View {
         case .reading: "Reading that on this Mac."
         case .failed: "Something didn’t change. Try again."
         case .applied(let keys, _): "Changed \(plural(keys.count, "setting", "settings")). Undo is there for 8 seconds."
+        case .held: "You don’t have to carry this alone. These lines are free and confidential."
         }
     }
 

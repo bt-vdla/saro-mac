@@ -742,6 +742,35 @@ private func clock(_ h: Int, _ m: Int = 0, pm: Bool) -> P.Clock { .time(minutes:
         guard case .changes(let f, _, _) = P.fromModel(#"{"key": "focus", "value": "purpose, energy"}"#, current: v) else { Issue.record("no focus"); return }
         #expect(summary(f) == ["focus: Clarity → Energy, Purpose"])
     }
+
+    /// Say it's model path runs only on words the whole gate cleared (SR-01): a hold, the classifier's or the phrase
+    /// list's, is the SafetyCard, and the words never reach the model, which answers on the default guardrails.
+    @Test func sayItSendsOnlyGateClearedWordsToTheModel() async throws {
+        final class Asked: Sendable { let parse = Mutex(0) }
+        let asked = Asked()
+        func pipeline(_ label: String) throws -> (Pipeline, Ledger) {
+            let l = try tempLedger()
+            return (Pipeline(ledger: l, ai: SaroAI(stub: { prompt in
+                if prompt.hasSuffix("Label:") { return label }
+                asked.parse.withLock { $0 += 1 }
+                return #"{"key": "reminder", "value": "21:45"}"#
+            })), l)
+        }
+        let words = "zqxv the evenings"
+        #expect(!SafetyGate.phraseHit(words))
+        let (held, _) = try pipeline("PASSIVE")
+        let h = await held.parseSetting(words, current: values())
+        #expect(h.held && h.result == P.Result.none)
+        #expect(await held.parseSetting("make it quiet, there is no point anymore", current: values()).held)
+        #expect(asked.parse.withLock { $0 } == 0)
+
+        let (clear, l) = try pipeline("NONE")
+        let c = await clear.parseSetting(words, current: values())
+        guard case .changes(let list, _, _) = c.result, !c.held else { Issue.record("\(c)"); return }
+        #expect(summary(list) == ["reminder: Off → 9:45 pm"])
+        let run = try #require(try await l.run("SELECT guardrails, ladder_rung FROM ai_run WHERE feature='settings-parse'").first)
+        #expect(run["guardrails"]?.string == "default" && run["ladder_rung"]?.string == "guided")
+    }
 }
 
 @Suite struct NamesTests {
