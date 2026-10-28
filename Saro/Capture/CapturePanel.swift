@@ -104,26 +104,24 @@ final class CapturePanel: NSPanel {
 struct CapturePanelView: View {
     @Environment(AppModel.self) private var model
     @FocusState private var writing: Bool
+    @Namespace private var tabs
 
     var body: some View {
         @Bindable var panel = CapturePanelController.shared
         VStack(spacing: 12) {
-            Picker("Capture", selection: $panel.tab) {
-                Text("Video").tag(CaptureTab.video)
-                Text("Voice").tag(CaptureTab.voice)
-                Text("Write").tag(CaptureTab.write)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(CaptureController.shared.hasSession(.panel))
-
+            tabBar
             if panel.saved {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 30)).foregroundStyle(Tok.sage)
-                    Text("Saved to Today").font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
+                VStack(spacing: 10) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Tok.onPrimary)
+                        .frame(width: 28, height: 28)
+                        .background(Tok.sage, in: .circle)
+                    Text("Saved to today.").font(Typo.serif(17)).foregroundStyle(Tok.ink)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityElement(children: .combine)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else if panel.tab == .write {
                 writer
             } else {
@@ -131,11 +129,45 @@ struct CapturePanelView: View {
                              onSaved: { panel.confirmSaved() }, onClose: { panel.close() })
             }
         }
+        .animation(CaptureMotion.small, value: panel.saved)
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 14)
         .frame(width: 400, height: 404, alignment: .top)
         .background(Tok.surface)
+    }
+
+    /// Moment, Voice, Write: a capsule track whose selected chip slides on the small spring.
+    private var tabBar: some View {
+        let panel = CapturePanelController.shared
+        let locked = CaptureController.shared.hasSession(.panel)
+        return HStack(spacing: 2) {
+            ForEach(CaptureTab.allCases, id: \.self) { tab in
+                let on = panel.tab == tab
+                Button { withAnimation(CaptureMotion.small) { panel.tab = tab } } label: {
+                    Label(tab.title, systemImage: tab.icon)
+                        .font(Typo.ui(13, .medium))
+                        .foregroundStyle(on ? Tok.ink : Tok.ink2)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background {
+                            if on {
+                                Capsule().fill(Tok.surfaceAlt)
+                                    .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+                                    .matchedGeometryEffect(id: "tab", in: tabs)
+                            }
+                        }
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Tok.bg, in: .capsule)
+        .overlay(Capsule().strokeBorder(Tok.border))
+        .disabled(locked)
+        .opacity(locked ? 0.5 : 1)
     }
 
     private var writer: some View {
@@ -160,14 +192,14 @@ struct CapturePanelView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Tok.border))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(writing ? Tok.sageSoft : Tok.border))
+                .animation(CaptureMotion.out(0.16), value: writing)
             HStack {
-                Text("⌘↵ SAVES TO TODAY").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
+                Text("⌘↵ SAVES TO TODAY").font(Typo.mono(10.5)).tracking(1.15).foregroundStyle(Tok.ink3)
                 Spacer()
                 Button("Save") { save() }
+                    .buttonStyle(CaptureButtonStyle.primary)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Tok.sage)
                     .disabled(empty)
             }
         }
@@ -182,6 +214,24 @@ struct CapturePanelView: View {
             model.process(entry.id)
             CapturePanelController.shared.draft = ""
             CapturePanelController.shared.confirmSaved()
+        }
+    }
+}
+
+private extension CaptureTab {
+    var title: String {
+        switch self {
+        case .video: "Moment"
+        case .voice: "Voice"
+        case .write: "Write"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .video: "video.fill"
+        case .voice: "waveform"
+        case .write: "square.and.pencil"
         }
     }
 }
