@@ -2,7 +2,7 @@ import Foundation
 
 /// Schema migrations, indexed by `PRAGMA user_version`. Append a new string for every change; never edit a shipped one.
 enum Schema {
-    static let migrations: [String] = [v1]
+    static let migrations: [String] = [v1, v3]
 
     /// Tables that may only be inserted into (DR-05). The trigger aborts any UPDATE.
     static let appendOnly = [

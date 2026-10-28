@@ -137,3 +137,181 @@ private func prefs(_ json: String) -> Prefs { Prefs.decode(Data(json.utf8)) }
     #expect(DeepLink(try #require(URL(string: "SARO://Capture/write"))) == .capture(.reflection))
     #expect(DeepLink(try #require(URL(string: "saro://knows?q="))) == .knows(query: nil))
 }
+
+// MARK: Migration v3
+
+/// A journal as it stood before v3 (every earlier migration run), optionally with one entry.
+private func journalBeforeV3(withEntry: Bool) throws -> URL {
+    let root = FileManager.default.temporaryDirectory.appending(path: "saro-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let db = try SQLite(path: root.appending(path: "saro.sqlite").path)
+    let v3 = try #require(Schema.migrations.firstIndex(of: Schema.v3))
+    for (i, sql) in Schema.migrations.prefix(v3).enumerated() {
+        try db.exec(sql)
+        try db.exec("PRAGMA user_version = \(i + 1)")
+    }
+    if withEntry {
+        try db.run("INSERT INTO entry (id, kind, captured_at, tz_id, local_day, updated_at) VALUES ('e1','reflection',?,?,?,?)",
+                   [.text(Date.now.iso), .text("UTC"), .text("2026-10-26"), .text(Date.now.iso)])
+    }
+    return root
+}
+
+@Test func v3MigratesAJournalWithEntriesAsOnboarded() async throws {
+    let l = try Ledger(rootURL: try journalBeforeV3(withEntry: true))
+    #expect(try await l.schemaVersion() == Schema.migrations.count)
+    let p = try await l.profile()
+    #expect(p.onboardingDoneAt != nil)
+    #expect(p.tone == .neutral && p.focusAreas.isEmpty && !p.memoryPaused)
+    #expect(try await l.allEntries().count == 1)
+}
+
+@Test func v3MigratesAnEmptyJournalAsNotOnboarded() async throws {
+    let l = try Ledger(rootURL: try journalBeforeV3(withEntry: false))
+    #expect(try await l.profile().onboardingDoneAt == nil)
+    #expect(try await tempLedger().profile().onboardingDoneAt == nil)
+}
+
+@Test func profileRowIsOneRowAndComesBackAfterErase() async throws {
+    let l = try tempLedger()
+    await #expect(throws: (any Error).self) { try await l.run("INSERT INTO profile (id, created_at, updated_at) VALUES (2, 'x', 'x')") }
+    await #expect(throws: (any Error).self) { try await l.run("UPDATE profile SET tone='shouty'") }
+    try await l.run("DELETE FROM profile")
+    #expect(try await l.profile().onboardingDoneAt == nil)
+    #expect(try await l.run("SELECT COUNT(*) AS n FROM profile").first?["n"] == .int(1))
+}
+
+// MARK: Profile row
+
+@Test func profileRoundTripsAndBumpsUpdatedAt() async throws {
+    let l = try tempLedger()
+    let before = try await l.profile()
+    try await Task.sleep(for: .milliseconds(5))
+    var p = before
+    p.name = "Asha Rao"
+    p.called = "Asha"
+    p.tone = .contemplative
+    p.focusAreas = [.clarity, .energy]
+    p.onboardingDoneAt = Date(timeIntervalSince1970: 1_800_000_000)
+    try await l.saveProfile(p)
+    let after = try await l.profile()
+    #expect(after.name == "Asha Rao" && after.called == "Asha" && after.tone == .contemplative)
+    #expect(after.focusAreas == [.clarity, .energy])
+    #expect(after.onboardingDoneAt == p.onboardingDoneAt)
+    #expect(after.updatedAt > before.updatedAt)
+    #expect(after.createdAt == before.createdAt)
+}
+
+@Test func pausingMemoryThroughTheProfileOpensAndClosesAWindow() async throws {
+    let l = try tempLedger()
+    var p = try await l.profile()
+    p.memoryPaused = true
+    try await l.saveProfile(p)
+    try await l.saveProfile(p)
+    var pauses = try await l.pauses()
+    #expect(pauses.count == 1 && pauses[0].to == nil)
+    try await Task.sleep(for: .milliseconds(5))
+    p.memoryPaused = false
+    try await l.saveProfile(p)
+    pauses = try await l.pauses()
+    #expect(pauses.count == 1)
+    let window = try #require(pauses.first)
+    let to = try #require(window.to)
+    #expect(window.contains(window.from) && !window.contains(to) && !window.contains(window.from.addingTimeInterval(-1)))
+    try await l.openPause()
+    try await l.openPause()
+    #expect(try await l.pauses().filter { $0.to == nil }.count == 1)
+    try await l.closePause()
+    #expect(try await l.pauses().allSatisfy { $0.to != nil })
+}
+
+// MARK: Starter context
+
+@Test func starterContextRoundTripsAndVersionsPasses() async throws {
+    let l = try tempLedger()
+    #expect(try await l.latestStarter() == nil)
+    #expect(try await l.newStarterVersion() == 1)
+    var s = StarterContext(version: 1)
+    s.answers = [1: "I'm Asha", 3: "Usually late, around 10 pm"]
+    s.picks = [Pick(kind: .name, text: "Asha", value: "Asha", start: 4, end: 8, q: 1),
+               Pick(kind: .time, text: "around 10 pm", value: "22:00", start: 15, end: 27, q: 3)]
+    s.reflectTime = "22:00"
+    s.firstPrompt = "What made today feel late?"
+    try await l.saveStarter(s)
+    s.source = .ai
+    try await l.saveStarter(s)
+    let got = try #require(try await l.latestStarter())
+    #expect(got.id == s.id && got.answers == s.answers && got.picks == s.picks && got.source == .ai)
+    #expect(got.reflectTime == "22:00" && got.firstPrompt == s.firstPrompt)
+    #expect(try await l.newStarterVersion() == 2)
+    try await l.saveStarter(StarterContext(version: 2))
+    #expect(try await l.latestStarter()?.version == 2)
+}
+
+@Test func nothingDerivedFromAHeldAnswerIsStored() async throws {
+    let l = try tempLedger()
+    var s = StarterContext(version: 1)
+    s.answers = [2: "my sister Maya", 3: "late at night"]
+    s.picks = [Pick(kind: .person, text: "Maya", value: "Maya", start: 10, end: 14, q: 2),
+               Pick(kind: .time, text: "late at night", value: "23:00", start: 0, end: 13, q: 3)]
+    s.reflectTime = "23:00"
+    s.firstPrompt = "What would you tell Maya?"
+    s.held = [3]
+    try await l.saveStarter(s)
+    let got = try #require(try await l.latestStarter())
+    #expect(got.picks.map(\.text) == ["Maya"])
+    #expect(got.reflectTime == nil && got.firstPrompt == nil && got.held == [3])
+    #expect(got.answers == s.answers)
+
+    var dropped = StarterContext(version: 2)
+    dropped.picks = s.picks
+    dropped.dropped = [s.picks[0].dropKey]
+    #expect(dropped.storable.picks.map(\.kind) == [.time])
+    #expect(s.picks[0].dropKey == "person|maya")
+}
+
+// MARK: Reflection turns
+
+@Test func anAnswerNeedsAVerdict() async throws {
+    let l = try tempLedger()
+    var bare = ReflectionTurn(kind: .dailyQuestion, question: "What stayed with you?", generator: "curated", localDay: "2026-10-26")
+    bare.answer = "The walk home."
+    await #expect(throws: (any Error).self) { try await l.insertTurn(bare) }
+    let t = ReflectionTurn(kind: .dailyQuestion, question: "What stayed with you?", generator: "curated", localDay: "2026-10-26")
+    try await l.insertTurn(t)
+    await #expect(throws: (any Error).self) { try await l.setTurnAnswer(id: t.id, answer: "The walk home.", verdict: "") }
+    #expect(try await l.turns(day: "2026-10-26").first?.answer == nil)
+    try await l.setTurnAnswer(id: t.id, answer: "The walk home.", verdict: "clear")
+    let got = try #require(try await l.turns(day: "2026-10-26").first)
+    #expect(got.answer == "The walk home." && got.answerVerdict == "clear" && got.updatedAt >= got.createdAt)
+}
+
+@Test func aHeldAnswerDropsTheDaysReadings() async throws {
+    let l = try tempLedger()
+    let day = "2026-10-26"
+    for kind in ["day_reading", "letter", "pattern"] {
+        try await l.insertSnapshot(InsightSnapshot(kind: kind, day: day, aiRunId: nil, generator: "heuristic", inputHash: nil, payload: "{}"))
+    }
+    let t = ReflectionTurn(kind: .dailyQuestion, question: "q", generator: "curated", localDay: day)
+    try await l.insertTurn(t)
+    try await l.setTurnAnswer(id: t.id, answer: "a", verdict: "safety_hold")
+    #expect(try await l.latestSnapshot(kind: "day_reading", day: day) == nil)
+    #expect(try await l.latestSnapshot(kind: "letter", day: day) == nil)
+    #expect(try await l.latestSnapshot(kind: "pattern", day: day) != nil)
+}
+
+@Test func turnsFilterByKindEntryAndArchive() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .moment, localDay: "2026-10-26")
+    try await l.insertEntry(e)
+    let prompt = ReflectionTurn(kind: .prompt, question: "Which moment stands out?", generator: "tone", localDay: e.localDay, entryId: e.id)
+    var old = ReflectionTurn(kind: .dailyQuestion, question: "old", generator: "curated", localDay: e.localDay)
+    old.archivedAt = .now
+    let current = ReflectionTurn(kind: .dailyQuestion, question: "new", generator: "curated", localDay: e.localDay)
+    for t in [prompt, old, current] { try await l.insertTurn(t) }
+    #expect(try await l.turns(day: e.localDay).map(\.id) == [prompt.id, current.id])
+    #expect(try await l.turns(day: e.localDay, kind: .dailyQuestion).map(\.question) == ["new"])
+    #expect(try await l.turns(day: e.localDay, kind: .dailyQuestion, includeArchived: true).count == 2)
+    #expect(try await l.turns(entryId: e.id).map(\.kind) == [.prompt])
+    #expect(try await l.turns(day: "2026-10-25").isEmpty)
+}
