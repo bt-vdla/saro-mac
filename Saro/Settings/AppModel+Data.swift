@@ -133,7 +133,8 @@ extension AppModel {
         Daylight.shared.mode = .clock
         // After the light, whose setter writes its key back. Onboarding's place goes too, so the next pass opens on the door.
         for key in Self.erasedDefaults { UserDefaults.standard.removeObject(forKey: key) }
-        for key in OnboardingFlow.keys { OnboardingFlow.defaults.removeObject(forKey: key) }
+        // The tour lives beside onboarding's place: a demo's in its own suite, so erasing it leaves the real journal's be.
+        for key in OnboardingFlow.keys + ["tourSeen"] { OnboardingFlow.defaults.removeObject(forKey: key) }
         profile = try await ledger.profile()
         starter = nil
         openEntryID = nil
@@ -144,9 +145,9 @@ extension AppModel {
         await reload()
     }
 
-    /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, the capture devices, What Saro
-    /// knows' graph or list, and the tour (dogfood).
-    static let erasedDefaults = ["captureDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID", "saro.knows.mode", "tourSeen"]
+    /// What Saro keeps in UserDefaults outside PrefsStore: the capture draft, the light, the capture devices, and What Saro
+    /// knows' graph or list.
+    static let erasedDefaults = ["captureDraft", "daylight", "videoQuality", "captureCameraID", "captureMicID", "saro.knows.mode"]
 
     /// The Book of `year`, as HTML or PDF, saved where the person picks.
     func exportBook(year: Int, pdf: Bool) async throws -> Bool {
