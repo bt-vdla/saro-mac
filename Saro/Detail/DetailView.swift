@@ -441,7 +441,7 @@ struct ReadingSection: View {
                 .buttonStyle(.link).font(Typo.ui(12))
         case "clear", "unavailable_clear":
             // A safety hold anywhere that day hides every entry's reading, mood, quote and 'In your words' (SR-13).
-            if model.dayStatus == .held {
+            if model.isDayHeld {
                 Text("Saro isn't writing about this day. This entry is kept, and you can play or read it any time.")
                     .font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
             } else if let a = model.annotations[entry.id] {

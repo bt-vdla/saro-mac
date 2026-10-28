@@ -53,6 +53,8 @@ extension AppModel {
         case ProcessingStatus.recording: return "Recording…"
         case ProcessingStatus.transcribing: return "Transcribing…"
         case ProcessingStatus.pending, ProcessingStatus.gating, ProcessingStatus.reading:
+            // A held entry being checked again after an edit stays held until its new text clears.
+            if verdicts[e.id]?.verdict == "safety_hold" { return "Saved · not read" }
             return e.kind == .still ? nil : "Reading…"
         case ProcessingStatus.transcriptUnavailable: return "Transcript not ready"
         case ProcessingStatus.failed: return "Couldn't save"
@@ -78,7 +80,7 @@ extension AppModel {
 
     /// None for any entry on a day with a safety hold (SR-13's whole-day rule).
     func mood(for e: Entry) -> String? {
-        guard verdicts[e.id]?.verdict == "clear", dayStatus != .held else { return nil }
+        guard verdicts[e.id]?.verdict == "clear", !isDayHeld else { return nil }
         return annotations[e.id]?.moodLabel
     }
 }
