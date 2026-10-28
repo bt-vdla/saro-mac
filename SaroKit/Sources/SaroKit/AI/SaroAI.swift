@@ -77,10 +77,14 @@ public actor SaroAI {
         }
     }
 
-    public nonisolated var variant: String { base.variant.displayName }
+    // A test stub stands in for the model, so it never asks the system model anything (that waits while it's busy).
+    public nonisolated var variant: String { stub == nil ? base.variant.displayName : "stub" }
     /// The model can report 0 while it is busy or still loading; budgeting against 0 would mark every entry too long,
     /// and that is never retried (§11.5). 4096 is the smallest context the on-device model has shipped with.
-    public nonisolated var contextSize: Int { base.contextSize > 0 ? base.contextSize : 4096 }
+    public nonisolated var contextSize: Int {
+        let n = stub == nil ? base.contextSize : 0
+        return n > 0 ? n : 4096
+    }
 
     /// Loads the model ahead of a call (recorder open, inspector shown). The session is kept so it isn't torn down mid-warm.
     public func prewarm() {
@@ -315,15 +319,21 @@ public actor SaroAI {
     // MARK: Budget, timing, provenance
 
     private func tokens(_ instructions: String, _ prompt: String, _ schema: GenerationSchema?) async -> Int {
+        // A test stub answers in the model's place, so it shouldn't wait on the system model to count tokens.
+        if stub != nil { return Self.estimate(instructions, prompt, schema) }
         do {
             var n = try await base.tokenCount(for: Instructions(instructions))
             n += try await base.tokenCount(for: prompt)
             if let schema { n += try await base.tokenCount(for: schema) }
             return n
         } catch {
-            // ponytail: 3 chars/token is the BRD's conservative knob, used only if tokenCount itself fails.
-            return (instructions.count + prompt.count) / 3 + (schema == nil ? 0 : 350)
+            return Self.estimate(instructions, prompt, schema)
         }
+    }
+
+    // ponytail: 3 chars/token is the BRD's conservative knob, used only when tokenCount can't be asked.
+    private static func estimate(_ instructions: String, _ prompt: String, _ schema: GenerationSchema?) -> Int {
+        (instructions.count + prompt.count) / 3 + (schema == nil ? 0 : 350)
     }
 
     /// Shrinks the user's text at a sentence boundary until instructions + prompt + schema leave the output reserve.
