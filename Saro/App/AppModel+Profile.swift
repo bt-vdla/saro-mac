@@ -17,7 +17,7 @@ extension AppModel {
         do {
             var p = if let profile { profile } else { try await ledger.profile() }
             change(&p)
-            try await ledger.saveProfile(p)
+            try await saves.track("profile") { [ledger, p] in try await ledger.saveProfile(p) }
             profile = try await ledger.profile()
         } catch {
             show(.failed("Couldn't save your profile", error))
