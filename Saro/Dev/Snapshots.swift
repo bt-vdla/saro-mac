@@ -153,6 +153,7 @@ enum Snapshots {
                 // Navigation: the time lens at each level, the date picker, the palette's start and an empty past day.
                 ("nav-lens-week", {
                     model.pane = .day
+                    (model.openEntryID, model.insight) = (nil, .spine)
                     model.openLens(level: .week, opener: .key)
                 }),
                 ("nav-lens-month", { model.lens?.go(to: .month, how: .instant) }),
@@ -181,7 +182,8 @@ enum Snapshots {
                 // still sits 8 pt above it.
                 ("nav-bar-narrow", {
                     p.setContentSize(NSSize(width: 570, height: 860))
-                    model.show(Toast("Saved Yesterday as an image"))
+                    // Set, not shown: a shown toast can time out before a loaded machine captures it.
+                    model.toast = Toast("Saved Yesterday as an image")
                 }),
                 ("nav-bar-wide", {
                     p.setContentSize(NSSize(width: 1320, height: 860))
