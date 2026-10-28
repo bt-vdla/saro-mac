@@ -190,16 +190,19 @@ final class ReflectionModel {
     /// today, the one due now (stored once, with a content-free notification), else the day 4–5 check-in.
     private func firstWeekNote(_ day: String, model: AppModel) async -> WeekNote? {
         let ledger = model.ledger
-        let held = Set((try? await ledger.entryIDs(withLatestVerdictIn: ["safety_hold"])) ?? [])
         for kind in ["pattern", "week_letter"] {
             guard let s = try? await ledger.latestSnapshot(kind: kind), let n = try? JSONDecoder().decode(WeekNote.self, from: Data(s.payload.utf8))
             else { continue }
-            // Generated from an entry since held: dropped (SR-15).
-            if !held.isDisjoint(with: n.sources) {
+            switch await model.pipeline.weekNoteStatus(n) {
+            case .held:
+                // Drawn from a day since held, or from a moment that's gone: dropped (SR-13, SR-15).
                 try? await ledger.deleteSnapshot(id: s.id)
-                continue
+            case .ready:
+                if s.fromDay == day { return n }
+            default:
+                // One of its days is waiting on a check or a read: it shows again once that day can.
+                if s.fromDay == day { return nil }
             }
-            if s.fromDay == day { return n }
         }
         guard day == LocalDay.today(), let start = PrefsStore.shared.weekStartedOn,
               let weekDay = WeekMilestones.weekDay(startedOn: start, now: .now) else { return nil }

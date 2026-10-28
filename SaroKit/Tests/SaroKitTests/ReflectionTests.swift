@@ -364,3 +364,59 @@ private let work = [
     let quote = try #require(entries.first?.quote)
     #expect(clear.body!.contains(quote))
 }
+
+@Test func theWeekSkipsDaysAwaitingACheckOrStillBeingRead() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let start = LocalDay.today()
+    let (d1, d2) = (LocalDay.adding(1, to: start), LocalDay.adding(2, to: start))
+    let ready = Entry(kind: .reflection, body: "Long day at work. The launch meeting ran over.")
+    let waiting = Entry(kind: .reflection, body: "Work again, the launch is close.", localDay: d1)
+    var voice = Entry(kind: .voice, localDay: d1)
+    voice.processingStatus = ProcessingStatus.transcriptUnavailable
+    let reading = Entry(kind: .reflection, body: "More work on the launch today.", localDay: d2)
+    let unread = Entry(kind: .reflection, body: "Still the launch.", localDay: d2)
+    for e in [ready, waiting, voice, reading, unread] { try await l.insertEntry(e) }
+    for e in [ready, waiting, reading] { await p.process(entryId: e.id) {} }
+    #expect(await p.dayStatus(d1) == .awaitingCheck)
+    #expect(await p.dayStatus(d2) == .working)
+    // SR-14: the clear entries of a day awaiting a check, or still being read, feed neither note.
+    #expect(await p.weekEntries(from: start).map(\.id) == [ready.id])
+}
+
+@Test func aStoredWeekNoteFollowsTheWholeDayRule() async throws {
+    let l = try tempLedger()
+    let p = offline(l)
+    let (d0, d1) = ("2026-09-26", "2026-09-27")
+    let a = Entry(kind: .reflection, body: "Long day at work. The launch slipped.", localDay: d0)
+    let b = Entry(kind: .reflection, body: "Walked by the river after work.", localDay: d1)
+    for e in [a, b] {
+        try await l.insertEntry(e)
+        await p.process(entryId: e.id) {}
+    }
+    let note = WeekNote(kind: .pattern, title: "A first pattern", lines: ["You said “the launch slipped”."], sources: [a.id, b.id])
+    #expect(await p.weekNoteStatus(note) == .ready)
+
+    // A day waiting on a check hides it for now.
+    var voice = Entry(kind: .voice, localDay: d1)
+    voice.processingStatus = ProcessingStatus.transcriptUnavailable
+    try await l.insertEntry(voice)
+    #expect(await p.weekNoteStatus(note) == .awaitingCheck)
+    _ = try await l.trash([voice.id])
+    #expect(await p.weekNoteStatus(note) == .ready)
+
+    // Held through a different entry, a held answer or a held mood note: the note goes (SR-13).
+    let other = Entry(kind: .reflection, body: "Some nights I just want to die.", localDay: d1)
+    try await l.insertEntry(other)
+    await p.process(entryId: other.id) {}
+    #expect(await p.weekNoteStatus(note) == .held)
+    _ = try await l.trash([other.id])
+    #expect(await p.weekNoteStatus(note) == .ready)
+    try await l.setUserMood(day: d0, label: .tender, note: "x", verdict: "safety_hold")
+    #expect(await p.weekNoteStatus(note) == .held)
+
+    // A moment since trashed takes the note with it.
+    #expect(await p.weekNoteStatus(WeekNote(kind: .pattern, title: "", lines: [], sources: [b.id])) == .ready)
+    _ = try await l.trash([b.id])
+    #expect(await p.weekNoteStatus(WeekNote(kind: .pattern, title: "", lines: [], sources: [b.id])) == .held)
+}

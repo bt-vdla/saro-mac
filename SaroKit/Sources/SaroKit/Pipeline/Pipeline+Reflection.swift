@@ -94,12 +94,13 @@ extension Pipeline {
     }
 
     /// The first week's moments from `start` (FR-REF-10): only entries the gate cleared for their current text, from
-    /// days not held, as their stored quotes, readings and moods.
+    /// days whose reading may show (a day held, awaiting a check or still being read gives none, SR-13, SR-14), as their
+    /// stored quotes, readings and moods.
     public func weekEntries(from start: String, days: Int = 7) async -> [WeekEntry] {
         var out: [WeekEntry] = []
         for i in 0..<days {
             let d = LocalDay.adding(i, to: start)
-            guard await dayStatus(d) != .held, let entries = try? await ledger.entries(day: d) else { continue }
+            guard await dayStatus(d) == .ready, let entries = try? await ledger.entries(day: d) else { continue }
             let verdicts = (try? await ledger.verdicts(day: d)) ?? [:]
             let annotations = (try? await ledger.annotations(day: d)) ?? [:]
             for e in entries {
@@ -111,6 +112,26 @@ extension Pipeline {
             }
         }
         return out
+    }
+
+    /// Whether a stored first-week note may still show, by the days its moments are on (SR-13, SR-14, SR-15): `.held`
+    /// when one of those days was since held or a moment is gone, so the note is dropped; `.ready` when every one may
+    /// show; any other status hides it until those days are read.
+    public func weekNoteStatus(_ note: WeekNote) async -> DayStatus {
+        var days: Set<String> = []
+        for id in note.sources {
+            guard let e = try? await ledger.entry(id), e.trashedAt == nil else { return .held }
+            days.insert(e.localDay)
+        }
+        var status = DayStatus.ready
+        for d in days {
+            switch await dayStatus(d) {
+            case .held: return .held
+            case .ready: continue
+            case let other: status = other
+            }
+        }
+        return status
     }
 
     /// Answers and mood notes checked while the model couldn't run are checked again once it can (SR-17).
