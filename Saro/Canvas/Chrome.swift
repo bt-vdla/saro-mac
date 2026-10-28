@@ -34,7 +34,8 @@ struct OrbitNav: View {
 }
 
 /// The bottom glass bar (BottomLeftStatus.tsx): day and mood ribbon, capture, then History and Recenter, in one row when
-/// it fits and two below that (the day over the captures), so large text never pushes a control off it. The day and the
+/// it fits and two below that (the day over the captures, History beside the day and Recenter beside the captures), so
+/// large text never pushes a control off it. The day and the
 /// replay share one cell, so opening the replay never resizes the bar; its track grows out of the date. The day view
 /// publishes its height for the surfaces that sit above it.
 struct BottomBar: View {
@@ -53,14 +54,15 @@ struct BottomBar: View {
                 divider
                 trailing
             }
-            VStack(spacing: 2) {
+            HStack(spacing: 2) {
                 replayCell {
                     VStack(spacing: 2) {
                         HStack(spacing: 2) { dayCell(.short) }
                         HStack(spacing: 2) { captures }
                     }
                 }
-                HStack(spacing: 2) { trailing }
+                // 44 + 18 + 44 lines up with the rows' 52 + 2 + 52.
+                VStack(spacing: 18) { trailing }
             }
         }
         .padding(6)
@@ -116,6 +118,8 @@ struct BottomBar: View {
                 .contentShape(.rect(cornerRadius: 22))
             }
             .buttonStyle(PressStyle(hoverFill: true, radius: 22))
+            // In one row it hugs its date (the web's flex-none button); two rows give it 120 pt to shorten into.
+            .fixedSize(horizontal: width == .long, vertical: false)
             .background {
                 if !model.replay.active { Color.clear.matchedGeometryEffect(id: reduceMotion ? "date" : "replayTrack", in: cell) }
             }
@@ -225,9 +229,10 @@ struct CaptureFace: View {
     var body: some View {
         VStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(tint).frame(height: 20)
-            Text(title).font(Typo.ui(11, .medium)).foregroundStyle(lit ? Tok.ink : Tok.ink2)
+            Text(title).font(Typo.ui(11, .medium)).foregroundStyle(lit ? Tok.ink : Tok.ink2).fixedSize()
         }
-        .frame(width: 68, height: 52)
+        // Larger text widens it rather than cutting its label, so the bar drops to two rows first.
+        .frame(minWidth: 68, minHeight: 52)
     }
 }
 
