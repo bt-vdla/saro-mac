@@ -2,15 +2,26 @@ import AppKit
 import SaroKit
 import SwiftUI
 
-/// Trash (DR-15): soft-deleted entries, restorable one by one. ponytail: no purge yet; the 30-day purge comes with backups.
+/// Trash (DR-15, FR-DAY-05): soft-deleted entries, restorable one by one or all at once, deleted for good one by one,
+/// all at once, or by the launch sweep 30 days on. Deleting for good asks first.
 struct TrashView: View {
     @Environment(AppModel.self) private var model
     @State private var items: [Entry] = []
+    /// What a Delete or Empty Trash… is asking about.
+    @State private var confirming: [String]?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Trash").font(Typo.serif(26, .medium)).padding(.horizontal, 28).padding(.top, 24)
-            Text("Entries you deleted stay here and can be restored. Their recordings are kept.")
+            HStack(alignment: .firstTextBaseline) {
+                Text("Trash").font(Typo.serif(26, .medium))
+                Spacer()
+                if !items.isEmpty {
+                    Button("Restore All") { Task { await restore(items.map(\.id)) } }
+                    Button("Empty Trash…") { confirming = items.map(\.id) }
+                }
+            }
+            .padding(.horizontal, 28).padding(.top, 24)
+            Text("Entries you deleted wait here for 30 days, then they’re deleted for good with their recordings and photos.")
                 .font(Typo.ui(13)).foregroundStyle(Tok.ink3).padding(.horizontal, 28).padding(.bottom, 12)
             if items.isEmpty {
                 ContentUnavailableView("Trash is empty", systemImage: "trash")
@@ -25,12 +36,8 @@ struct TrashView: View {
                                 .font(Typo.mono(9.5)).foregroundStyle(Tok.ink3)
                         }
                         Spacer()
-                        Button("Restore") {
-                            Task {
-                                await model.restore(ids: [e.id])
-                                await load()
-                            }
-                        }
+                        Button("Restore") { Task { await restore([e.id]) } }
+                        Button("Delete…") { confirming = [e.id] }
                     }
                     .padding(.vertical, 4)
                 }
@@ -39,94 +46,32 @@ struct TrashView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Tok.bg)
+        .confirmationDialog(confirming?.count == 1 ? "Delete this entry forever?" : "Delete all \(confirming?.count ?? 0) entries forever?",
+                            isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                            presenting: confirming) { ids in
+            Button("Delete Forever", role: .destructive) { Task { await deleteForGood(ids) } }
+            Button("Keep", role: .cancel) {}
+        } message: { _ in
+            Text("This can’t be undone.")
+        }
         .task { await load() }
         .onAppear { model.screen = .trash }
     }
 
     private func load() async { items = (try? await model.ledger.trashed()) ?? [] }
-}
 
-struct SettingsView: View {
-    @Environment(AppModel.self) private var model
-    @AppStorage("videoQuality") private var videoQuality = "720p"
-    @Environment(\.openWindow) private var openWindow
-    @State private var previousScreen: ScreenID = .canvas
-
-    var body: some View {
-        TabView {
-            Form {
-                Picker("Video quality", selection: $videoQuality) {
-                    Text("720p HEVC (default)").tag("720p")
-                    Text("1080p HEVC").tag("1080p")
-                }
-                LabeledContent("Quick capture", value: "⌃⌘J from anywhere, or the menu bar")
-                LabeledContent("Writing Tools", value: "Off in Saro's editors")
-            }
-            .tabItem { Label("General", systemImage: "gearshape") }
-
-            Form { DaylightPicker() }
-                .tabItem { Label("Appearance", systemImage: "circle.lefthalf.filled") }
-
-            Form {
-                LabeledContent("Model", value: model.ai.variant)
-                LabeledContent("Status", value: model.ai.status == .available ? "Available on this Mac" : "Unavailable")
-                LabeledContent("Context", value: "\(model.ai.contextSize) tokens")
-                LabeledContent("macOS build", value: SaroAI.osBuild)
-                LabeledContent("Routes", value: "On-device only. Nothing leaves this Mac.")
-            }
-            .tabItem { Label("Intelligence", systemImage: "sparkles") }
-
-            Form {
-                LabeledContent("Journal", value: model.isDemo ? "Demo (temporary)" : "Application Support/Saro")
-                Button("Export Everything…") { Task { await model.exportEverything() } }
-                Button("Show Journal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.ledger.rootURL]) }
-                #if DOGFOOD
-                Button("Take the Tour Again") {
-                    openWindow(id: "main")
-                    DevMode.shared.startTour(model)
-                }
-                #endif
-            }
-            .tabItem { Label("Data", systemImage: "externaldrive") }
-        }
-        .formStyle(.grouped)
-        .frame(width: 520, height: 320)
-        .onAppear {
-            previousScreen = model.screen
-            model.screen = .settings
-        }
-        // Unless the main window moved on meanwhile, its screen is current again once Settings closes.
-        .onDisappear { if model.screen == .settings { model.screen = previousScreen } }
+    private func restore(_ ids: [String]) async {
+        await model.restore(ids: ids)
+        await load()
     }
-}
 
-extension AppModel {
-    /// Export everything (DR-20): a `.saroexport` folder with every ledger row as JSON plus the media files.
-    func exportEverything() async {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Export Here"
-        panel.message = "Choose where to put the Saro export. It contains your words and recordings."
-        guard panel.runModal() == .OK, let dir = panel.url else { return }
+    private func deleteForGood(_ ids: [String]) async {
         do {
-            let dest = try await export(to: dir)
-            show(Toast("Exported to \(dir.lastPathComponent)/\(dest.lastPathComponent)"))
+            let n = try await model.ledger.purge(ids)
+            model.show(Toast(n == 1 ? "Deleted for good" : "Deleted \(n) for good"))
         } catch {
-            show(Toast("Export failed: \(error.localizedDescription)", style: .error))
+            model.show(Toast("Couldn’t delete: \(error.localizedDescription)", style: .error))
         }
-    }
-
-    /// Writes `Saro-<today>.saroexport` into `dir`, replacing an earlier one of that name.
-    func export(to dir: URL) async throws -> URL {
-        let dest = dir.appending(path: "Saro-\(LocalDay.today()).saroexport", directoryHint: .isDirectory)
-        if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
-        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-        try await ledger.exportJSON(to: dest.appending(path: "saro.json"))
-        // Off the main actor: every recording is copied, which would freeze the window for as long as that takes.
-        let media = ledger.mediaURL
-        try await Task.detached { try FileManager.default.copyItem(at: media, to: dest.appending(path: "Media")) }.value
-        return dest
+        await load()
     }
 }

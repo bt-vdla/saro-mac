@@ -11,7 +11,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
 
     static let title = "A minute for today?"
     static let body = "Your minute is here whenever you are."
-    static let letterTitle = "Your letter is here."
+    static let letterTitle = "Your evening letter is here."
     static let letterBody = "It’s ready whenever you are."
 
     private static let ritualCategory = "ritual"
@@ -37,7 +37,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: Self.ritualCategory, actions: [voice, write], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.letterCategory, actions: [], intentIdentifiers: []),
         ])
-        Task { await scheduleRitual() }
+        scheduleRitual()
     }
 
     func status() async -> UNAuthorizationStatus { await center.notificationSettings().authorizationStatus }
@@ -55,15 +55,16 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
                                                     trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)))
     }
 
-    /// Replaces every ritual reminder with the ones the prefs ask for (none while the reminder is off).
-    func scheduleRitual(_ prefs: Prefs = PrefsStore.shared.prefs) async {
+    /// Replaces every ritual reminder with the ones the prefs ask for (none while the reminder is off). Synchronous, so
+    /// two calls can't interleave and leave a reminder on a weekday just turned off.
+    func scheduleRitual(_ prefs: Prefs = PrefsStore.shared.prefs) {
         // ponytail: a demo journal shares the bundle id, so it leaves the real schedule alone; sendTest still works there.
         guard !PrefsStore.isDemo else { return }
-        let old = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix("saro-ritual-") }
-        center.removePendingNotificationRequests(withIdentifiers: old)
+        center.removePendingNotificationRequests(withIdentifiers: (1...7).map { "saro-ritual-\($0)" })
         for r in Self.requests(for: prefs) {
-            try? await center.add(UNNotificationRequest(identifier: r.id, content: ritualContent(),
-                                                        trigger: UNCalendarNotificationTrigger(dateMatching: r.components, repeats: true)))
+            center.add(UNNotificationRequest(identifier: r.id, content: ritualContent(),
+                                             trigger: UNCalendarNotificationTrigger(dateMatching: r.components, repeats: true)),
+                       withCompletionHandler: nil)
         }
     }
 

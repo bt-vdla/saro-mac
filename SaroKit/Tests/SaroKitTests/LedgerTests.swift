@@ -146,11 +146,11 @@ func tempLedger() throws -> Ledger {
     for e in [page, still, moment] { try await l.insertEntry(e) }
     func status(_ e: Entry) async throws -> String? { try await l.entry(e.id)?.processingStatus }
     // A title alone isn't gated text.
-    try await l.updateEntryText(id: page.id, body: "Tea with Ravi.", titleUser: "Tea")
+    try await l.updateEntryText(id: page.id, body: "Tea with Ravi.", titleUser: "Tea", captionUser: nil)
     #expect(try await status(page) == ProcessingStatus.done)
-    try await l.updateEntryText(id: page.id, body: "Tea with Ravi, then rain.", titleUser: "Tea")
+    try await l.updateEntryText(id: page.id, body: "Tea with Ravi, then rain.", titleUser: "Tea", captionUser: nil)
     #expect(try await status(page) == ProcessingStatus.pending)
-    try await l.updateEntryText(id: page.id, body: " \n", titleUser: "Tea")
+    try await l.updateEntryText(id: page.id, body: " \n", titleUser: "Tea", captionUser: nil)
     #expect(try await status(page) == ProcessingStatus.done)
     try await l.updateEntryText(id: still.id, body: nil, titleUser: nil, captionUser: "The river")
     #expect(try await status(still) == ProcessingStatus.pending)
@@ -167,4 +167,25 @@ func tempLedger() throws -> Ledger {
     try await l.discardIfEmpty(empty.id)
     try await l.discardIfEmpty(full.id)
     #expect(try await l.allEntries(includeTrashed: true).map(\.id) == [full.id])
+}
+
+/// Empty as the editor and the gate see it: a page of Option-Space or another Unicode space is discarded too.
+@Test(arguments: ["\u{00A0}", "\u{2028}", "\u{3000}", "\u{000B}"])
+func discardIfEmptyAgreesWithTheEditorOnWhatIsEmpty(space: String) async throws {
+    let l = try tempLedger()
+    let page = Entry(kind: .reflection, body: "")
+    try await l.insertEntry(page)
+    try await l.updateEntryText(id: page.id, body: space, titleUser: nil, captionUser: nil)
+    #expect(try await l.entry(page.id)?.processingStatus == ProcessingStatus.done)
+    try await l.discardIfEmpty(page.id)
+    #expect(try await l.entry(page.id) == nil)
+}
+
+/// A journal a newer Saro migrated is refused, not written to with a schema this build doesn't know.
+@Test func aNewerJournalIsRefused() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "saro-test-\(UUID().uuidString)")
+    let l = try Ledger(rootURL: root)
+    try await l.run("PRAGMA user_version = \(Schema.migrations.count + 1)")
+    #expect(throws: NewerJournalError.self) { try Ledger(rootURL: root) }
+    #expect(NewerJournalError().localizedDescription.contains("newer Saro"))
 }

@@ -32,6 +32,7 @@ struct SaroApp: App {
                 RootView()
                     .environment(model)
                     .environment(PrefsStore.shared)
+                    .comfortEnvironment()
                     .deepLinks(model)
                     .task { await model.loadProfile() }
                     .task { await model.sweep() }
@@ -57,8 +58,10 @@ struct SaroApp: App {
         }
 
         Settings {
-            if case .success(let model) = boot { SettingsView().environment(model) }
+            if case .success(let model) = boot { SettingsWindow().environment(model).environment(PrefsStore.shared).comfortEnvironment() }
         }
+        .defaultSize(width: 920, height: 720)
+        .windowResizability(.contentMinSize)
 
         SaroMenuBar()
     }
@@ -89,16 +92,38 @@ struct SaroCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Go") {
-            Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
-            Divider()
-            Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
-            Button("Previous Day") { model.goPrevious() }.keyboardShortcut("[", modifiers: .command)
-            Button("Next Day") { model.goNext() }.keyboardShortcut("]", modifiers: .command)
+            Group {
+                Button("Search…") { model.searchOpen.toggle() }.keyboardShortcut("k", modifiers: .command)
+                Divider()
+                Button("Today") { model.goToday() }.keyboardShortcut("t", modifiers: .command)
+                // During onboarding ⌘[ and ⌘] are its own Previous and Next Step, so these give the keys up.
+                Button("Previous Day") { model.goPrevious() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("[", modifiers: .command))
+                Button("Next Day") { model.goNext() }.keyboardShortcut(model.showsOnboarding ? nil : KeyboardShortcut("]", modifiers: .command))
+                Divider()
+                Button("What Saro Knows") { model.pane = .knows }.keyboardShortcut("k", modifiers: [.command, .option])
+            }
+            .disabled(model.showsOnboarding)
         }
         CommandGroup(after: .toolbar) {
-            Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
-            Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
-            Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
+            Group {
+                Button("Zoom In") { model.camera = .zoom(1.25, UUID()) }.keyboardShortcut("=", modifiers: .command)
+                Button("Zoom Out") { model.camera = .zoom(0.8, UUID()) }.keyboardShortcut("-", modifiers: .command)
+                Button("Show Days") { model.sidebarVisible.toggle() }.keyboardShortcut("s", modifiers: [.command, .control])
+                Divider()
+                Button("What Saro Noticed") {
+                    model.pane = .day
+                    model.insight = model.insight == .panel ? .spine : .panel
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+                Button("Evening Letter") {
+                    model.pane = .day
+                    model.insight = model.insight == .letter ? .spine : .letter
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
+                Button("Read the Day Again") { Task { await model.reflection.refreshInsights() } }
+                    .disabled(!model.reflection.canRefresh)
+            }
+            .disabled(model.showsOnboarding)
         }
         CommandGroup(before: .help) {
             Button("If You're Struggling…") {
@@ -109,6 +134,9 @@ struct SaroCommands: Commands {
         }
         CommandGroup(after: .importExport) {
             Button("Export Everything…") { Task { await model.exportEverything() } }
+                .disabled(model.showsOnboarding)
+            // From the welcome door too: a blank profile takes the export's, which ends onboarding (DR-20).
+            Button("Import…") { Task { await model.importJournal() } }
         }
     }
 }

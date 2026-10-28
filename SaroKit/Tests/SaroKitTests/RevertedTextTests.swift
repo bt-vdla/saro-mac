@@ -13,11 +13,11 @@ import Testing
     let e = Entry(kind: .reflection, body: chai)
     try await l.insertEntry(e)
     await p.process(entryId: e.id) {}
-    try await l.updateEntryText(id: e.id, body: chai + " Some nights I just want to die.", titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: chai + " Some nights I just want to die.", titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     #expect(await p.dayStatus(e.localDay) == .held)
 
-    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil)
+    try await l.updateEntryText(id: e.id, body: chai, titleUser: nil, captionUser: nil)
     await p.process(entryId: e.id) {}
     let v = try await l.verdicts(day: e.localDay)[e.id]
     #expect(v?.verdict == "clear" && v?.textSha256 == sha256(chai))

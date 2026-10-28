@@ -1,24 +1,51 @@
 import Foundation
 
 /// Saro's evening letter (port of `components/insights/letter.ts`): the day reading typeset. Nothing here is generated;
-/// only the template sentence and sign-off are added around the user's words.
-public struct Letter: Sendable, Hashable {
+/// only the template sentences and sign-off are added around the user's words. Codable, so a kept letter reads the same.
+public struct Letter: Sendable, Hashable, Codable {
     public var paragraphs: [String]
     public var mood: Mood
     public var question: String?
     public var quotes: [Candidate]
     public var signOff = "— Saro"
 
-    /// The narrative when the reading has one, else a template sentence from its picked quotes; nil with neither.
-    public init?(reading: DayReading, candidates: [Candidate]) {
-        let quotes = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
-        let narrative = reading.narrative?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let opening = narrative?.isEmpty == false ? narrative : Self.template(quotes) else { return nil }
-        paragraphs = [opening]
-        mood = reading.mood
+    /// composeLetter: the narrative's title and subtitle (the model's narrative in its place, once it passed the drift
+    /// check), then its body, up to three paragraphs. A reading without a narrative falls back to the model's narrative
+    /// or a template sentence from its picked quotes; nil with neither. `mood` is the person's own when they set one.
+    public init?(reading: DayReading, candidates: [Candidate], narrative: Narrative? = nil, mood: Mood? = nil) {
+        var quotes = reading.quoteIndexes.compactMap { i in candidates.first { $0.index == i } }
+        if let q = narrative?.quote, !quotes.contains(where: { $0.text == q.text }) { quotes.append(q) }
+        let model = reading.narrative?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let n = narrative, !n.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let opening = [n.title, model?.isEmpty == false ? model! : n.subtitle].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }.joined(separator: " ")
+            paragraphs = Array(([opening] + n.body.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }).filter { !$0.isEmpty }.prefix(3))
+        } else {
+            guard let opening = model?.isEmpty == false ? model : Self.template(quotes) else { return nil }
+            paragraphs = [opening]
+        }
+        self.mood = mood ?? reading.mood
         question = reading.question?.trimmingCharacters(in: .whitespacesAndNewlines)
         if question?.isEmpty == true { question = nil }
         self.quotes = quotes
+    }
+
+    /// Quotes the paragraphs don't already hold, so the letter still gives them back (unplacedQuotes).
+    public var unplacedQuotes: [Candidate] {
+        quotes.filter { q in !paragraphs.contains { $0.contains(q.text) || Self.typeset($0).contains(Self.typeset(q.text)) } }
+    }
+
+    /// Whether today's letter notification should be waiting (FR-REF-09): only once a ready reading exists, never on a
+    /// held day or one awaiting a check (SR-13, SR-14), and not once the letter has been read.
+    public enum Notice: Sendable, Hashable { case schedule(Date), cancel, none }
+
+    public static func notice(status: DayStatus, hasLetter: Bool, opened: Bool, letterAt: Date, now: Date = .now) -> Notice {
+        switch status {
+        case .held, .awaitingCheck: return .cancel
+        case .ready where opened: return .cancel
+        case .ready where hasLetter && letterAt > now: return .schedule(letterAt)
+        default: return .none
+        }
     }
 
     private static func template(_ quotes: [Candidate]) -> String? {

@@ -105,7 +105,7 @@ final class DevMode {
 
     func endTour() {
         tourStep = nil
-        UserDefaults.standard.set(true, forKey: "tourSeen")
+        OnboardingFlow.defaults.set(true, forKey: "tourSeen")
     }
 }
 
@@ -124,7 +124,8 @@ struct DevCommands: Commands {
                 .keyboardShortcut("d", modifiers: [.shift, .command])
         }
         CommandGroup(after: .help) {
-            Button("Take the Tour") { DevMode.shared.startTour(model) }
+            Button("Take the Tour") { DevMode.shared.startTour(model) }.disabled(model.showsOnboarding)
+            Button("Replay Onboarding") { Task { await model.replayOnboarding() } }.disabled(model.showsOnboarding)
         }
     }
 }
@@ -164,11 +165,14 @@ private struct DevModeLayer: ViewModifier {
             }
             .overlayPreferenceValue(TourAnchorKey.self) { TourOverlay(anchors: $0) }
             .animation(Motion.pick(Motion.open, reduce: reduceMotion), value: model.devNotesVisible)
-            .task {
-                await DevMode.shared.load(model)
-                guard !UserDefaults.standard.bool(forKey: "tourSeen") else { return }
+            .task { await DevMode.shared.load(model) }
+            // The first tour waits for onboarding to hand off and for the first recording or page to close. A demo run's
+            // tour is seen in the demo's own defaults, so it never hides the real journal's.
+            .task(id: model.showsOnboarding || model.handoffPrompt != nil || model.recorderKind != nil || model.openEntryID != nil) {
+                guard !model.showsOnboarding, model.handoffPrompt == nil, model.recorderKind == nil, model.openEntryID == nil,
+                      DevMode.shared.tourStep == nil, !OnboardingFlow.defaults.bool(forKey: "tourSeen") else { return }
                 try? await Task.sleep(for: .milliseconds(600))
-                DevMode.shared.startTour(model)
+                if !Task.isCancelled { DevMode.shared.startTour(model) }
             }
     }
 }

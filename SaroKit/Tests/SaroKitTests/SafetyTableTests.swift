@@ -46,7 +46,7 @@ private enum Classifier: CaseIterable { case none, passive, active, uncertain, u
 @Test func gateResultsAreContentFree() async {
     let verdicts = ["clear", "technical_hold", "safety_hold", "unavailable_clear", "unavailable_caution"]
     let codes = ["phrase_hit", "classifier_active", "classifier_passive", "classifier_uncertain", "low_confidence", "caution_hit",
-                 "model_unavailable", "clear"]
+                 "model_unavailable", "unsupported_language", "clear"]
     for text in flagged.prefix(20) + notFlagged.prefix(20) {
         for classify in [nil, { _ in .label(.passive) }, { _ in .label(.none) }] as [(@Sendable (String) async -> ClassifierOutcome)?] {
             let r = await SafetyGate(classify: classify).gate(text: text, transcriptConfidence: 0.2)!

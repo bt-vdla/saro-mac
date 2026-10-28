@@ -13,6 +13,8 @@ extension AppModel {
             return
         }
         WindowActions.openMain()
+        // Onboarding's own test reminder carries Voice and Write: nothing lands in the journal until it ends.
+        guard !showsOnboarding else { return }
         Task { await follow(link) }
     }
 
@@ -49,7 +51,7 @@ extension AppModel {
     }
 
     /// The day canvas showing `target`, awaited, so what the link opens next isn't cleared by the day change.
-    private func land(on target: String) async {
+    func land(on target: String) async {
         guard target != day || pane != .day else { return }
         go(to: target)
         // ponytail: go(to:) loads in its own Task; wait for it to land, capped so a superseded change can't hang the link.

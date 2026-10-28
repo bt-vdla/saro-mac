@@ -72,9 +72,9 @@ extension Ledger {
         try db.transaction {
             try db.run("UPDATE reflection_turn SET answer=?, answer_verdict=?, updated_at=? WHERE id=?",
                        [.text(answer), .text(verdict), .text(Date.now.iso), .text(id)])
-            guard verdict == "safety_hold" else { return }
-            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=(SELECT local_day FROM reflection_turn WHERE id=?)",
-                       [.text(id)])
+            guard verdict == "safety_hold", let day = try db.run("SELECT local_day FROM reflection_turn WHERE id=?", [.text(id)]).first?.str("local_day")
+            else { return }
+            try dropDayReadings(day)
         }
     }
 

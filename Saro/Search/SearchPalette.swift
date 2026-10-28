@@ -17,6 +17,8 @@ struct PaletteCommand: Identifiable {
     let symbol: String
     var keywords = ""
     var shortcut: String?
+    /// Offered only when this holds (Read the day again, on a day that can be read).
+    var available: @MainActor (AppModel) -> Bool = { _ in true }
     let run: @MainActor (AppModel) -> Void
 
     /// Every query word starts a word of the title or keywords, or the query is the title's initials ("wsn").
@@ -39,6 +41,7 @@ private enum Row: Identifiable {
     case day(String)
     case scope(EntryKind)
     case write(String)
+    case memory(Memory)
 
     var id: String {
         switch self {
@@ -47,6 +50,7 @@ private enum Row: Identifiable {
         case .day(let d): "d:\(d)"
         case .scope(let k): "s:\(k.rawValue)"
         case .write: "w"
+        case .memory(let m): "m:\(m.key)"
         }
     }
 }
@@ -160,14 +164,44 @@ struct SearchPalette: View {
                 $0.pane = .day
                 $0.showLetter = true
             },
+            PaletteCommand(id: "reread", title: "Read the day again", symbol: "arrow.clockwise", keywords: "refresh insights update reading noticed",
+                           available: { $0.reflection.canRefresh }) { m in
+                m.pane = .day
+                Task { await m.reflection.refreshInsights() }
+            },
+            PaletteCommand(id: "answer", title: "Answer today's question", symbol: "book", keywords: "question wonder reply write back thought") { m in
+                if !m.isToday { m.goToday() }
+                m.insight = .panel
+                m.reflection.answerRequested = true
+            },
         ]
         #if DOGFOOD
         all.append(PaletteCommand(id: "decisions", title: "Decisions", symbol: "checklist", keywords: "dev log choices") { $0.pane = .decisions })
         #endif
         all += [
+            PaletteCommand(id: "knows", title: "What Saro knows", symbol: "point.3.connected.trianglepath.dotted",
+                           keywords: "memory memories people graph remember forget", shortcut: "⌥⌘K") { $0.pane = .knows },
+            PaletteCommand(id: "memory-pause", title: "Pause memory", symbol: "pause.circle", keywords: "stop learning remember") { m in
+                Task { await m.setMemoryPaused(true) }
+            },
+            PaletteCommand(id: "memory-resume", title: "Resume memory", symbol: "play.circle", keywords: "start learning remember") { m in
+                Task { await m.setMemoryPaused(false) }
+            },
             PaletteCommand(id: "trash", title: "Trash", symbol: "trash", keywords: "deleted bin restore") { $0.pane = .trash },
+            PaletteCommand(id: "settings", title: "Settings…", symbol: "gearshape", keywords: "preferences tone reminder privacy text size say it",
+                           shortcut: "⌘,") { _ in WindowActions.openSettings() },
+            PaletteCommand(id: "sayit", title: "Change a setting in words…", symbol: "text.bubble", keywords: "say it settings remind bigger text tone") { _ in
+                SettingsWindow.askInWords()
+            },
+            PaletteCommand(id: "profile", title: "Profile…", symbol: "person.crop.circle", keywords: "name called you account") { _ in
+                PrefsStore.shared.settingsSection = .you
+                WindowActions.openSettings()
+            },
             PaletteCommand(id: "export", title: "Export everything", symbol: "square.and.arrow.up", keywords: "backup download save data") { m in
                 Task { await m.exportEverything() }
+            },
+            PaletteCommand(id: "onboarding", title: "Replay onboarding", symbol: "arrow.counterclockwise", keywords: "welcome about you first week setup start again") { m in
+                Task { await m.replayOnboarding() }
             },
         ]
         #if DOGFOOD
@@ -203,6 +237,7 @@ struct SearchPalette: View {
         .ignoresSafeArea()
         .onAppear {
             focused = true
+            if model.memory.status != .ready { Task { await model.memory.load() } }
             #if DOGFOOD
             if Snapshots.paletteActions { (actionsOpen, action) = (true, 0) }
             #endif
@@ -340,6 +375,7 @@ struct SearchPalette: View {
         case .day: ("calendar", nil)
         case .scope(let k): (k.symbol, k.tint)
         case .write: (EntryKind.reflection.symbol, EntryKind.reflection.tint)
+        case .memory: ("point.3.connected.trianglepath.dotted", Tok.sage)
         }
         return HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 12, weight: .medium))
@@ -365,6 +401,9 @@ struct SearchPalette: View {
                 Kbd("Tab").frame(width: 72, alignment: .trailing)
             case .write(let text):
                 title("Write “\(text)”")
+            case .memory(let m):
+                Text(marked(m.text, Typo.ui(14, .semibold))).font(Typo.ui(14, .medium)).foregroundStyle(Tok.ink)
+                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 8)
@@ -472,7 +511,9 @@ struct SearchPalette: View {
         var out: [PaletteSection] = []
         var entries = hits
         if scope == nil {
-            var matched = Self.commands.filter { $0.matches(q) }
+            // One of Pause memory and Resume memory, whichever would change something.
+            let memoryOff = model.profile?.memoryPaused == true ? "memory-pause" : "memory-resume"
+            var matched = Self.commands.filter { $0.matches(q) && $0.available(model) && $0.id != memoryOff }
             var top: Row?
             if let day = LocalDay.parse(q) {
                 top = .day(day)
@@ -487,6 +528,9 @@ struct SearchPalette: View {
             }
             if let top { out.append(PaletteSection(id: "top", title: "Top hit", rows: [top])) }
             if !matched.isEmpty { out.append(PaletteSection(id: "commands", title: "Commands", rows: matched.prefix(3).map(Row.command))) }
+            // FR-SRC-01: lines of What Saro knows, by their words and the person's own words behind them.
+            let memories = model.memory.live.filter { MemoryList.matches($0, q) }
+            if !memories.isEmpty { out.append(PaletteSection(id: "memories", title: "Memories", rows: memories.prefix(3).map(Row.memory))) }
         }
         if !entries.isEmpty {
             out.append(PaletteSection(id: "entries", title: scope?.plural ?? "Entries",
@@ -514,6 +558,7 @@ struct SearchPalette: View {
         case .day: "Go to day"
         case .scope: "Narrow the search"
         case .write: "New writing"
+        case .memory(let m): "What Saro knows · \(m.group.label)"
         case nil: ""
         }
     }
@@ -524,6 +569,7 @@ struct SearchPalette: View {
         case .day: "Go"
         case .scope: "Search"
         case .command, .write: "Run"
+        case .memory: "Show"
         }
     }
 
@@ -576,6 +622,10 @@ struct SearchPalette: View {
         case .write(let text):
             isPresented = false
             Self.write(text, in: model)
+        case .memory(let m):
+            isPresented = false
+            model.pane = .knows
+            model.memory.reveal = m.key
         }
     }
 

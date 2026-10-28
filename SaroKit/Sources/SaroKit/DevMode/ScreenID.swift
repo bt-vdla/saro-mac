@@ -18,6 +18,11 @@ public enum ScreenID: String, Sendable, Codable, CaseIterable, Identifiable {
     case trash = "shell.trash"
     case decisions = "dev.decisions"
     case settings = "shell.settings"
+    case onboardingWelcome = "onboarding.welcome"
+    case onboardingAboutYou = "onboarding.about"
+    case onboardingFirstWeek = "onboarding.firstweek"
+    case onboardingFindLight = "onboarding.light"
+    case knows = "memory.knows"
 
     public var id: String { rawValue }
 }

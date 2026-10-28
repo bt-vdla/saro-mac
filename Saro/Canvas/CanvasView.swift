@@ -9,6 +9,8 @@ struct DayView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
     @FocusState private var focused: Bool
+    /// The chrome and the stage share it, so the letter's quotes can fly into their cards.
+    nonisolated static let space = "day"
 
     var body: some View {
         GeometryReader { geo in
@@ -35,6 +37,7 @@ struct DayView: View {
                 }
             }
             .animation(Motion.pick(Motion.easeOut(0.3), reduce: reduceMotion), value: model.recorderKind)
+            .coordinateSpace(.named(Self.space))
         }
         .clipped()
         .focusable()
@@ -49,7 +52,7 @@ struct DayView: View {
             else if model.openStackID != nil { model.openStackID = nil }
             else if model.replay.active { model.replay.exit(animated: false) }
             else if model.openVoiceID != nil { model.openVoiceID = nil }
-            else if model.insight != .spine { model.insight = model.insight == .letter ? .panel : .spine }
+            else if model.insight != .spine { model.insight = .spine }
             else { model.selection = [] }
         }
         .onKeyPress(.return) {
@@ -373,7 +376,7 @@ struct DayStage: View {
                 RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(Tok.sage.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .padding(12)
             }
-            DayState(day: day, empty: cards.isEmpty, width: size.width)
+            DayStateView(day: day, empty: cards.isEmpty, width: size.width)
         }
         .contentShape(.rect)
         .gesture(marqueeGesture)
@@ -666,7 +669,7 @@ struct DayStage: View {
         let tile = members.first.map { CanvasMath.size($0.kind) } ?? .zero
         let origin = cards.first { $0.item.stackID == sid }.map { screen($0.center) } ?? CGPoint(x: size.width / 2, y: size.height / 2)
         return ZStack {
-            Rectangle().fill(.ultraThinMaterial).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
+            Rectangle().fill(.frosted(solid: Tok.bg)).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
                 .onTapGesture { close(sid) }
             ForEach(Array(members.enumerated()), id: \.element.id) { i, e in
                 let p = fanned || reduceMotion ? points[e.id] ?? origin : origin
@@ -716,7 +719,9 @@ struct DayStage: View {
             w = min(1200, size.width - 96, (size.height - 96) * 16 / 9 + side)
             h = min(size.height - 96, (w - side) * 9 / 16)
         case .voice: (w, h) = (min(720, size.width - 96), min(600, size.height - 96))
-        case .still: (w, h) = (min(1000, size.width - 96), min(760, size.height - 96))
+        case .still:
+            return CanvasMath.stillFrame(in: size, aspect: ThumbCache.aspect(model.mediaURL(for: e)),
+                                         below: StillBelow.room(held: model.verdicts[e.id]?.verdict == "safety_hold"))
         case .reflection, .music: (w, h) = (min(820, size.width - 96), min(820, size.height - 96))
         }
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
@@ -724,7 +729,8 @@ struct DayStage: View {
 
     private func morph(to id: String?) {
         if let id {
-            flightFrom = screenRect(entry: id)
+            flightFrom = model.reflection.flightSource.map { ($0, Radius.card) } ?? screenRect(entry: id)
+            model.reflection.flightSource = nil
             shownID = id
             guard !reduceMotion else {
                 withAnimation(Motion.fade) { flight = 1; scrim = true }
@@ -746,11 +752,22 @@ struct DayStage: View {
 
     private func detail(_ entry: Entry) -> some View {
         ZStack {
-            Rectangle().fill(.ultraThinMaterial).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
+            Rectangle().fill(.frosted(solid: Tok.bg)).overlay(Tok.bg.opacity(0.85)).ignoresSafeArea()
                 .opacity(scrim ? 1 : 0)
                 .onTapGesture { model.openEntryID = nil }
             MorphFlight(entry: entry, from: flightFrom.rect, fromRadius: flightFrom.radius, to: detailTarget(entry),
                         toRadius: Radius.sheet, viewport: size, v: flight, crossfadeOnly: reduceMotion)
+            // A still's caption sits under the photo, outside the flight, and fades on its own (Lightbox.tsx `below`).
+            if entry.kind == .still {
+                let to = detailTarget(entry), w = max(to.width, min(420, size.width - 32))
+                StillBelow(entry: entry)
+                    .frame(width: w)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .offset(x: to.midX - w / 2, y: to.maxY + 18)
+                    .frame(width: size.width, height: size.height, alignment: .topLeading)
+                    .opacity(scrim ? 1 : 0)
+                    .animation(scrim ? Motion.easeOut(0.24).delay(0.16) : Motion.easeOut(0.12), value: scrim)
+            }
         }
     }
 }
@@ -815,7 +832,7 @@ struct MorphFlight: View, @MainActor Animatable {
 
 /// What the canvas says when it has no cards (DayState.tsx): the day is loading (only once that is slow enough to notice,
 /// so a quick load doesn't flash), it couldn't be read, or it is honestly empty.
-struct DayState: View {
+struct DayStateView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let day: String
@@ -846,7 +863,7 @@ struct DayState: View {
         ZStack {
             switch shown {
             case .loading:
-                Skeleton(width: width)
+                DaySkeleton(width: width)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Loading \(label)…")
                     .transition(.opacity.animation(Motion.easeOut(0.2)))
@@ -888,7 +905,7 @@ struct DayState: View {
 }
 
 /// Three shimmer blocks, 24 pt apart, each 120 ms behind the last; the outer two give way on a narrow window.
-private struct Skeleton: View {
+private struct DaySkeleton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let width: CGFloat
     @State private var start = Date.now

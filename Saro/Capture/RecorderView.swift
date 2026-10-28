@@ -90,7 +90,7 @@ struct RecorderView: View {
         let inset: CGFloat = size.width >= 1024 ? 24 : 16
         let lit = appeared && !leaving
         return ZStack {
-            Rectangle().fill(.ultraThinMaterial)
+            Rectangle().fill(.frosted(solid: Night.bg))
                 .overlay(Color.black.opacity(0.45))
                 .environment(\.colorScheme, .dark)
                 .contentShape(.rect)
@@ -111,7 +111,7 @@ struct RecorderView: View {
     /// min(380, width − 32) wide, 8 pt above the bottom of the canvas.
     private func voicePill(_ size: CGSize, from button: CGRect?) -> some View {
         let width = max(0, min(380, size.width - 32))
-        return VoicePill(notice: notice, inSession: inSession, grows: button != nil, toggle: primary, done: done, close: close)
+        return VoicePill(notice: notice, inSession: inSession, grows: button != nil, prompt: model.handoffPrompt, toggle: primary, done: done, close: close)
             .frame(width: width)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pillHeight = $0 }
             .modifier(flight(from: button, to: CGRect(x: (size.width - width) / 2, y: size.height - 8 - pillHeight, width: width, height: pillHeight)))
@@ -157,6 +157,7 @@ struct RecorderView: View {
                     .init(color: .black.opacity(0.2), location: 0.75), .init(color: .black.opacity(0.65), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
                 .allowsHitTesting(false)
+                if !compact, let prompt = model.handoffPrompt { MomentPrompt(prompt: prompt, dimmed: countdown != nil) }
             } else {
                 LevelMeter(height: 56, color: Night.echo, live: capture.state != .paused)
                     .opacity(capture.state == .recording ? 1 : 0.4)
@@ -341,7 +342,8 @@ struct RecorderView: View {
             return RecorderNotice(icon: "exclamationmark.triangle", title: text, voiceInstead: kind == .moment && !compact && !inSession)
         default:
             return kind == .moment
-                ? RecorderNotice(title: "Getting your camera ready…", detail: "If macOS asks, allow the camera and microphone.")
+                ? RecorderNotice(title: "Getting your camera ready…", detail: "If macOS asks, allow the camera and microphone.",
+                                 quote: compact ? nil : model.handoffPrompt)
                 : RecorderNotice(title: "Starting the microphone…")
         }
     }
@@ -445,6 +447,8 @@ struct RecorderNotice: Equatable {
     var voiceInstead = false
     /// Permission and failure states get the danger disc; a busy hand-off doesn't.
     var alarm = true
+    /// The first reflection's question, under the camera's loading state.
+    var quote: String?
 }
 
 /// The flight between a bar button and the recorder surface it opened (morph.ts, MorphLayer.tsx): a box flying from the
@@ -546,7 +550,7 @@ struct CaptureButtonStyle: ButtonStyle {
                 .padding(.horizontal, style.diameter == nil ? style.padding : 0)
                 .frame(width: style.diameter, height: style.diameter ?? style.height)
                 .background(hovering && enabled ? style.hover : style.fill, in: .capsule)
-                .background { if style.frosted { Capsule().fill(.ultraThinMaterial) } }
+                .background { if style.frosted { Capsule().fill(.frosted(solid: Night.surface)) } }
                 .overlay(Capsule().strokeBorder(style.line))
                 .shadow(color: style.shadow, radius: 10, y: 4)
                 .contentShape(.capsule)
@@ -574,7 +578,7 @@ extension View {
     /// Glass over video for pills that aren't buttons.
     fileprivate func frosted() -> some View {
         background(.black.opacity(0.3), in: .capsule)
-            .background(.ultraThinMaterial, in: .capsule)
+            .background(.frosted(solid: Night.surface), in: .capsule)
             .overlay(Capsule().strokeBorder(.white.opacity(0.2)))
             .shadow(color: .black.opacity(0.1), radius: 8, y: 5)
     }
@@ -586,6 +590,29 @@ extension View {
 }
 
 // MARK: - Parts
+
+/// SaroVoice (VideoReflectionScreen.tsx): the first reflection's question at the top of the moment frame, dimmed by the 3-2-1.
+struct MomentPrompt: View {
+    let prompt: String
+    let dimmed: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("Today’s prompt").monoCaps(11, tracking: 0.12).foregroundStyle(.white.opacity(0.75))
+            Text(prompt).font(Typo.serif(28)).tracking(-0.28).lineSpacing(6).foregroundStyle(.white)
+        }
+        .multilineTextAlignment(.center)
+        .legible()
+        .frame(maxWidth: 576)
+        .padding(.horizontal, 24)
+        .padding(.top, 80)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .opacity(dimmed ? 0.55 : 1)
+        .animation(CaptureMotion.out(0.2), value: dimmed)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+    }
+}
 
 /// Elapsed time across turns; re-renders at 20 Hz on its own.
 struct ElapsedText: View {
@@ -739,6 +766,9 @@ private struct StateCard: View {
                         .lineSpacing(compact ? 2 : 4)
                         .foregroundStyle(Tok.ink2)
                         .padding(.top, 8)
+                }
+                if let quote = notice.quote {
+                    Text("“\(quote)”").font(Typo.serif(18, italic: true)).lineSpacing(5).foregroundStyle(Tok.ink2).padding(.top, 32)
                 }
                 if notice.settings != nil || voiceInstead != nil {
                     VStack(spacing: 12) {

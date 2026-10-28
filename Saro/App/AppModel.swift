@@ -27,6 +27,8 @@ final class AppModel {
     let ledger: Ledger
     let ai = SaroAI()
     let pipeline: Pipeline
+    /// What Saro knows (Saro/Memory).
+    let memory: MemoryModel
     var pane: Pane = .day
     /// Another day ends a replay where it is.
     var day: String = LocalDay.today() { didSet { if replay.day.map({ $0 != day }) ?? false { replay.exit(animated: false) } } }
@@ -48,7 +50,8 @@ final class AppModel {
     /// Cards flying into the Undo toast, or out of it back to their places.
     var trashFlight: TrashFlight?
     enum Insight { case spine, panel, letter }
-    var insight: Insight = .spine
+    var insight: Insight = .spine { didSet { reflection.moved(to: insight) } }
+    let reflection = ReflectionModel()
     var showNoticed: Bool {
         get { insight != .spine }
         set { insight = newValue ? .panel : .spine }
@@ -74,13 +77,15 @@ final class AppModel {
         didSet {
             // Only the bar button that opens it sets this, just after.
             if recorderKind != oldValue { recorderGrows = false }
-            guard recorderKind != nil else { return }
+            guard recorderKind != nil else { handoffPrompt = nil; return }
             openVoiceID = nil
             replay.exit(animated: false)
         }
     }
     /// A click on the recorder's bar button opened it: it grows out of that button and closes back into it (morph.ts).
     var recorderGrows = false
+    /// The first reflection's question, from before onboarding closes until its recorder does (AppModel+Onboarding).
+    var handoffPrompt: String?
     /// Help and the menu bar's 'If you're struggling…' ask for the SafetyCard. State, not an event, so the window that
     /// same click opens still presents it.
     var safetyCardRequested = false
@@ -97,8 +102,14 @@ final class AppModel {
     var dayStatus: DayStatus = .empty
     var dayReading: (payload: DayPayload, generator: String, runId: String?)?
     private var queue: [String] = []
+    /// Cleared entries the memory extractor hasn't read: learned one at a time, only while nothing else waits.
+    private var backlog: [String] = []
+    private var draining = false
+    /// Refreshes and gate checks waiting their turn behind the entries (§11.7: one model call at a time).
+    private var jobs: [@MainActor () async -> Void] = []
     /// Days to read once the queued entries are done (a trash, a restore, the inspector opening).
     private var unreadDays: Set<String> = []
+    /// True while the queue is being worked, so a day that can be read but has no reading is still coming.
     private(set) var working = false
     private var current: String?
     private var navigation = 0
@@ -111,6 +122,9 @@ final class AppModel {
     init(ledger: Ledger) {
         self.ledger = ledger
         pipeline = Pipeline(ledger: ledger, ai: ai)
+        memory = MemoryModel(ledger: ledger, pipeline: pipeline)
+        memory.showError = { [weak self] in self?.show(Toast($0, style: .error)) }
+        memory.gate = { [weak self, pipeline] text in await self?.exclusive { await pipeline.check(text) } }
         let center = NotificationCenter.default
         // The menu bar and ⌘K post this, sometimes before the window they open has a RootView to receive it.
         center.addObserver(forName: .showSafetyCard, object: nil, queue: .main) { [weak self] _ in
@@ -139,12 +153,20 @@ final class AppModel {
         today = now
     }
 
-    /// Entries an older gate checked go back through this one (SR-18), and entries gated while Apple Intelligence was off
-    /// go back once it can run (SR-17).
+    /// Entries an older gate checked go back through this one (SR-18), entries gated while Apple Intelligence was off
+    /// go back once it can run (SR-17), and work a rate limit deferred is tried again (§11.7). The person's other words go
+    /// first, so no day is read past one they'd hold.
     private func regateWaiting() async {
+        await regateOwnWords()
         for id in (try? await ledger.entryIDs(withLatestVerdictNotAt: SafetyGate.version)) ?? [] { process(id) }
+        // The page open in the editor goes when it closes.
+        for e in (try? await ledger.unfinishedEntries()) ?? []
+        where e.processingStatus == ProcessingStatus.pending && !isQueued(e.id) && e.id != openEntryID {
+            process(e.id)
+        }
         guard ai.status == .available else { return }
-        for id in (try? await ledger.entryIDs(withLatestVerdictIn: ["unavailable_clear", "unavailable_caution"])) ?? [] { process(id) }
+        let waiting = ["unavailable_clear", "unavailable_caution"]
+        for id in (try? await ledger.entryIDs(withLatestVerdictIn: waiting, except: "unsupported_language")) ?? [] { process(id) }
     }
 
     static func boot() -> Result<AppModel, Error> {
@@ -256,7 +278,8 @@ final class AppModel {
     private static func typedText(_ e: Entry) -> String? {
         switch e.kind {
         case .reflection, .music: e.body ?? ""
-        case .still: e.captionUser ?? ""
+        // Uncaptioned, a still's text is Saro's description, matched through its annotation like a recording's.
+        case .still: e.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         case .moment, .voice: nil
         }
     }
@@ -272,6 +295,7 @@ final class AppModel {
         dayStatus = d.status
         dayReading = d.reading
         selection = selection.filter { id in entries.contains { $0.id == id } }
+        reflection.load(day: day, model: self)
     }
 
     func reload() async {
@@ -304,8 +328,7 @@ final class AppModel {
         var out: [(day: String, mood: Mood?)] = []
         for i in (0..<7).reversed() {
             let d = LocalDay.adding(-i, to: day)
-            let mood = await pipeline.dayStatus(d) == .ready ? await pipeline.latestDayReading(d)?.payload.reading.mood : nil
-            out.append((d, mood))
+            out.append((d, await pipeline.dayMood(d)))
         }
         return out
     }
@@ -325,6 +348,8 @@ final class AppModel {
                 slideDirection = target > self.day ? 1 : -1
                 self.day = target
                 pane = .day
+                // The letter belongs to the day it was opened on.
+                if insight == .letter { insight = .spine }
                 openEntryID = nil
                 openStackID = nil
                 openVoiceID = nil
@@ -361,7 +386,7 @@ final class AppModel {
         let urls = panel.urls
         Task {
             for url in urls {
-                if let data = try? Data(contentsOf: url) { await importStill(data, origin: "picked", at: nil) }
+                if let data = try? await Task.detached(operation: { try Data(contentsOf: url) }).value { await importStill(data, origin: "picked", at: nil) }
             }
         }
     }
@@ -422,7 +447,7 @@ final class AppModel {
 
     func saveWriting(id: String, body: String, title: String?) async {
         do {
-            try await ledger.updateEntryText(id: id, body: body, titleUser: title)
+            try await ledger.updateEntryText(id: id, body: body, titleUser: title, captionUser: entry(id)?.captionUser)
             await reload()
             process(id)
         } catch {
@@ -438,6 +463,9 @@ final class AppModel {
         drain()
     }
 
+    /// Whether a pass for this entry is waiting or under way.
+    func isQueued(_ entryId: String) -> Bool { current == entryId || queue.contains(entryId) }
+
     /// An autosave changed an entry's text, which is unchecked until gated. Pending lets the launch sweep gate it if Saro
     /// quits before the editor closes; a pass already reading the old text runs again.
     func edited(_ entryId: String) async {
@@ -447,23 +475,41 @@ final class AppModel {
 
     /// Works the queue until it is empty, re-reading each touched day; work that arrives meanwhile is picked up.
     private func drain() {
-        guard !working else { return }
-        working = true
+        guard !draining else { return }
+        draining = true
         Task {
             repeat {
+                // The memory backfill waits behind everything else, and no day waits on it.
+                let busy = !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty
+                if working != busy { working = busy }
+                if !busy, !backlog.isEmpty {
+                    await memory.learn(entryId: backlog.removeFirst())
+                    continue
+                }
                 var days = unreadDays
                 unreadDays = []
                 while !queue.isEmpty {
+                    // The jobs waiting now (a refresh, a gate check, Settings' model calls) go before the next entry, so
+                    // a backlog of entries doesn't hold them; ones that arrive meanwhile wait one entry, so neither starves.
+                    let waiting = jobs
+                    jobs = []
+                    for job in waiting { await job() }
                     let id = queue.removeFirst()
                     current = id
                     if let d = try? await ledger.entry(id)?.localDay { days.insert(d) }
                     await pipeline.process(entryId: id) { [weak self] in await self?.reload() }
+                    await memory.learn(entryId: id)
                 }
                 current = nil
                 for d in days { await pipeline.readDay(d) }
-            } while !queue.isEmpty || !unreadDays.isEmpty
+                while !jobs.isEmpty { await jobs.removeFirst()() }
+                // Read back while still working, so a reading never shows as missing between landing and the reload.
+                if queue.isEmpty, unreadDays.isEmpty, jobs.isEmpty { await reload() }
+            } while !queue.isEmpty || !unreadDays.isEmpty || !jobs.isEmpty || !backlog.isEmpty
+            draining = false
             working = false
-            await reload()
+            // A hold on a day hides its lines at once (SR-16), wherever What Saro knows is showing.
+            await memory.load()
         }
     }
 
@@ -498,10 +544,27 @@ final class AppModel {
         drain()
     }
 
-    /// Reads the day when the inspector opens and nothing is stored yet (or the inputs changed).
-    func refreshDayReading() {
-        guard dayStatus == .ready else { return }
-        rereadDay()
+    /// Reads the day when the inspector opens and nothing is stored yet (or the inputs changed). `force` writes a new
+    /// reading (Refresh), sampled and past the `avoid` title, and returns it.
+    @discardableResult
+    func refreshDayReading(force: Bool = false, avoid: String? = nil) async -> DayPayload? {
+        guard dayStatus == .ready else { return nil }
+        guard force else {
+            rereadDay()
+            return nil
+        }
+        let day = self.day
+        let payload = await exclusive { await self.pipeline.readDay(day, force: true, avoid: avoid, seed: .random(in: 1 ... .max)) }
+        await reload()
+        return payload
+    }
+
+    /// Runs `work` in the queue, after whatever is under way (§11.7: one model call at a time).
+    func exclusive<T: Sendable>(_ work: @escaping @MainActor () async -> T) async -> T {
+        await withCheckedContinuation { c in
+            jobs.append { c.resume(returning: await work()) }
+            drain()
+        }
     }
 
     /// Launch sweep (DR-12): a turn that was recording when Saro quit is a finished file if it exists on disk
@@ -510,6 +573,8 @@ final class AppModel {
         // Once per launch: reopening the window mid-recording must not treat a live turn as crashed.
         guard !Self.swept else { return await reload() }
         Self.swept = true
+        // ponytail: at launch only; a Saro left running for weeks purges at its next launch.
+        _ = try? await ledger.purgeTrash(before: .now.addingTimeInterval(-30 * 86_400))
         for m in (try? await ledger.allMedia()) ?? [] where m.state == "recording" {
             let url = ledger.url(for: m)
             if FileManager.default.fileExists(atPath: url.path) {
@@ -526,6 +591,8 @@ final class AppModel {
             if e.processingStatus == ProcessingStatus.recording { try? await ledger.setProcessingStatus(id: e.id, ProcessingStatus.pending) }
             process(e.id)
         }
+        backlog = await memory.unlearned()
+        drain()
         await regateWaiting()
         await reload()
     }
@@ -694,18 +761,25 @@ final class AppModel {
             for id in ids { if let d = try? await ledger.entry(id)?.localDay { unreadDays.insert(d) } }
             drain()
             let restore: @MainActor () -> Void = { [weak self] in Task { await self?.restore(batch: batch) } }
-            undoManager?.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { restore() } }
+            // Its own target, held by its own step, so the toast's Undo takes just this step off the Edit menu.
+            let token = TrashUndo()
+            undoManager?.registerUndo(withTarget: token) { _ in MainActor.assumeIsolated { withExtendedLifetime(token) { restore() } } }
             undoManager?.setActionName("Move to Trash")
-            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: restore, trashed: cards))
+            show(Toast(ids.count == 1 ? "Moved to Trash" : "Moved \(ids.count) to Trash", undo: { [weak undoManager] in
+                undoManager?.removeAllActions(withTarget: token)
+                restore()
+            }, trashed: cards))
         } catch {
             if let flight, trashFlight?.id == flight.id { trashFlight = nil }
             show(Toast("Couldn't move to Trash: \(error.localizedDescription)", style: .error))
         }
     }
 
+    /// A batch already back (from the Trash pane, say) restores nothing and says nothing.
     func restore(batch: String) async {
-        await restored((try? await ledger.restore(batch: batch)) ?? [])
-        show(Toast("Restored"))
+        let ids = (try? await ledger.restore(batch: batch)) ?? []
+        await restored(ids)
+        if !ids.isEmpty { show(Toast("Restored")) }
     }
 
     /// The Trash pane's Restore.
@@ -723,9 +797,10 @@ final class AppModel {
 
     // MARK: Stills
 
-    /// Saves a dropped or pasted image as HEIC with no metadata but its orientation (DR-11: stills lose GPS).
+    /// Saves a dropped or pasted image as HEIC, at most 4096 px (FR-CAP-07), with no metadata but its orientation (DR-11:
+    /// stills lose GPS).
     func importStill(_ data: Data, origin: String, at world: CGPoint?) async {
-        var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.done)
+        var entry = Entry(kind: .still, localDay: day, processingStatus: ProcessingStatus.pending)
         let asset = MediaAsset(fileName: "\(entry.localDay)/stills/\(entry.id).heic", kind: .image, origin: origin, state: "ready")
         entry.mediaId = asset.id
         let url = ledger.url(for: asset)
@@ -741,6 +816,7 @@ final class AppModel {
                 try await ledger.setLayouts([CardLayout(entryId: entry.id, x: world.x, y: world.y, z: (layouts.values.map(\.z).max() ?? 0) + 1, userPlaced: true)])
             }
             await reload()
+            process(entry.id)
             show(Toast("Still saved to \(DayFormat.sidebar(entry.localDay))"))
         } catch {
             show(Toast("Couldn't save the still: \(error.localizedDescription)", style: .error))
@@ -749,7 +825,7 @@ final class AppModel {
 
     /// False when `data` isn't an image ImageIO can read.
     private nonisolated static func writeHEIC(_ data: Data, to url: URL) throws -> Bool {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return false }
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let image = StillVision.keepable(src) else { return false }
         let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
         let orientation = props?[kCGImagePropertyOrientation] ?? 1
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -770,6 +846,8 @@ final class AppModel {
         }
     }
 }
+
+private final class TrashUndo: Sendable {}
 
 struct CanvasItem: Identifiable {
     let id: String

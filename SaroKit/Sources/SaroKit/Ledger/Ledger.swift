@@ -22,6 +22,8 @@ public actor Ledger {
 
     static func migrate(_ db: SQLite) throws {
         let current = try db.run("PRAGMA user_version").first?.int("user_version") ?? 0
+        // A newer build's schema: writing to it would skip whatever that build's migrations hold the journal to.
+        guard current <= Schema.migrations.count else { throw NewerJournalError() }
         for (i, sql) in Schema.migrations.enumerated() where i >= current {
             try db.transaction {
                 try db.exec(sql)
@@ -76,13 +78,27 @@ public actor Ledger {
                   e.mediaId.sql, .text(e.processingStatus), .text(Date.now.iso)])
     }
 
-    /// User edits only (DR-04): no AI path calls this. A changed page or caption goes back to pending, so the launch
-    /// sweep gates an edit that was saved but never processed; one emptied of text has nothing left to read.
-    public func updateEntryText(id: String, body: String?, titleUser: String?, captionUser: String? = nil) throws {
+    /// User edits only (DR-04): no AI path calls this. Every field is written as given, a nil caption too, so callers
+    /// say all three. A changed page or caption goes back to pending, so the launch sweep gates an edit that was saved
+    /// but never processed; one emptied of text has nothing left to read.
+    public func updateEntryText(id: String, body: String?, titleUser: String?, captionUser: String?) throws {
         guard let old = try entry(id) else { return }
         let status = Self.statusAfterEdit(old, body: body, captionUser: captionUser) ?? old.processingStatus
         try db.run("UPDATE entry SET body=?, title_user=?, caption_user=?, processing_status=?, updated_at=? WHERE id=?",
                    [body.sql, titleUser.sql, captionUser.sql, .text(status), .text(Date.now.iso), .text(id)])
+    }
+
+    /// ⌘Q, where an editor's save Task never runs: the edit is written while the calling thread waits, and the launch
+    /// sweep gates it like any saved edit. False when the wait ran out first.
+    // ponytail: a semaphore wait capped at 2 s, like MemoryModel's quit commit; an applicationShouldTerminate reply if a write ever needs longer.
+    @discardableResult
+    nonisolated public func updateEntryTextBeforeQuit(id: String, body: String?, titleUser: String?, captionUser: String? = nil) -> Bool {
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            try? await self.updateEntryText(id: id, body: body, titleUser: titleUser, captionUser: captionUser)
+            done.signal()
+        }
+        return done.wait(timeout: .now() + 2) == .success
     }
 
     /// Nil when the gated text is unchanged; a recording's text is its transcript, not these fields.
@@ -122,13 +138,14 @@ public actor Ledger {
             .map(Entry.init)
     }
 
-    /// Live entries whose newest verdict is one of `verdicts`.
-    public func entryIDs(withLatestVerdictIn verdicts: [String]) throws -> [String] {
+    /// Live entries whose newest verdict is one of `verdicts`, given for any reason but `except`.
+    public func entryIDs(withLatestVerdictIn verdicts: [String], except reasonCode: String = "") throws -> [String] {
         let marks = verdicts.map { _ in "?" }.joined(separator: ",")
         return try db.run("""
             SELECT v.entry_id FROM safety_verdict v JOIN live_entry e ON e.id = v.entry_id
             WHERE v.rowid = (SELECT MAX(rowid) FROM safety_verdict WHERE entry_id = v.entry_id) AND v.verdict IN (\(marks))
-            """, verdicts.map { .text($0) }).compactMap { $0.str("entry_id") }
+              AND v.reason_code != ?
+            """, verdicts.map { .text($0) } + [.text(reasonCode)]).compactMap { $0.str("entry_id") }
     }
 
     /// Live entries whose newest verdict another gate version made: a SAFETY_VERSION bump re-gates them (SR-18).
@@ -169,13 +186,14 @@ public actor Ledger {
     /// Removes a never-written page (no text, no media, nothing derived). Anything with content goes to Trash instead.
     public func discardIfEmpty(_ id: String) throws {
         try db.transaction {
-            let empty = try db.run("""
-                SELECT 1 FROM entry WHERE id=? AND media_id IS NULL
-                  AND trim(COALESCE(body,'')||COALESCE(title_user,'')||COALESCE(caption_user,''), ' '||char(9)||char(10)||char(13))=''
-                  AND NOT EXISTS (SELECT 1 FROM safety_verdict WHERE entry_id=entry.id)
-                  AND NOT EXISTS (SELECT 1 FROM entry_annotation WHERE entry_id=entry.id)
-                """, [.text(id)])
-            guard !empty.isEmpty else { return }
+            // Empty as the editor and the gate see it (any Unicode space), which SQL's trim can't say.
+            guard let e = try entry(id), e.mediaId == nil,
+                  ((e.body ?? "") + (e.titleUser ?? "") + (e.captionUser ?? "")).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  try db.run("""
+                      SELECT 1 FROM safety_verdict WHERE entry_id=? UNION ALL SELECT 1 FROM entry_annotation WHERE entry_id=? LIMIT 1
+                      """, [.text(id), .text(id)]).isEmpty
+            else { return }
+            try db.run("DELETE FROM reflection_turn WHERE entry_id=? AND answer IS NULL", [.text(id)])
             try db.run("DELETE FROM card_layout WHERE entry_id=?", [.text(id)])
             try db.run("DELETE FROM entry WHERE id=?", [.text(id)])
         }
@@ -195,16 +213,55 @@ public actor Ledger {
         try db.transaction {
             for id in ids {
                 try db.run("UPDATE entry SET trashed_at=NULL, trash_batch_id=NULL, updated_at=? WHERE id=?", [.text(Date.now.iso), .text(id)])
-                try db.run("""
-                    DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=(SELECT local_day FROM entry WHERE id=?)
-                      AND (SELECT verdict FROM safety_verdict WHERE entry_id=? ORDER BY rowid DESC LIMIT 1)='safety_hold'
-                    """, [.text(id), .text(id)])
+                if try db.run("SELECT verdict FROM safety_verdict WHERE entry_id=? ORDER BY rowid DESC LIMIT 1", [.text(id)]).first?.str("verdict") == "safety_hold",
+                   let day = try entry(id)?.localDay {
+                    try dropDayReadings(day)
+                }
             }
         }
     }
 
     public func trashed() throws -> [Entry] {
         try db.run("SELECT * FROM entry WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC").map(Entry.init)
+    }
+
+    /// Deletes trashed entries for good (FR-DAY-05, DR-15): every row derived from them, every reading that quotes them,
+    /// and their media files unless a live or trashed entry still shares one. The person's answers and commitments stay,
+    /// unlinked. A live entry is never touched. Returns how many were deleted.
+    @discardableResult
+    public func purge(_ ids: [String]) throws -> Int {
+        var files: [URL] = []
+        var purged = 0
+        try db.transaction {
+            for id in ids {
+                guard let e = try db.run("SELECT media_id FROM entry WHERE id=? AND trashed_at IS NOT NULL", [.text(id)]).first else { continue }
+                let arg: [SQLValue] = [.text(id)]
+                try db.run("DELETE FROM observation_retraction WHERE observation_id IN (SELECT id FROM observation WHERE entry_id=?)", arg)
+                for table in ["observation", "entry_annotation", "ai_run_input", "safety_verdict", "card_layout"] {
+                    try db.run("DELETE FROM \(table) WHERE entry_id=?", arg)
+                }
+                try db.run("DELETE FROM insight_snapshot WHERE instr(payload, ?) > 0 OR instr(COALESCE(quotes, ''), ?) > 0", arg + arg)
+                try db.run("DELETE FROM reflection_turn WHERE entry_id=? AND answer IS NULL", arg)
+                try db.run("UPDATE reflection_turn SET entry_id=NULL WHERE entry_id=?", arg)
+                try db.run("UPDATE commitment SET source_entry_id=NULL WHERE source_entry_id=?", arg)
+                try db.run("UPDATE entry SET duplicated_from_id=NULL WHERE duplicated_from_id=?", arg)
+                try db.run("DELETE FROM entry WHERE id=?", arg)
+                purged += 1
+                guard let mid = e.str("media_id"), try db.run("SELECT 1 FROM entry WHERE media_id=?", [.text(mid)]).isEmpty,
+                      let m = try db.run("SELECT * FROM media_asset WHERE id=?", [.text(mid)]).first.map(MediaAsset.init) else { continue }
+                try db.run("DELETE FROM transcript_word WHERE media_id=?", [.text(mid)])
+                try db.run("DELETE FROM media_asset WHERE id=?", [.text(mid)])
+                files.append(url(for: m))
+            }
+        }
+        for f in files { try? FileManager.default.removeItem(at: f) }
+        return purged
+    }
+
+    /// The 30-day purge (DR-15): entries trashed before `cutoff`.
+    @discardableResult
+    public func purgeTrash(before cutoff: Date) throws -> Int {
+        try purge(db.run("SELECT id FROM entry WHERE trashed_at < ?", [.text(cutoff.iso)]).compactMap { $0.str("id") })
     }
 
     // MARK: Canvas layout
@@ -318,8 +375,9 @@ public actor Ledger {
         return Dictionary(rows.map(EntryAnnotation.init).map { ($0.entryId, $0) }, uniquingKeysWith: { $1 })
     }
 
-    /// A safety hold also drops what was generated from the entry: its readings, and its day's readings and kept
-    /// letters, which Export would otherwise still write out (SR-15, which outranks DR-05's append-only rule here).
+    /// A safety hold also drops what was generated from the entry: its readings, and its day's readings, kept letters
+    /// and the first week's notes drawn on it, which Export would otherwise still write out (SR-15, which outranks
+    /// DR-05's append-only rule here). Any verdict that doesn't clear the entry drops what memory learned from it.
     public func insertVerdict(_ v: SafetyVerdictRow) throws {
         try db.transaction {
             try db.run("""
@@ -327,10 +385,10 @@ public actor Ledger {
                 VALUES (?,?,?,?,?,?,?,?)
                 """, [.text(v.id), .text(v.entryId), .text(v.textSha256), .text(v.safetyVersion), .int(Int64(v.layer)),
                       .text(v.verdict), .text(v.reasonCode), .text(v.createdAt.iso)])
+            if v.verdict != "clear" && v.verdict != "unavailable_clear" { try dropMemory(entryId: v.entryId) }
             guard v.verdict == "safety_hold" else { return }
             try db.run("DELETE FROM entry_annotation WHERE entry_id=?", [.text(v.entryId)])
-            try db.run("DELETE FROM insight_snapshot WHERE kind IN ('day_reading','letter') AND from_day=(SELECT local_day FROM entry WHERE id=?)",
-                       [.text(v.entryId)])
+            if let day = try entry(v.entryId)?.localDay { try dropDayReadings(day) }
         }
     }
 
@@ -390,8 +448,13 @@ public actor Ledger {
         let tables = try db.run("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").compactMap { $0.str("name") }
         var out: [String: Any] = ["export_version": 1, "schema_version": try schemaVersion(), "exported_at": Date.now.iso]
         for t in tables { out[t] = try db.run("SELECT * FROM \(t)").map { $0.mapValues(\.json) } }
+        out["memories"] = try memoriesForExport()
         try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
     }
+}
+
+public struct NewerJournalError: Error, LocalizedError {
+    public var errorDescription: String? { "This journal was made by a newer Saro. Update Saro to open it." }
 }
 
 extension Optional where Wrapped == String {

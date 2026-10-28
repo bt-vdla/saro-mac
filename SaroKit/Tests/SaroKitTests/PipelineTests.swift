@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import Testing
 @testable import SaroKit
 
@@ -60,9 +61,9 @@ import Testing
     let e = Entry(kind: .reflection, body: "I want to die.")
     try await l.insertEntry(e)
     await p.process(entryId: e.id) {}
-    // The newest verdict was made for other text; editing the body must not count as checked.
-    try await l.updateEntryText(id: e.id, body: "A quiet walk home.", titleUser: nil)
-    #expect(await p.dayStatus(e.localDay) == .working)
+    // The newest verdict was made for other text; editing the body must not count as checked, and the hold stands.
+    try await l.updateEntryText(id: e.id, body: "A quiet walk home.", titleUser: nil, captionUser: nil)
+    #expect(await p.dayStatus(e.localDay) == .held)
     #expect(await p.readDay(e.localDay) == nil)
 }
 
@@ -77,7 +78,7 @@ import Testing
     await p.process(entryId: still.id) {}
     #expect(await p.dayStatus(page.localDay) == .held)
     // Cleared with no further pass (the editor discards an empty page instead of processing it), then with one.
-    try await l.updateEntryText(id: page.id, body: "", titleUser: nil)
+    try await l.updateEntryText(id: page.id, body: "", titleUser: nil, captionUser: nil)
     try await l.updateEntryText(id: still.id, body: nil, titleUser: nil, captionUser: nil)
     #expect(await p.dayStatus(page.localDay) == .empty)
     await p.process(entryId: page.id) {}
@@ -140,11 +141,25 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     let e = Entry(kind: .reflection, body: chai)
     try await l.insertEntry(e)
     // The editor reopened and autosaved new text while the pass for the old text ran, then the app quit.
-    await p.process(entryId: e.id) { try? await l.updateEntryText(id: e.id, body: "I want to die.", titleUser: nil) }
+    await p.process(entryId: e.id) { try? await l.updateEntryText(id: e.id, body: "I want to die.", titleUser: nil, captionUser: nil) }
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
     #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     #expect(await p.dayStatus(e.localDay) == .working)
     // The launch sweep's pass gates the edit.
+    await p.process(entryId: e.id) {}
+    #expect(await p.dayStatus(e.localDay) == .held)
+}
+
+@Test func anEditWrittenAtQuitIsKeptAndGatedAtTheNextLaunch() async throws {
+    let l = try tempLedger()
+    let p = Pipeline(ledger: l, ai: answers())
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    await p.process(entryId: e.id) {}
+    // ⌘Q before the editor's autosave: the words are written before the call returns, and left for the sweep.
+    #expect(await MainActor.run { l.updateEntryTextBeforeQuit(id: e.id, body: chai + " I want to die.", titleUser: nil) })
+    #expect(try await l.entry(e.id)?.body == chai + " I want to die.")
+    #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     await p.process(entryId: e.id) {}
     #expect(await p.dayStatus(e.localDay) == .held)
 }
@@ -174,6 +189,8 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(try await l.run("SELECT COUNT(*) AS n FROM safety_verdict").first?["n"]?.int == 0)
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
     #expect(await p.dayStatus(e.localDay) == .working)
+    // What the app's activation, wake and midnight pass picks up again (it has no verdict to re-gate by).
+    #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     // The reading: the clear verdict stays, nothing generated is stored, and the model is asked once.
     let asked = CallLog()
     await Pipeline(ledger: l, ai: stubAI { ask in
@@ -183,10 +200,59 @@ func answers(entry: String = cleanEntry, day: String = cleanDay) -> SaroAI {
     #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "clear")
     #expect(try await l.annotations(day: e.localDay).isEmpty)
     #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
+    #expect(try await l.unfinishedEntries().map(\.id) == [e.id])
     #expect(await asked.permissive == 1)
     // Once the limit lifts, the next pass reads it.
     await Pipeline(ledger: l, ai: answers()).process(entryId: e.id) {}
     #expect(try await l.annotations(day: e.localDay)[e.id]?.generator == "on_device")
+}
+
+/// A model call that never answers is given up once, and deferred like a rate limit (§11.7), so it can't hold the queue.
+@Test func aTimedOutCallIsDeferredLikeARateLimit() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    let asked = CallLog()
+    let p = Pipeline(ledger: l, ai: stubAI { ask in
+        guard ask == .classify else { await asked.hitPermissive(); throw Ladder.Timeout() }
+        return "NONE"
+    })
+    await p.process(entryId: e.id) {}
+    #expect(try await l.verdicts(day: e.localDay)[e.id]?.verdict == "clear")
+    #expect(try await l.annotations(day: e.localDay).isEmpty)
+    #expect(try await l.entry(e.id)?.processingStatus == ProcessingStatus.pending)
+    #expect(await asked.permissive == 1)
+    #expect(await !p.learn(entryId: e.id))
+    #expect(try await l.unlearnedEntryIDs(extractor: MemoryRules.extractorVersion) == [e.id])
+
+    await Pipeline(ledger: l, ai: answers()).process(entryId: e.id) {}
+    #expect(await p.readDay(e.localDay) == nil)
+    #expect(try await l.latestSnapshot(kind: "day_reading", day: e.localDay) == nil)
+}
+
+/// Text the model runs but can't read (its language) is gated once: the model being available can't change that, so no
+/// later pass or activation asks again or adds a verdict (SR-17); only a new gate does (SR-18).
+@Test func textInAnUnsupportedLanguageIsGatedOnce() async throws {
+    let l = try tempLedger()
+    let e = Entry(kind: .reflection, body: chai)
+    try await l.insertEntry(e)
+    let asked = CallLog()
+    let p = Pipeline(ledger: l, ai: stubAI { ask in
+        guard ask == .classify else { return cleanEntry }
+        await asked.hitPermissive()
+        throw LanguageModelError.unsupportedLanguageOrLocale(.init(languageCode: .init("xx"), debugDescription: "test"))
+    })
+    for _ in 0..<3 { await p.process(entryId: e.id) {} }
+    #expect(await asked.permissive == 1)
+    #expect(try await l.run("SELECT COUNT(*) AS n FROM safety_verdict").first?["n"]?.int == 1)
+    let v = try await l.verdicts(day: e.localDay)[e.id]
+    #expect(v?.verdict == "unavailable_clear" && v?.reasonCode == "unsupported_language")
+    #expect(try await l.entryIDs(withLatestVerdictIn: ["unavailable_clear"]) == [e.id])
+    #expect(try await l.entryIDs(withLatestVerdictIn: ["unavailable_clear"], except: "unsupported_language").isEmpty)
+    // A caution hit still waits for a check, for the same reason.
+    let r = await SafetyGate(classify: { _ in .unavailable(reason: SafetyGate.unsupportedLanguage) })
+        .gate(text: "Some days everything feels hopeless and I just want to sleep.", transcriptConfidence: nil)
+    #expect(r?.verdict == "unavailable_caution" && r?.reasonCode == "unsupported_language")
 }
 
 @Test func heuristicReadingGivesWayOnceTheModelCanRun() async throws {

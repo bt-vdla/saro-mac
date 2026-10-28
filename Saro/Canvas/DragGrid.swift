@@ -39,7 +39,10 @@ struct DragGrid {
 
     private static func accent(_ a: inout Accent?, _ snap: CanvasMath.Snap?, _ now: Date) {
         if let snap {
-            if let cur = a, cur.gone == nil, cur.at == snap.at { a?.rects = snap.rects } else { a = Accent(at: snap.at, rects: snap.rects, since: now) }
+            if let cur = a, cur.gone == nil, cur.at == snap.at { a?.rects = snap.rects } else {
+                a = Accent(at: snap.at, rects: snap.rects, since: now)
+                Task { @MainActor in Haptics.snap() }
+            }
         } else if a?.gone == nil {
             a?.gone = now
         }

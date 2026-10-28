@@ -149,6 +149,7 @@ final class CaptureController {
                 pending[ticket.url] = ticket
                 turnStarted = .now
                 engine.startRecording(to: ticket.url)
+                if n == 1, owner == .window, let q = model.handoffPrompt { await model.keepPrompt(q, entryId: ticket.entryId, day: day ?? model.day) }
             } catch {
                 starting = false
                 turn -= 1

@@ -10,6 +10,7 @@ struct SaroMenuBar: Scene {
 
 private struct SaroMenu: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Button("New Moment") { CapturePanelController.shared.show(tab: .video) }
@@ -18,6 +19,8 @@ private struct SaroMenu: View {
         Button("Write") { CapturePanelController.shared.show(tab: .write) }
         Divider()
         Button("Open Saro", action: openSaro)
+        Button("Settings…") { showSettings(nil) }.keyboardShortcut(",", modifiers: .command)
+        Button("Profile…") { showSettings(.you) }
         Divider()
         Button("If you're struggling…") {
             openSaro()
@@ -25,6 +28,12 @@ private struct SaroMenu: View {
         }
         Divider()
         Button("Quit Saro") { NSApp.terminate(nil) }
+    }
+
+    private func showSettings(_ section: SettingsSection?) {
+        if let section { PrefsStore.shared.settingsSection = section }
+        NSApp.activate()
+        openSettings()
     }
 
     private func openSaro() {

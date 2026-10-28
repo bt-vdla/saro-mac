@@ -22,7 +22,7 @@ struct DetailView: View {
             Button { model.openEntryID = nil } label: {
                 Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Tok.ink2)
                     .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: .circle)
+                    .background(.frosted(), in: .circle)
                     .background(Tok.surface.opacity(0.8), in: .circle)
             }
             .buttonStyle(PressStyle())
@@ -38,13 +38,14 @@ struct Eyebrow: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     var noun = true
+    var ink = Tok.ink3
 
     var body: some View {
         let day = entry.localDay == LocalDay.today() ? "Today" : DayFormat.sidebar(entry.localDay)
         let parts = [day, entry.capturedAt.formatted(date: .omitted, time: .shortened),
                      model.media[entry.mediaId ?? ""]?.durationMs.map { Duration.milliseconds($0).formatted(.time(pattern: .minuteSecond)) },
                      entry.sessionId != nil ? entry.turnNumber.map { "Turn \($0)" } : nil, noun ? entry.kind.noun : nil]
-        Text(parts.compactMap { $0 }.joined(separator: " · ")).monoCaps(10.5, tracking: 0.12).foregroundStyle(Tok.ink3)
+        Text(parts.compactMap { $0 }.joined(separator: " · ")).monoCaps(10.5, tracking: 0.12).foregroundStyle(ink)
     }
 }
 
@@ -171,6 +172,7 @@ private struct MediaDetail: View {
         }
         .task(id: entry.id) {
             if let url = model.mediaURL(for: entry), FileManager.default.fileExists(atPath: url.path) { player = PlayerModel(url: url) }
+            if let ms = model.memory.takePlayFrom(entry.id) { player?.seek(ms: ms) }
             await loadTranscript()
         }
         .onChange(of: entry.processingStatus) { _, _ in Task { await loadTranscript() } }
@@ -290,16 +292,20 @@ private struct TitleField: View {
             .font(Typo.ui(20, .semibold))
             .lineLimit(1...3)
             .foregroundStyle(Tok.ink)
+            .saroWritingTools()
             .onAppear { text = entry.titleUser ?? "" }
             .onSubmit { save() }
             .onDisappear { save() }
+            .onQuit { save(quitting: true) }
     }
 
-    private func save() {
+    private func save(quitting: Bool = false) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard t != (entry.titleUser ?? "") else { return }
+        let title = t.isEmpty ? nil : t
+        if quitting { model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: entry.body, titleUser: title, captionUser: entry.captionUser); return }
         Task {
-            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: t.isEmpty ? nil : t, captionUser: entry.captionUser)
+            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: title, captionUser: entry.captionUser)
             await model.reload()
         }
     }
@@ -312,12 +318,20 @@ private struct WritingEditor: View {
     let entry: Entry
     @State private var text = ""
     @State private var loaded = false
+    /// The question the page answers (its prompt row), if it has one.
+    @State private var prompt: String?
 
     var body: some View {
         // The web's reading page: the user's words in Geist 17/1.7, at most ~62 characters a line.
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
                 Eyebrow(entry: entry)
+                // Never on a held day: an older hand-off could have kept the day's reading question here (SR-13).
+                if let prompt, !model.isDayHeld {
+                    Text(prompt).font(Typo.serif(22)).tracking(-0.22).lineSpacing(4).foregroundStyle(Tok.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Prompt: \(prompt)")
+                }
                 ZStack(alignment: .topLeading) {
                     if text.isEmpty {
                         Text("Write what's on your mind. The first line becomes the title.")
@@ -330,7 +344,7 @@ private struct WritingEditor: View {
                         .foregroundStyle(Tok.ink)
                         .scrollContentBackground(.hidden)
                         .scrollIndicators(.never)
-                        .writingToolsBehavior(.disabled)
+                        .saroWritingTools()
                 }
             }
             .frame(maxWidth: 600, maxHeight: .infinity, alignment: .topLeading)
@@ -344,18 +358,23 @@ private struct WritingEditor: View {
             text = entry.body ?? ""
             loaded = true
         }
+        .task(id: entry.id) { prompt = try? await model.ledger.turns(entryId: entry.id).first { $0.kind == .prompt }?.question }
         .task(id: text) {
             guard loaded else { return }
             do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
             await save(process: false)
         }
         .onDisappear { Task { await save(process: true) } }
+        .onQuit {
+            guard loaded, text != (model.entry(entry.id)?.body ?? "") else { return }
+            model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: text, titleUser: entry.titleUser)
+        }
     }
 
     private func save(process: Bool) async {
         let body = text
         if body != (model.entry(entry.id)?.body ?? "") {
-            try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser)
+            try? await model.ledger.updateEntryText(id: entry.id, body: body, titleUser: entry.titleUser, captionUser: entry.captionUser)
             await model.edited(entry.id)
         }
         guard process else { return }
@@ -369,59 +388,206 @@ private struct WritingEditor: View {
 
 // MARK: Stills
 
+/// The opened still is the photo alone, in its own shape (EntryViews.tsx StillView): the flight lands on it, and what
+/// Saro sees sits under it on the scrim (`StillBelow`).
 private struct StillDetail: View {
     @Environment(AppModel.self) private var model
     let entry: Entry
     @State private var image: NSImage?
-    @State private var caption = ""
+    @State private var missing = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            ZStack {
-                Tok.bg
-                if let image { Image(nsImage: image).resizable().scaledToFit().padding(24) }
+        ZStack {
+            Tok.still.opacity(0.15)
+            if let image {
+                Image(nsImage: image).resizable().scaledToFit()
+                    .accessibilityLabel(model.caption(for: entry) ?? "Still")
+            } else if missing {
+                ContentUnavailableView("Photo not found", systemImage: "photo", description: Text("The file for this still is missing."))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: 14) {
-                Text("NOTE").font(Typo.mono(10)).foregroundStyle(Tok.ink3)
-                TextField("Write a note…", text: $caption, axis: .vertical)
-                    .textFieldStyle(.plain).font(Typo.serif(16)).lineLimit(3...10)
-                    .onSubmit { save() }
-                Divider()
-                if let image {
-                    meta("SIZE", "\(Int(image.size.width)) × \(Int(image.size.height))")
-                }
-                meta("SAVED", entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                meta("FROM", model.media[entry.mediaId ?? ""]?.origin.uppercased() ?? "—")
-                meta("LOCATION", "REMOVED")
-                Spacer()
-            }
-            .padding(20)
-            .frame(width: 280)
         }
-        .onAppear { caption = entry.captionUser ?? "" }
+        .task(id: entry.id) {
+            guard let url = model.mediaURL(for: entry), FileManager.default.fileExists(atPath: url.path) else {
+                missing = true
+                return
+            }
+            // The card's thumbnail first, so the flight lands on the photo, then a sharp one decoded off the main actor.
+            image = await ThumbCache.image(for: url, kind: .still)
+            if let sharp = await Task.detached(operation: { ThumbCache.thumbnail(url, max: 2400) }).value {
+                image = NSImage(cgImage: sharp, size: NSSize(width: sharp.width, height: sharp.height))
+            }
+        }
+    }
+}
+
+/// Under the opened photo (P-STILLS): what Saro sees, its tags and provenance, editable in place, the date and the
+/// photo's details. An edit is the user's caption, gated like any typed text, and outranks Saro's (DR-04); clearing it
+/// brings Saro's back.
+struct StillBelow: View {
+    @Environment(AppModel.self) private var model
+    let entry: Entry
+    @State private var caption = ""
+    @State private var described: StillCaption?
+    @State private var loaded = false
+    @State private var pixels: CGSize?
+    /// The run that stood when Describe again was pressed; the spinner shows while that pass is queued or under way.
+    @State private var asked: String??
+    @FocusState private var editing: Bool
+
+    /// The room `CanvasMath.stillFrame` leaves under the photo: a hold shows the helplines.
+    static func room(held: Bool) -> CGFloat { held ? 400 : 172 }
+
+    private var verdict: String? { model.verdicts[entry.id]?.verdict }
+    private var held: Bool { verdict == "safety_hold" }
+    private var yours: String? { entry.captionUser.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } }
+    /// Saro's description, only while the still's newest check is a clear and nothing since has held the description or
+    /// left it waiting (a hold deletes it, SR-15), and never on a held day (SR-13).
+    private var saros: String? {
+        guard !model.isDayHeld, verdict == "clear" || verdict == "unavailable_clear", let d = described, !d.standsHeld else { return nil }
+        return d.caption
+    }
+    private var showingSaros: Bool { yours == nil && saros != nil && caption.trimmingCharacters(in: .whitespaces) == saros }
+    private var working: Bool { model.isQueued(entry.id) && (asked != nil || described == nil) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(showingSaros || working && yours == nil ? "Saro sees" : "Your caption")
+                    .monoCaps(10.5, tracking: 0.12).foregroundStyle(showingSaros ? Tok.voice : Tok.ink2)
+                Spacer(minLength: 16)
+                // ink-2, not ink-3: this line sits on the see-through scrim, not a surface.
+                Eyebrow(entry: entry, noun: false, ink: Tok.ink2)
+            }
+            // Saro's words in Newsreader, the user's in Geist: typing over Saro's description makes it yours.
+            TextField("Caption", text: $caption, prompt: Text(saros ?? "Add a caption…").foregroundStyle(Tok.ink4), axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(showingSaros ? Typo.serif(18) : Typo.ui(15, .medium))
+                .lineSpacing(3)
+                .foregroundStyle(Tok.ink)
+                .lineLimit(1...4)
+                .saroWritingTools()
+                .focused($editing)
+                .onSubmit { save() }
+                .onChange(of: editing) { _, now in if !now { save() } }
+                .accessibilityLabel(showingSaros ? "Saro's description" : "Your caption")
+            below
+            HStack(alignment: .center, spacing: 16) {
+                Text(details).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink3).lineLimit(1)
+                Spacer(minLength: 0)
+                if !model.isDayHeld, model.mediaURL(for: entry) != nil { describeButton }
+            }
+            .padding(.top, 2)
+        }
+        .contentShape(.rect)
+        .animation(Motion.fade, value: described?.runId)
+        .animation(Motion.fade, value: working)
         .onDisappear { save() }
+        .onQuit { save(quitting: true) }
         .task(id: entry.id) {
             guard let url = model.mediaURL(for: entry) else { return }
-            image = NSImage(contentsOf: url)
+            pixels = await Task.detached { StillVision.pixelSize(at: url) }.value
+        }
+        .task(id: "\(entry.processingStatus)\(entry.captionUser ?? "")\(verdict ?? "")\(model.verdicts[entry.id]?.id ?? "")\(model.annotations[entry.id]?.id ?? "")") {
+            described = try? await model.ledger.stillCaption(entryId: entry.id)
+            loaded = true
+            if let a = asked, described?.runId != a { asked = nil }
+            if !editing { caption = yours ?? saros ?? "" }
         }
     }
 
-    private func meta(_ k: String, _ v: String) -> some View {
-        HStack {
-            Text(k).font(Typo.mono(10)).foregroundStyle(Tok.ink3)
-            Spacer()
-            Text(v.uppercased()).font(Typo.mono(10)).foregroundStyle(Tok.ink2)
+    private var describeButton: some View {
+        Button(action: describeAgain) {
+            Label(described == nil ? "Describe" : "Describe again", systemImage: "arrow.clockwise")
+                .font(Typo.ui(12, .medium)).foregroundStyle(Tok.ink2)
+                .padding(.horizontal, 10).frame(height: 26).background(Tok.ink.opacity(0.06), in: .capsule)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(working)
+        .keyboardShortcut("r", modifiers: .command)
+        .help("Describe this photo again on this Mac  ⌘R")
+    }
+
+    @ViewBuilder private var below: some View {
+        if held {
+            SafetyNotice()
+        } else if model.isDayHeld {
+            // A safety hold anywhere that day hides every entry's AI text (SR-13).
+            Text("Saro isn't writing about this day. This photo is kept, and your caption is always yours to change.")
+                .font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
+        } else if working {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Saro is looking at this photo…").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
+            }
+            .accessibilityElement(children: .combine)
+        } else if yours != nil, verdict == "unavailable_caution" {
+            // The user's own caption waits for a check (SR-14): nothing of Saro's shows until it is checked.
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Saro will read this when Apple Intelligence is ready.").font(Typo.ui(13)).foregroundStyle(Tok.ink2)
+                Button("Talk to someone") { model.safetyCardRequested = true }.buttonStyle(.link).font(Typo.ui(12))
+            }
+        } else if let saros, let d = described {
+            if yours != nil {
+                Text("Saro sees “\(saros)”").font(Typo.serif(14, italic: true)).foregroundStyle(Tok.ink2)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                if !d.tags.isEmpty {
+                    Text(d.tags.joined(separator: "  ·  ")).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.stillInk).lineLimit(1)
+                        .accessibilityLabel("Tags: \(d.tags.joined(separator: ", "))")
+                }
+                Spacer(minLength: 0)
+                Text(provenance(d)).monoCaps(10, tracking: 0.08).foregroundStyle(Tok.ink3).lineLimit(1)
+                    .accessibilityLabel(d.executor == "heuristic" ? "Described on this Mac by Vision" : "Described on this Mac by Apple Intelligence")
+            }
+        } else if yours == nil, let line = statusLine {
+            Text(line).font(Typo.ui(13)).foregroundStyle(Tok.ink2).fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func save() {
-        let c = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard c != (entry.captionUser ?? "") else { return }
+    /// The honest line when there is no description to show.
+    private var statusLine: String? {
+        switch described?.status {
+        case "guardrail", "refusal": "Saro didn't describe this photo. A caption of your own is always welcome."
+        case "unreadable": "Saro couldn't open this photo to describe it."
+        case StillCaption.caution: "Saro will describe this when Apple Intelligence is ready."
+        case nil where loaded: "Saro hasn't described this photo yet."
+        default: nil
+        }
+    }
+
+    /// "4032 × 3024 · FROM DROPPED · LOCATION REMOVED".
+    private var details: String {
+        let size = pixels.map { "\(Int($0.width)) × \(Int($0.height))" }
+        return [size, model.media[entry.mediaId ?? ""].map { "From \($0.origin)" }, "Location removed"].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// "ON DEVICE · AFM 3 CORE ADVANCED · GUIDED · 940 MS", or Vision's.
+    private func provenance(_ d: StillCaption) -> String {
+        let parts = d.executor == "heuristic" ? ["Vision", "on this Mac"] : ["On device", d.variant, d.rung]
+        return (parts + [d.latencyMs.map { "\($0) ms" }]).compactMap { $0 }.joined(separator: " · ").uppercased()
+    }
+
+    private func describeAgain() {
+        save()
+        asked = .some(described?.runId)
         Task {
-            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: c.isEmpty ? nil : c)
+            await model.pipeline.describeAgain(entry.id)
+            model.process(entry.id)
+        }
+    }
+
+    private func save(quitting: Bool = false) {
+        let c = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Saro's words left as they were stay Saro's (DR-04): only an edit becomes the user's caption.
+        let mine = c.isEmpty || yours == nil && c == saros ? nil : c
+        guard mine != yours else { return }
+        if quitting { model.ledger.updateEntryTextBeforeQuit(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: mine); return }
+        Task {
+            try? await model.ledger.updateEntryText(id: entry.id, body: entry.body, titleUser: entry.titleUser, captionUser: mine)
             await model.reload()
-            if !c.isEmpty { model.process(entry.id) }
+            // Always: a cleared caption brings Saro's description back as the still's reading.
+            model.process(entry.id)
         }
     }
 }
@@ -504,6 +670,13 @@ struct ReadingSection: View {
 
 extension Notification.Name {
     static let showSafetyCard = Notification.Name("saro.showSafetyCard")
+}
+
+private extension View {
+    /// ⌘Q never runs onDisappear: an edit not yet saved is written here, before the app exits.
+    func onQuit(_ action: @escaping () -> Void) -> some View {
+        onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in action() }
+    }
 }
 
 /// A safety hold never shows nothing (§13.2): the entry stays saved and playable, and the resources take the reading's place.

@@ -39,13 +39,21 @@ extension AppModel {
     /// User words outrank AI (DR-04). A held or unchecked entry never shows an AI title.
     func title(for e: Entry) -> String {
         if let t = e.titleUser, !t.isEmpty { return t }
+        if e.kind == .still { return caption(for: e) ?? e.kind.noun }
         if e.kind == .reflection, let first = e.body?.split(separator: "\n").first, !first.isEmpty, (e.body?.contains("\n") ?? false) {
             return String(first.prefix(80))
         }
         // A held day shows no AI text at all (SR-13), titles included.
         if verdicts[e.id]?.verdict == "clear", !isDayHeld, let t = annotations[e.id]?.title, let first = t.first { return first.uppercased() + t.dropFirst() }
-        if e.kind == .still, let c = e.captionUser, !c.isEmpty { return c }
         return e.kind.noun
+    }
+
+    /// A still's caption (ImageStillCard.tsx): the user's, else Saro's description once checked; a held or unchecked
+    /// still, or any still on a held day (SR-13), shows only the user's.
+    func caption(for e: Entry) -> String? {
+        if let c = e.captionUser?.trimmingCharacters(in: .whitespacesAndNewlines), !c.isEmpty { return c }
+        guard !isDayHeld, let v = verdicts[e.id]?.verdict, v == "clear" || v == "unavailable_clear" else { return nil }
+        return annotations[e.id]?.caption
     }
 
     /// A short, honest status for the card footer, or nil when there's nothing to say.
@@ -167,6 +175,7 @@ struct CardFace: View {
                 .frame(width: box.width, height: box.height - 48)
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: radius - 1, topTrailingRadius: radius - 1))
             CardMeta(entry: entry).padding(.horizontal, 14).frame(maxHeight: .infinity)
+                .animation(Motion.fade, value: model.caption(for: entry))
         }
         .frame(width: box.width, height: box.height)
         .cardSurface(radius: radius, tint: nil, hover: hover)
@@ -415,7 +424,7 @@ struct ResizeHandles: View {
     }
 }
 
-/// A poster frame for a moment or a downsampled still, cached for the session.
+/// A poster frame for a moment or a downsampled still, cached while recent.
 struct MediaThumb: View {
     let url: URL?
     let kind: EntryKind
@@ -442,12 +451,19 @@ struct MediaThumb: View {
 
 @MainActor
 enum ThumbCache {
-    private static var cache: [URL: NSImage] = [:]
+    /// The recent few hundred, about 1.2 MB each decoded; NSCache also lets them go under memory pressure.
+    private static let cache: NSCache<NSURL, NSImage> = {
+        let c = NSCache<NSURL, NSImage>()
+        c.countLimit = 200
+        return c
+    }()
 
-    static func cached(_ url: URL?) -> NSImage? { url.flatMap { cache[$0] } }
+    static func cached(_ url: URL?) -> NSImage? { url.flatMap { cache.object(forKey: $0 as NSURL) } }
+    /// The aspect of a thumbnail already made, so an opened still can take the photo's shape at once.
+    static func aspect(_ url: URL?) -> CGFloat? { url.flatMap { cache.object(forKey: $0 as NSURL) }.map { $0.size.width / $0.size.height } }
 
     static func image(for url: URL, kind: EntryKind) async -> NSImage? {
-        if let hit = cache[url] { return hit }
+        if let hit = cache.object(forKey: url as NSURL) { return hit }
         let cg: CGImage? = if kind == .still {
             await Task.detached { thumbnail(url) }.value
         } else {
@@ -455,7 +471,7 @@ enum ThumbCache {
         }
         guard let cg else { return nil }
         let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        cache[url] = img
+        cache.setObject(img, forKey: url as NSURL)
         return img
     }
 

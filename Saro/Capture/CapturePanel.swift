@@ -28,12 +28,13 @@ final class CapturePanelController {
         HotKey.register { CapturePanelController.shared.hotKeyPressed() }
     }
 
+    /// Nothing until onboarding ends: a note would land in the journal mid-onboarding, or the camera while Find your light holds it.
     func show(tab: CaptureTab) {
-        guard let model else { return }
+        guard let model, !model.showsOnboarding else { return }
         let panel = panel ?? makePanel()
         if !panel.isVisible {
             saved = false
-            let host = NSHostingView(rootView: CapturePanelView().environment(model))
+            let host = NSHostingView(rootView: CapturePanelView().environment(model).comfortEnvironment())
             host.safeAreaRegions = []
             panel.contentView = host
         }
@@ -182,7 +183,7 @@ struct CapturePanelView: View {
                 .font(Typo.ui(14))
                 .foregroundStyle(Tok.ink)
                 .scrollContentBackground(.hidden)
-                .writingToolsBehavior(.disabled)
+                .saroWritingTools()
                 .focused($writing)
                 .padding(10)
                 .background(Tok.surfaceAlt, in: .rect(cornerRadius: 10))

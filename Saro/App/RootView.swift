@@ -6,25 +6,34 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView(columnVisibility: Binding(get: { model.sidebarVisible ? .all : .detailOnly },
-                                                      set: { model.sidebarVisible = $0 != .detailOnly })) {
-            Sidebar()
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
-        } detail: {
-            Group {
-                switch model.pane {
-                case .day: DayView()
-                case .trash: TrashView()
-                case .decisions:
-                    #if DOGFOOD
-                    DecisionsView()
-                    #else
-                    EmptyView()
-                    #endif
-                case .knows: Color.clear
+        Group {
+            if model.profile == nil {
+                LitGround().ignoresSafeArea().overlay { ToastHost() }
+            } else if model.showsOnboarding {
+                // A new profile row (Erase, or an import into a blank journal) is a new pass, read from the ledger again.
+                OnboardingView().id(model.profile?.createdAt).ignoresSafeArea(.container, edges: .top).overlay { ToastHost() }
+            } else {
+                NavigationSplitView(columnVisibility: Binding(get: { model.sidebarVisible ? .all : .detailOnly },
+                                                              set: { model.sidebarVisible = $0 != .detailOnly })) {
+                    Sidebar()
+                        .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
+                } detail: {
+                    Group {
+                        switch model.pane {
+                        case .day: DayView()
+                        case .trash: TrashView()
+                        case .decisions:
+                            #if DOGFOOD
+                            DecisionsView()
+                            #else
+                            EmptyView()
+                            #endif
+                        case .knows: WhatSaroKnowsView()
+                        }
+                    }
+                    .overlayPreferenceValue(TrashFlightKey.self) { ToastHost(flying: $0) }
                 }
             }
-            .overlayPreferenceValue(TrashFlightKey.self) { ToastHost(flying: $0) }
         }
         .background(Tok.bg)
         .tint(Tok.sage)
@@ -65,6 +74,7 @@ struct Sidebar: View {
                 ForEach(model.days, id: \.day) { dayRow($0.day, count: $0.count) }
             }
             Section {
+                row("What Saro knows", systemImage: "point.3.connected.trianglepath.dotted", selected: model.pane == .knows) { model.pane = .knows }
                 row("Trash", systemImage: "trash", selected: model.pane == .trash) { model.pane = .trash }
                 row("Decisions", systemImage: "checklist", selected: model.pane == .decisions) { model.pane = .decisions }
             }

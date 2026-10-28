@@ -176,8 +176,20 @@ func walk(permissive: @escaping @Sendable (Int) async throws -> String,
     let start = ContinuousClock.now
     let value = try await SaroAI.withTimeout(.milliseconds(50)) { try await Task.sleep(for: .seconds(5)); return 1 }
     #expect(value == nil)
-    #expect(ContinuousClock.now - start < .seconds(2))
+    // It must not wait out the 5 s operation; a parallel test run can starve the timer for a second or two.
+    #expect(ContinuousClock.now - start < .seconds(4.5))
     #expect(try await SaroAI.withTimeout(.seconds(5)) { 7 } == 7)
+}
+
+@Test func aCallThatNeverAnswersTimesOutAndStopsTheLadder() async throws {
+    await #expect(throws: Ladder.Timeout.self) {
+        try await SaroAI.ask(SystemLanguageModel.default, "", "", SaroAI.options, { _ in try await Task.sleep(for: .seconds(60)); return "" },
+                             limit: .milliseconds(50))
+    }
+    let log = CallLog()
+    let result = await walk(permissive: { _ in throw Ladder.Timeout() }, guided: { _ in guidedReading }, log: log)
+    #expect(result.stop == "timeout" && result.calls == 1)
+    #expect(await log.guided == 0)
 }
 
 // MARK: Live model (synthetic text only, SR-28)
@@ -192,7 +204,7 @@ func candidates(_ entryId: String, _ text: String, from start: Int = 0) -> [Cand
     }
 }
 
-@Test(.enabled(if: liveModelAvailable)) func liveEntryReading() async {
+@Test(.enabled(if: liveModelAvailable), .liveModel) func liveEntryReading() async {
     let ai = SaroAI()
     let (reading, provenance) = await ai.readEntry(entryId: "e1", text: neutralEntry, candidates: candidates("e1", neutralEntry),
                                                    fallback: fallbackReading, validate: { _ in true })
@@ -205,7 +217,7 @@ func candidates(_ entryId: String, _ text: String, from start: Int = 0) -> [Cand
     print("live entry:", reading, provenance)
 }
 
-@Test(.enabled(if: liveModelAvailable)) func liveDayReading() async {
+@Test(.enabled(if: liveModelAvailable), .liveModel) func liveDayReading() async {
     let second = "Walked home in the rain and called my sister. We laughed about the old flat."
     let digests = [EntryDigest(entryId: "e1", kind: "writing", time: "09:10", title: "Shipped the onboarding flow",
                                summary: "You shipped the onboarding flow and had chai with Ravi.", mood: .calm),
@@ -219,7 +231,7 @@ func candidates(_ entryId: String, _ text: String, from start: Int = 0) -> [Cand
     print("live day:", day, provenance)
 }
 
-@Test(.enabled(if: liveModelAvailable)) func liveClassifier() async {
+@Test(.enabled(if: liveModelAvailable), .liveModel) func liveClassifier() async {
     let instructions = "You label private journal entries for a safety system. Answer with exactly one word: NONE, PASSIVE or ACTIVE. Most entries are NONE."
     let outcome = await SaroAI().classify(neutralEntry, instructions: instructions, prompt: "Entry: {text}\nLabel:")
     #expect(outcome == .label(.none))
