@@ -116,6 +116,8 @@ struct CardFace: View {
     var size: CGSize?
     @State private var hover = false
     @State private var discHover = false
+    /// The recording is there but wouldn't decode.
+    @State private var unreadable = false
 
     var body: some View {
         content
@@ -151,15 +153,18 @@ struct CardFace: View {
     private var moment: some View {
         VStack(spacing: 0) {
             ZStack {
-                MediaThumb(url: model.mediaURL(for: entry), kind: .moment, ready: ready, broken: broken)
+                MediaThumb(url: model.mediaURL(for: entry), kind: .moment, ready: ready, broken: broken) { unreadable = $0 }
                 Color.black.opacity(hover ? 0.10 : 0)
                 // ponytail: hover only, no 0.95 press; a gesture on the disc would take the card's tap and drag.
-                Circle().fill(.white.opacity(0.9)).frame(width: 56, height: 56).elevation(.float)
-                    .overlay(Image(systemName: "play.fill").font(.system(size: 20)).foregroundStyle(Tok.momentInk).offset(x: 2))
-                    .scaleEffect(discHover ? 1.05 : 1)
-                    .onHover { discHover = $0 }
-                    .animation(Motion.small, value: discHover)
-                if let ms = model.media[entry.mediaId ?? ""]?.durationMs {
+                // A recording that can't be opened says so instead: nothing to play, nothing to time.
+                if !broken && !unreadable {
+                    Circle().fill(.white.opacity(0.9)).frame(width: 56, height: 56).elevation(.float)
+                        .overlay(Image(systemName: "play.fill").font(.system(size: 20)).foregroundStyle(Tok.momentInk).offset(x: 2))
+                        .scaleEffect(discHover ? 1.05 : 1)
+                        .onHover { discHover = $0 }
+                        .animation(Motion.small, value: discHover)
+                }
+                if !broken && !unreadable, let ms = model.media[entry.mediaId ?? ""]?.durationMs {
                     Text(Duration.milliseconds(ms).formatted(.time(pattern: .minuteSecond)))
                         .font(Typo.ui(12, .medium).monospacedDigit()).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3)
@@ -495,9 +500,11 @@ struct MediaThumb: View {
     var ready = true
     /// The file is missing or never saved.
     var broken = false
+    /// Told whether the file, once tried, wouldn't decode.
+    var unreadable: (Bool) -> Void = { _ in }
     @State private var image: NSImage?
     /// Ready, but it wouldn't decode.
-    @State private var unreadable = false
+    @State private var failed = false
 
     var body: some View {
         ZStack {
@@ -505,7 +512,7 @@ struct MediaThumb: View {
             // The cache too, so a copy (a flight's face, drawn without running its task) has the picture from its first frame.
             if let image = image ?? (ready ? ThumbCache.cached(url) : nil) {
                 Image(nsImage: image).resizable().scaledToFill().frame(minWidth: 0, minHeight: 0)
-            } else if broken || unreadable {
+            } else if broken || failed {
                 VStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 17)).foregroundStyle(kind.tint)
                     Text("This \(kind == .still ? "photo" : "recording") couldn’t be opened. Your entry is saved.")
@@ -520,7 +527,8 @@ struct MediaThumb: View {
         .task(id: "\(url?.path ?? "")\(ready)") {
             guard let url, ready else { return }
             image = await ThumbCache.image(for: url, kind: kind)
-            unreadable = image == nil
+            failed = image == nil
+            unreadable(failed)
         }
     }
 }
