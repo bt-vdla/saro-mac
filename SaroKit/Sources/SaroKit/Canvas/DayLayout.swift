@@ -113,6 +113,18 @@ public enum DayLayout {
         return fits ? spots : nil
     }
 
+    /// The card an arrow key moves the selection to: the nearest centre ahead of `from` in `direction`, sideways distance
+    /// counting double, so ↓ from a card picks the one below rather than one far to the side. Nil when nothing lies that way.
+    public static func neighbour(of from: CGPoint, toward direction: CGVector, among cards: [(id: String, center: CGPoint)]) -> String? {
+        cards.compactMap { c -> (id: String, cost: CGFloat)? in
+            let d = CGVector(dx: c.center.x - from.x, dy: c.center.y - from.y)
+            let along = d.dx * direction.dx + d.dy * direction.dy
+            guard along > 1 else { return nil }
+            return (c.id, along + 2 * abs(d.dx * direction.dy - d.dy * direction.dx))
+        }
+        .min { $0.cost < $1.cost }?.id
+    }
+
     /// Every dropped file on its own cell of a grid centred where they were let go (Canvas.tsx, B-021): a cell is the
     /// widest card (a moment) by the tallest (a still), each plus 24, so no two cards overlap. World centres.
     public static func dropGrid(count: Int, at point: CGPoint) -> [CGPoint] {

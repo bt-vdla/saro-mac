@@ -368,6 +368,17 @@ public enum LensMath {
     }
 }
 
+extension Replay {
+    /// A week plays a day per bin: `perDay` seconds for a day with entries, a quarter of that for an empty one (replay.ts).
+    /// Hours run 0 to 24 × days.
+    public static func weekLapse(_ totals: [Int], perDay: Double = 1.6) -> Lapse {
+        let weights = totals.map { $0 > 0 ? 1 : 0.25 }
+        var edges = [0.0]
+        for w in weights { edges.append(edges[edges.count - 1] + w * perDay) }
+        return Lapse(bin: dayHours, edges: edges)
+    }
+}
+
 extension Comparable {
     func clamped(_ lo: Self, _ hi: Self) -> Self { min(max(self, lo), hi) }
 }

@@ -409,6 +409,26 @@ private func key(_ i: Int) -> String { lens.days[i].key }
     #expect(week.map(\.mood) == [.calm, nil, nil, nil])
 }
 
+// MARK: Key frames (ports of keyframes.test.ts)
+
+@Test func keyframesFitTheShortSideAndSkipBlackFrames() {
+    #expect(Keyframe.fit(width: 1920, height: 1080) == (455, 256))
+    #expect(Keyframe.fit(width: 1080, height: 1920) == (256, 455))
+    #expect(Keyframe.fit(width: 4000, height: 1000) == (512, 128)) // the long side stays within twice the short
+    #expect(Keyframe.fit(width: 100, height: 80) == (100, 80)) // never upscaled
+    #expect(Keyframe.fit(width: 0, height: 0) == (256, 256))
+    let black = [UInt8](repeating: 8, count: 32 * 18 * 4)
+    var lit = black
+    for i in stride(from: 0, to: lit.count / 10, by: 4) { (lit[i], lit[i + 1], lit[i + 2]) = (200, 200, 200) }
+    #expect(Keyframe.isBlack(black) && !Keyframe.isBlack(lit))
+    #expect(Keyframe.luma([255, 255, 255, 255]).mean > 254)
+    #expect(Keyframe.seekTimes(nil) == [0.05, 0.4, 1, 2, 3.5])
+    #expect(Keyframe.seekTimes(1.5) == [0.05, 0.4, 1])
+    #expect(Keyframe.seekTimes(0.04) == [0.02])
+    let m = MediaAsset(id: "m1", fileName: "2026-10-27/s1/part-1.mov", kind: .video, origin: "recorded")
+    #expect(Keyframe.file(for: m, stamp: 42) == "2026-10-27/posters/m1-42.jpg")
+}
+
 // MARK: Day layout (ports of dayLayout.test.ts)
 
 private let layoutSizes: [EntryKind: CGSize] = [.reflection: CGSize(width: 360, height: 200), .still: CGSize(width: 260, height: 300),
@@ -457,4 +477,21 @@ private func extent(_ items: [DayLayout.Item], _ at: [String: CGPoint]) -> CGRec
     let side = try #require(DayLayout.freeSpot(layoutSizes[.reflection]!, in: wide, avoiding: [CGRect(x: -4000, y: -1000, width: 8000, height: 2000)]))
     #expect(side.x >= 4024 || side.x + 360 <= -4024)
     #expect(DayLayout.dropGrid(count: 4, at: .zero).count == 4 && DayLayout.dropGrid(count: 1, at: CGPoint(x: 5, y: 6)) == [CGPoint(x: 5, y: 6)])
+}
+
+@Test func arrowsMoveToTheNearestCardThatWay() {
+    let cards: [(id: String, center: CGPoint)] = [("a", CGPoint(x: 0, y: 0)), ("right", CGPoint(x: 400, y: 20)), ("far", CGPoint(x: 900, y: 0)),
+                                                  ("below", CGPoint(x: 30, y: 300)), ("diagonal", CGPoint(x: 300, y: 260))]
+    let from = CGPoint.zero
+    #expect(DayLayout.neighbour(of: from, toward: CGVector(dx: 1, dy: 0), among: cards) == "right")
+    #expect(DayLayout.neighbour(of: from, toward: CGVector(dx: 0, dy: 1), among: cards) == "below")
+    #expect(DayLayout.neighbour(of: from, toward: CGVector(dx: -1, dy: 0), among: cards) == nil)
+    #expect(DayLayout.neighbour(of: from, toward: CGVector(dx: 0, dy: -1), among: cards) == nil)
+}
+
+@Test func weekLapsePlaysBusyDaysLonger() {
+    let lapse = Replay.weekLapse([2, 0, 1, 0, 0, 0, 3])
+    #expect(abs(lapse.length - (3 * 1.6 + 4 * 0.4)) < 1e-9)
+    #expect(abs(lapse.hour(at: 1.6) - 24) < 1e-9 && abs(lapse.hour(at: 2.0) - 48) < 1e-9)
+    #expect(abs(lapse.time(at: 48) - 2.0) < 1e-9)
 }
